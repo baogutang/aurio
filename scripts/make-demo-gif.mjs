@@ -21,7 +21,7 @@ for (const file of FRAMES) {
   const { width, height, data } = loadRgba(file);
   const palette = quantize(data, 256);
   const index = applyPalette(data, palette);
-  gif.writeFrame(index, width, height, { palette, delay: 1200 });
+  gif.writeFrame(index, width, height, { palette, delay: 1400 });
 }
 
 gif.finish();

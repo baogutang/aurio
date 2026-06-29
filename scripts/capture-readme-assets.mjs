@@ -63,26 +63,14 @@ async function main() {
   await page.screenshot({ path: path.join(ROOT, 'assets', 'hero.png'), type: 'png' });
   console.log('saved assets/hero.png');
 
-  // Short demo clip → GIF frames
-  const framesDir = path.join(OUT, '_frames');
-  await mkdir(framesDir, { recursive: true });
-  const steps = [
-    async () => { await page.goto(BASE, { waitUntil: 'networkidle' }); await page.getByRole('button', { name: 'DARK' }).click(); },
-    async () => { await clickByAria(page, '播放'); },
-    async () => { await page.getByLabel('打开对话').click(); },
-    async () => { await page.getByPlaceholder(/想听什么/).fill('来点轻松的爵士'); },
-    async () => { await clickByAria(page, '设置'); },
-    async () => { await page.keyboard.press('Escape'); },
-  ];
-  let i = 0;
-  for (const step of steps) {
-    await step();
-    await page.waitForTimeout(900);
-    await page.screenshot({ path: path.join(framesDir, `f${String(i++).padStart(2, '0')}.png`), type: 'png' });
-  }
-
   await browser.close();
-  console.log('frames saved — run ffmpeg to build assets/demo.gif if needed');
+
+  // Post-process marketing assets
+  const { spawnSync } = await import('node:child_process');
+  for (const script of ['make-hero-showcase.mjs', 'make-demo-gif.mjs']) {
+    const r = spawnSync(process.execPath, [path.join(__dirname, script)], { stdio: 'inherit', cwd: ROOT });
+    if (r.status !== 0) process.exit(r.status ?? 1);
+  }
 }
 
 main().catch((err) => {
