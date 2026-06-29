@@ -1,0 +1,216 @@
+// Voice/TTS facade. Defaults to local macOS speech so Aurio can speak without
+// depending on Fish Audio's overseas endpoint. Tencent Cloud TTS is available
+// as a domestic cloud option; Fish remains as an explicit fallback provider.
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { config, DATA_ROOT } from '../config.js';
+import * as fish from './fish.js';
+
+const CACHE_DIR = path.join(DATA_ROOT, 'cache', 'tts');
+const DEFAULT_TTS_TEXT = '你好，我是 Aurio，你的私人电台主播。';
+const pending = new Map();
+
+export const TTS_CACHE_DIR = CACHE_DIR;
+
+function ensureDir() {
+  if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+function voiceConfig(overrides = {}) {
+  const provider = overrides.VOICE_PROVIDER || overrides.TTS_PROVIDER || config.voice.provider || 'system';
+  return {
+    provider,
+    systemVoice: overrides.SYSTEM_TTS_VOICE || config.voice.system.voice || 'Tingting',
+    tencentSecretId: overrides.TENCENT_SECRET_ID || overrides.TENCENTCLOUD_SECRET_ID || config.voice.tencent.secretId || '',
+    tencentSecretKey: overrides.TENCENT_SECRET_KEY || overrides.TENCENTCLOUD_SECRET_KEY || config.voice.tencent.secretKey || '',
+    tencentRegion: overrides.TENCENT_TTS_REGION || config.voice.tencent.region || 'ap-guangzhou',
+    tencentVoiceType: Number(overrides.TENCENT_TTS_VOICE_TYPE || config.voice.tencent.voiceType || 1001),
+  };
+}
+
+function hashFor(text, cfg = voiceConfig()) {
+  return crypto.createHash('sha1')
+    .update(`${cfg.provider}::${cfg.systemVoice}::${cfg.tencentVoiceType}::${text}`)
+    .digest('hex');
+}
+
+function cachedLocal(text, cfg = voiceConfig()) {
+  if (!text || !text.trim()) return null;
+  ensureDir();
+  const hash = hashFor(text, cfg);
+  const ext = cfg.provider === 'tencent' ? 'mp3' : 'wav';
+  const file = path.join(CACHE_DIR, `${hash}.${ext}`);
+  const url = `/tts/${hash}.${ext}`;
+  if (fs.existsSync(file)) return { url, cached: true };
+  return null;
+}
+
+function run(cmd, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { windowsHide: true });
+    let err = '';
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error((err || `${cmd} exited ${code}`).trim()));
+    });
+  });
+}
+
+async function synthesizeSystem(text, cfg = voiceConfig()) {
+  const cached = cachedLocal(text, cfg);
+  if (cached) return cached;
+  if (process.platform !== 'darwin') return null;
+  ensureDir();
+  const hash = hashFor(text, cfg);
+  const aiff = path.join(CACHE_DIR, `${hash}.aiff`);
+  const file = path.join(CACHE_DIR, `${hash}.wav`);
+  const url = `/tts/${hash}.wav`;
+
+  try {
+    const args = cfg.systemVoice ? ['-v', cfg.systemVoice, '-o', aiff, text] : ['-o', aiff, text];
+    await run('/usr/bin/say', args);
+  } catch (e) {
+    await run('/usr/bin/say', ['-o', aiff, text]);
+  }
+
+  await run('/usr/bin/afconvert', ['-f', 'WAVE', '-d', 'LEI16', aiff, file]);
+  try { fs.unlinkSync(aiff); } catch { /* best effort */ }
+  return { url, cached: false };
+}
+
+function sha256Hex(data) {
+  return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function hmac(key, data, encoding) {
+  return crypto.createHmac('sha256', key).update(data).digest(encoding);
+}
+
+function signTencent(payload, cfg) {
+  const service = 'tts';
+  const host = 'tts.tencentcloudapi.com';
+  const action = 'TextToVoice';
+  const version = '2019-08-23';
+  const timestamp = Math.floor(Date.now() / 1000);
+  const date = new Date(timestamp * 1000).toISOString().slice(0, 10);
+  const canonicalHeaders = `content-type:application/json; charset=utf-8\nhost:${host}\nx-tc-action:${action.toLowerCase()}\n`;
+  const signedHeaders = 'content-type;host;x-tc-action';
+  const canonicalRequest = [
+    'POST',
+    '/',
+    '',
+    canonicalHeaders,
+    signedHeaders,
+    sha256Hex(payload),
+  ].join('\n');
+  const credentialScope = `${date}/${service}/tc3_request`;
+  const stringToSign = [
+    'TC3-HMAC-SHA256',
+    timestamp,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join('\n');
+  const secretDate = hmac(`TC3${cfg.tencentSecretKey}`, date);
+  const secretService = hmac(secretDate, service);
+  const secretSigning = hmac(secretService, 'tc3_request');
+  const signature = hmac(secretSigning, stringToSign, 'hex');
+  const authorization = `TC3-HMAC-SHA256 Credential=${cfg.tencentSecretId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  return { authorization, timestamp, host, action, version };
+}
+
+async function synthesizeTencent(text, cfg = voiceConfig()) {
+  const cached = cachedLocal(text, cfg);
+  if (cached) return cached;
+  if (!cfg.tencentSecretId || !cfg.tencentSecretKey) return null;
+  ensureDir();
+  const hash = hashFor(text, cfg);
+  const file = path.join(CACHE_DIR, `${hash}.mp3`);
+  const url = `/tts/${hash}.mp3`;
+  const payload = JSON.stringify({
+    Text: text,
+    SessionId: hash.slice(0, 32),
+    ModelType: 1,
+    VoiceType: cfg.tencentVoiceType,
+    Codec: 'mp3',
+  });
+  const sig = signTencent(payload, cfg);
+  const res = await fetch(`https://${sig.host}`, {
+    method: 'POST',
+    headers: {
+      Authorization: sig.authorization,
+      'Content-Type': 'application/json; charset=utf-8',
+      Host: sig.host,
+      'X-TC-Action': sig.action,
+      'X-TC-Timestamp': String(sig.timestamp),
+      'X-TC-Version': sig.version,
+      'X-TC-Region': cfg.tencentRegion,
+    },
+    body: payload,
+    signal: AbortSignal.timeout(30000),
+  });
+  const body = await res.json();
+  if (body?.Response?.Error) throw new Error(body.Response.Error.Message || body.Response.Error.Code);
+  const audio = body?.Response?.Audio;
+  if (!audio) throw new Error('腾讯云未返回音频');
+  fs.writeFileSync(file, Buffer.from(audio, 'base64'));
+  return { url, cached: false };
+}
+
+export function cachedSynthesis(text) {
+  const cfg = voiceConfig();
+  if (cfg.provider === 'fish') return fish.cachedSynthesis(text);
+  return cachedLocal(text, cfg);
+}
+
+export async function synthesize(text) {
+  const cfg = voiceConfig();
+  try {
+    if (cfg.provider === 'tencent') return await synthesizeTencent(text, cfg);
+    if (cfg.provider === 'fish') return await fish.synthesize(text);
+    return await synthesizeSystem(text, cfg);
+  } catch (e) {
+    console.error(`[tts:${cfg.provider}]`, e.message);
+    return null;
+  }
+}
+
+export function synthesizeBackground(text, onDone) {
+  const cached = cachedSynthesis(text);
+  if (cached) return cached;
+  if (!text || !text.trim()) return null;
+
+  const key = hashFor(text);
+  const existing = pending.get(key);
+  if (existing) {
+    existing.then((tts) => { if (tts?.url) onDone?.(tts); }).catch(() => {});
+    return null;
+  }
+
+  const task = synthesize(text).finally(() => pending.delete(key));
+  pending.set(key, task);
+  task.then((tts) => { if (tts?.url) onDone?.(tts); }).catch((e) => {
+    console.error('[tts background]', e.message);
+  });
+  return null;
+}
+
+export async function testVoice(body = {}) {
+  const cfg = voiceConfig(body);
+  const text = (body.text && body.text.trim()) || DEFAULT_TTS_TEXT;
+  try {
+    if (cfg.provider === 'fish') {
+      return fish.testVoice({ apiKey: body.FISH_API_KEY, referenceId: body.FISH_REFERENCE_ID, text });
+    }
+    const tts = cfg.provider === 'tencent'
+      ? await synthesizeTencent(text, cfg)
+      : await synthesizeSystem(text, cfg);
+    if (!tts?.url) return { ok: false, detail: cfg.provider === 'tencent' ? '缺少腾讯云密钥' : '本机语音不可用' };
+    return { ok: true, detail: '合成成功，正在试听…', url: tts.url };
+  } catch (e) {
+    return { ok: false, detail: e.message || '语音合成失败' };
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "_comment": "可选：你自己定义的歌单，Aurio 可以引用。query 写成 '歌手 - 歌名'。",
+  "playlists": [
+    {
+      "name": "专注写代码",
+      "tracks": []
+    },
+    {
+      "name": "深夜",
+      "tracks": []
+    }
+  ]
+}

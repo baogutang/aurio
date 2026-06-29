@@ -1,0 +1,12 @@
+{
+  "name": "Aurio",
+  "short_name": "Aurio",
+  "description": "你的私人 AI 电台 · 把每个频率，调成家的温度",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0b",
+  "theme_color": "#0a0a0b",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

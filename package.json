@@ -1,0 +1,69 @@
+{
+  "name": "aurio",
+  "version": "0.1.0",
+  "description": "Aurio - your personal AI radio. Cross-platform (macOS + Windows).",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "server": "node server/index.js",
+    "start": "electron .",
+    "dev": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "node-cron": "^3.0.3",
+    "node-ical": "^0.26.1",
+    "node-ssdp": "^4.0.1",
+    "upnp-mediarenderer-client": "^1.4.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "studio.niko.aurio",
+    "productName": "Aurio",
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "pwa/**/*",
+      "prompts/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "user",
+        "to": "user"
+      },
+      {
+        "from": ".env.example",
+        "to": ".env.example"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "directories": {
+      "output": "release"
+    }
+  }
+}
