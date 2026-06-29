@@ -6,3 +6,4 @@ data/
 *.log
 .DS_Store
 Thumbs.db
+screenshots/_frames/
