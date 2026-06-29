@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 200" font-family="Inter, system-ui, sans-serif">
+  <rect width="900" height="200" rx="12" fill="#0a0a0c"/>
+  <text x="450" y="28" text-anchor="middle" fill="#ededf0" font-size="16" font-weight="700">Show Segment Pipeline</text>
+
+  <g>
+    <rect x="24" y="60" width="110" height="56" rx="10" fill="#1a1a1f" stroke="#ff6a3d"/>
+    <text x="79" y="84" text-anchor="middle" fill="#ff6a3d" font-size="11" font-weight="600">Trigger</text>
+    <text x="79" y="100" text-anchor="middle" fill="#8b8b93" font-size="9">chat · cron · radio</text>
+  </g>
+  <text x="148" y="92" fill="#5b5b63" font-size="18">’</text>
+
+  <g>
+    <rect x="164" y="60" width="110" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff22"/>
+    <text x="219" y="84" text-anchor="middle" fill="#ededf0" font-size="11" font-weight="600">Context</text>
+    <text x="219" y="100" text-anchor="middle" fill="#8b8b93" font-size="9">6 fragments</text>
+  </g>
+  <text x="288" y="92" fill="#5b5b63" font-size="18">’</text>
+
+  <g>
+    <rect x="304" y="60" width="110" height="56" rx="10" fill="#1a1a1f" stroke="#5ad19a"/>
+    <text x="359" y="84" text-anchor="middle" fill="#5ad19a" font-size="11" font-weight="600">AI Brain</text>
+    <text x="359" y="100" text-anchor="middle" fill="#8b8b93" font-size="9">JSON action</text>
+  </g>
+  <text x="428" y="92" fill="#5b5b63" font-size="18">’</text>
+
+  <g>
+    <rect x="444" y="60" width="110" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff22"/>
+    <text x="499" y="84" text-anchor="middle" fill="#ededf0" font-size="11" font-weight="600">Resolve</text>
+    <text x="499" y="100" text-anchor="middle" fill="#8b8b93" font-size="9">music search</text>
+  </g>
+  <text x="568" y="92" fill="#5b5b63" font-size="18">’</text>
+
+  <g>
+    <rect x="584" y="60" width="110" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff22"/>
+    <text x="639" y="84" text-anchor="middle" fill="#ededf0" font-size="11" font-weight="600">TTS</text>
+    <text x="639" y="100" text-anchor="middle" fill="#8b8b93" font-size="9">cached audio</text>
+  </g>
+  <text x="708" y="92" fill="#5b5b63" font-size="18">’</text>
+
+  <g>
+    <rect x="724" y="60" width="152" height="56" rx="10" fill="#1a1a1f" stroke="#ff6a3d"/>
+    <text x="800" y="84" text-anchor="middle" fill="#ff6a3d" font-size="11" font-weight="600">Broadcast</text>
+    <text x="800" y="100" text-anchor="middle" fill="#8b8b93" font-size="9">WebSocket ’ player</text>
+  </g>
+
+  <text x="450" y="160" text-anchor="middle" fill="#8b8b93" font-size="10">{ say, play[], reason, segue, intent, placement, mood }</text>
+  <text x="450" y="178" text-anchor="middle" fill="#5b5b63" font-size="10">Scheduler: 07:00 plan · 09:00 morning · hourly 1023 mood check</text>
+</svg>

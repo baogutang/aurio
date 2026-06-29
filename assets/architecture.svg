@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" font-family="Inter, system-ui, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0a0c"/>
+      <stop offset="1" stop-color="#121018"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect width="960" height="520" rx="16" fill="url(#bg)"/>
+  <text x="480" y="36" text-anchor="middle" fill="#ededf0" font-size="20" font-weight="700">Aurio System Architecture</text>
+
+  <!-- Electron -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="60" width="200" height="72" rx="12" fill="#1a1a1f" stroke="#5ad19a" stroke-width="1.5"/>
+    <text x="140" y="92" text-anchor="middle" fill="#5ad19a" font-size="14" font-weight="600">Electron Shell</text>
+    <text x="140" y="112" text-anchor="middle" fill="#8b8b93" font-size="11">macOS / Windows</text>
+  </g>
+
+  <!-- PWA -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="160" width="200" height="72" rx="12" fill="#1a1a1f" stroke="#ff6a3d" stroke-width="1.5"/>
+    <text x="140" y="192" text-anchor="middle" fill="#ff6a3d" font-size="14" font-weight="600">PWA Player</text>
+    <text x="140" y="212" text-anchor="middle" fill="#8b8b93" font-size="11">React + Vite (web/ ’ pwa/)</text>
+  </g>
+
+  <!-- Node Server -->
+  <g filter="url(#shadow)">
+    <rect x="300" y="100" width="360" height="200" rx="16" fill="#16161b" stroke="#ffffff22"/>
+    <text x="480" y="130" text-anchor="middle" fill="#ededf0" font-size="16" font-weight="700">Node.js Server (server/)</text>
+    <text x="480" y="152" text-anchor="middle" fill="#8b8b93" font-size="11">Express + WebSocket · localhost:8080</text>
+
+    <rect x="320" y="168" width="96" height="40" rx="8" fill="#25252b"/>
+    <text x="368" y="193" text-anchor="middle" fill="#ededf0" font-size="10">dj.js</text>
+    <rect x="432" y="168" width="96" height="40" rx="8" fill="#25252b"/>
+    <text x="480" y="193" text-anchor="middle" fill="#ededf0" font-size="10">context.js</text>
+    <rect x="544" y="168" width="96" height="40" rx="8" fill="#25252b"/>
+    <text x="592" y="193" text-anchor="middle" fill="#ededf0" font-size="10">radio.js</text>
+
+    <rect x="320" y="220" width="72" height="36" rx="8" fill="#25252b"/>
+    <text x="356" y="242" text-anchor="middle" fill="#8b8b93" font-size="9">brain/</text>
+    <rect x="404" y="220" width="72" height="36" rx="8" fill="#25252b"/>
+    <text x="440" y="242" text-anchor="middle" fill="#8b8b93" font-size="9">music/</text>
+    <rect x="488" y="220" width="72" height="36" rx="8" fill="#25252b"/>
+    <text x="524" y="242" text-anchor="middle" fill="#8b8b93" font-size="9">tts/</text>
+    <rect x="572" y="220" width="72" height="36" rx="8" fill="#25252b"/>
+    <text x="608" y="242" text-anchor="middle" fill="#8b8b93" font-size="9">cast/</text>
+  </g>
+
+  <!-- External services -->
+  <g filter="url(#shadow)">
+    <rect x="720" y="60" width="200" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff18"/>
+    <text x="820" y="94" text-anchor="middle" fill="#ededf0" font-size="12">AI Brain</text>
+    <text x="820" y="108" text-anchor="middle" fill="#8b8b93" font-size="9">Claude CLI · Codex · API</text>
+
+    <rect x="720" y="132" width="200" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff18"/>
+    <text x="820" y="166" text-anchor="middle" fill="#ededf0" font-size="12">Music Sources</text>
+    <text x="820" y="180" text-anchor="middle" fill="#8b8b93" font-size="9">Navidrome · NetEase · QQ</text>
+
+    <rect x="720" y="204" width="200" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff18"/>
+    <text x="820" y="238" text-anchor="middle" fill="#ededf0" font-size="12">TTS / Voice</text>
+    <text x="820" y="252" text-anchor="middle" fill="#8b8b93" font-size="9">System · Tencent · Fish</text>
+
+    <rect x="720" y="276" width="200" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff18"/>
+    <text x="820" y="310" text-anchor="middle" fill="#ededf0" font-size="12">Context</text>
+    <text x="820" y="324" text-anchor="middle" fill="#8b8b93" font-size="9">Weather · Calendar · ICS</text>
+  </g>
+
+  <!-- Data -->
+  <g filter="url(#shadow)">
+    <rect x="300" y="340" width="160" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff18"/>
+    <text x="380" y="374" text-anchor="middle" fill="#ededf0" font-size="12">data/state.json</text>
+
+    <rect x="480" y="340" width="160" height="56" rx="10" fill="#1a1a1f" stroke="#ffffff18"/>
+    <text x="560" y="374" text-anchor="middle" fill="#ededf0" font-size="12">cache/tts/</text>
+  </g>
+
+  <!-- Arrows -->
+  <path d="M240 96 H300" stroke="#5ad19a" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M240 196 H280 V160 H300" stroke="#ff6a3d" stroke-width="2" fill="none"/>
+  <path d="M660 160 H720" stroke="#ffffff44" stroke-width="1.5"/>
+  <path d="M660 188 H720" stroke="#ffffff44" stroke-width="1.5"/>
+  <path d="M660 248 H720" stroke="#ffffff44" stroke-width="1.5"/>
+  <path d="M660 304 H720" stroke="#ffffff44" stroke-width="1.5"/>
+  <path d="M480 300 V340" stroke="#ffffff33" stroke-width="1.5"/>
+
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#5ad19a"/>
+    </marker>
+  </defs>
+
+  <text x="480" y="480" text-anchor="middle" fill="#5b5b63" font-size="11">WebSocket /stream · HTTP /api/* · Static pwa/</text>
+</svg>
