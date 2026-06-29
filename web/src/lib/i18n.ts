@@ -240,6 +240,31 @@ const zh = {
   obConfigure: '去配置',
   obFinish: '完成，进入 Aurio',
   obSkip: '跳过',
+
+  // Setup guides (collapsible "how to get this")
+  guideHowTo: '如何获取？',
+  guideConsole: '控制台',
+  guideDocs: '文档',
+  aiApiGuide: `选好上面的服务商，点下面链接注册并创建 API Key。
+新手推荐「GLM·智谱」的 glm-4-flash：免费、国内直连，地址和模型已自动填好。
+接口地址与模型一般无需改动，把 API Key 粘进去即可。`,
+  nasGuide: `Navidrome 是你自己搭在 NAS / 家庭服务器上的音乐库。
+地址填你平时访问它网页用的链接，例如 http://192.168.1.10:4533。
+用户名、密码就是登录 Navidrome 网页的那一组；还没有的话点下面看安装文档。`,
+  qqGuide: `搜索和歌词开箱即用，无需任何配置。
+只有想解锁更多 VIP / 版权曲目时才需要 Cookie：电脑浏览器登录 y.qq.com，按 F12 → 网络（Network），刷新后在任意请求的 Cookie 里复制 uin=、qm_keyst= 等字段粘到上面。`,
+  tcGuide: `注册并实名腾讯云，开通「语音合成 TTS」（有免费额度）。
+进入「访问管理 → API 密钥管理」新建密钥，拿到 SecretId 与 SecretKey 填到上面。
+音色 ID 常用 1001（智瑜·女声），地域保持 ap-guangzhou 即可；完整音色见文档。`,
+  fishGuide: `打开 fish.audio 注册登录，在 API Keys 页创建一个 Key。
+在声音库挑一个喜欢的声音，进入它的页面，网址末尾那串字符就是声音 ID（Reference ID）。
+把 Key 和声音 ID 填到上面即可。`,
+  wxGuide: `到 openweathermap.org 注册一个免费账号。
+在「API keys」页复制默认 Key（新账号的 Key 可能要等 10 分钟到 2 小时才生效）。
+把 Key 粘到上面，城市用英文或拼音，例如 Shanghai。`,
+  calGuide: `macOS 最省事：点上方「检查本机日历」授权即可。
+其它日历（Google / Outlook / 飞书等）在各自设置里找「订阅地址 / iCal / .ics 链接」，复制到下面，一行一个。
+也可以直接「导入 .ics 文件」。`,
 } as const;
 
 const en: Record<MessageKey, string> = {
@@ -472,6 +497,31 @@ const en: Record<MessageKey, string> = {
   obConfigure: 'Set up',
   obFinish: 'Done — enter Aurio',
   obSkip: 'Skip',
+
+  // Setup guides (collapsible "how to get this")
+  guideHowTo: 'How to get this',
+  guideConsole: 'Console',
+  guideDocs: 'Docs',
+  aiApiGuide: `Pick a provider above, then use a link below to sign up and create an API key.
+For beginners, GLM (Zhipu) glm-4-flash is free and reachable in China — its URL and model are pre-filled.
+The base URL and model are usually fine as-is; just paste your API key.`,
+  nasGuide: `Navidrome is your own music server (on a NAS / home server).
+Use the same URL you open its web page with, e.g. http://192.168.1.10:4533.
+Username and password are your Navidrome login; no server yet? See the install docs below.`,
+  qqGuide: `Search and lyrics work out of the box — no setup needed.
+A Cookie only unlocks more VIP / licensed tracks: log in to y.qq.com in a desktop browser, press F12 → Network, refresh, and copy uin= / qm_keyst= from any request's Cookie.`,
+  tcGuide: `Sign up for Tencent Cloud and enable "Text To Speech" (has a free tier).
+Open "Access Management → API Keys", create a key, and paste SecretId + SecretKey above.
+Voice type 1001 (Zhiyu, female) and region ap-guangzhou are good defaults; see the docs for the full list.`,
+  fishGuide: `Open fish.audio, sign in, and create a key on the API Keys page.
+Pick a voice in the library and open its page — the string at the end of the URL is the Reference ID.
+Paste the key and Reference ID above.`,
+  wxGuide: `Create a free account at openweathermap.org.
+Copy the default key on the "API keys" page (a new key can take 10 min–2 h to activate).
+Paste the key above and use an English city name, e.g. Shanghai.`,
+  calGuide: `On macOS the easiest path is the "Check system calendar" button above.
+For other calendars (Google / Outlook / Lark), find the "subscription / iCal / .ics URL" in their settings and paste them below, one per line.
+Or just "Import .ics file".`,
 };
 
 const tables: Record<Locale, Record<MessageKey, string>> = { zh, en };

@@ -45,6 +45,36 @@ function Buttons({ children }: { children: React.ReactNode }) {
   return <div className="flex gap-2 pt-1">{children}</div>;
 }
 
+// Collapsible "how to get this" help: numbered steps + official links. Links open
+// in the system browser (Electron's window-open handler / a new tab in browsers).
+function Guide({ t, body, links }: { t: T; body: string; links?: { label: string; url: string }[] }) {
+  const [open, setOpen] = useState(false);
+  const steps = body.split('\n').map((s) => s.trim()).filter(Boolean);
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--inset-bg)', border: '1px solid var(--glass-border)' }}>
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 text-[12px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+        <span>💡 {t('guideHowTo')}</span>
+        <span className={`transition-transform ${open ? 'rotate-90' : ''}`}><ChevR size={13} /></span>
+      </button>
+      {open && (
+        <div className="px-3.5 pb-3 space-y-2">
+          <ol className="space-y-1 text-[12px] leading-relaxed text-[var(--text-primary)] opacity-75 list-decimal list-inside">
+            {steps.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+          {links && links.length > 0 && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
+              {links.map((l) => (
+                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="text-[12px] font-medium" style={{ color: 'rgb(var(--hi-rgb))' }}>{l.label} ↗</a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // =====================================================================
 //  Panels
 // =====================================================================
@@ -192,6 +222,13 @@ function AiPanel({ t, onChanged }: { t: T; onChanged: () => void }) {
               ))}
             </div>
           </div>
+          <Guide t={t} body={t('aiApiGuide')} links={[
+            { label: 'GLM·智谱', url: 'https://open.bigmodel.cn/usercenter/apikeys' },
+            { label: 'DeepSeek', url: 'https://platform.deepseek.com/api_keys' },
+            { label: 'Kimi', url: 'https://platform.moonshot.cn/console/api-keys' },
+            { label: 'OpenAI', url: 'https://platform.openai.com/api-keys' },
+            { label: 'Anthropic', url: 'https://console.anthropic.com/settings/keys' },
+          ]} />
           <Field label={t('aiApiBase')} value={base} onChange={setBase} placeholder="https://…" />
           <Field label={t('aiApiModel')} value={model} onChange={setModel} placeholder="glm-4-flash" />
           <Field label={t('aiApiKey')} type="password" value={key} onChange={setKey} placeholder={prov?.api.hasKey ? t('aiApiKeyKeep') : ''} />
@@ -241,6 +278,7 @@ function NasPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp | n
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('nasHint')}</p>
+      <Guide t={t} body={t('nasGuide')} links={[{ label: 'Navidrome', url: 'https://www.navidrome.org/docs/installation/' }]} />
       <Field label={t('nasUrl')} value={url} onChange={setUrl} placeholder="https://music.example.com" />
       <Field label={t('nasUser')} value={user} onChange={setUser} />
       <Field label={t('nasPass')} type="password" value={pass} onChange={setPass} placeholder={hasPass ? t('nasPassKeep') : t('nasPassEnter')} />
@@ -347,6 +385,7 @@ function QQPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp | nu
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('qqHint')}</p>
+      <Guide t={t} body={t('qqGuide')} links={[{ label: 'y.qq.com', url: 'https://y.qq.com' }]} />
       <Field label={t('qqCookie')} type="password" value={cookie} onChange={setCookie} placeholder={hasCookie ? t('qqCookieKeep') : t('qqCookiePh')} />
       <Field label={t('qqApiUrl')} value={apiUrl} onChange={setApiUrl} placeholder={t('qqApiUrlPh')} />
       <ResultLine r={res} />
@@ -424,6 +463,10 @@ function FishPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp | 
       )}
       {provider === 'tencent' && (
         <div className="space-y-3">
+          <Guide t={t} body={t('tcGuide')} links={[
+            { label: t('guideConsole'), url: 'https://console.cloud.tencent.com/cam/capi' },
+            { label: t('guideDocs'), url: 'https://cloud.tencent.com/document/product/1073/92668' },
+          ]} />
           <Field label={t('voiceTencentId')} type="password" value={tencentId} onChange={setTencentId} placeholder={settings?.voice?.tencent.hasSecretId ? t('fishKeyKeep') : ''} />
           <Field label={t('voiceTencentKey')} type="password" value={tencentKey} onChange={setTencentKey} placeholder={settings?.voice?.tencent.hasSecretKey ? t('fishKeyKeep') : ''} />
           <Field label={t('voiceTencentVoice')} value={tencentVoice} onChange={setTencentVoice} placeholder="1001" />
@@ -432,6 +475,7 @@ function FishPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp | 
       )}
       {provider === 'fish' && (
         <div className="space-y-3">
+          <Guide t={t} body={t('fishGuide')} links={[{ label: 'fish.audio', url: 'https://fish.audio' }]} />
           <Field label={t('fishKey')} type="password" value={key} onChange={setKey} placeholder={hasKey ? t('fishKeyKeep') : ''} />
           <Field label={t('fishRef')} value={ref} onChange={setRef} placeholder="e.g. 7f92f8afb8ec43bf81429cc1c9199cb1" />
         </div>
@@ -495,6 +539,7 @@ function CalendarPanel({ t, settings, onChanged }: { t: T; settings: SettingsRes
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('calHint')}</p>
+      <Guide t={t} body={t('calGuide')} />
       <div className="grid grid-cols-2 gap-2">
         <button disabled={busy} onClick={testSystem} className="pill-btn disabled:opacity-40">{t('calSystemTest')}</button>
         <button disabled={busy} onClick={openPrivacy} className="pill-btn disabled:opacity-40">{t('calSystemOpen')}</button>
@@ -537,6 +582,7 @@ function WeatherPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('wxHint')}</p>
+      <Guide t={t} body={t('wxGuide')} links={[{ label: 'OpenWeather', url: 'https://home.openweathermap.org/api_keys' }]} />
       <Field label={t('wxKey')} type="password" value={key} onChange={setKey} placeholder={hasKey ? t('wxKeyKeep') : ''} />
       <Field label={t('wxCity')} value={city} onChange={setCity} placeholder={t('wxCityPh')} />
       <ResultLine r={res} />

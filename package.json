@@ -4,16 +4,25 @@
   "description": "Aurio - your personal AI radio. Cross-platform (macOS + Windows).",
   "type": "module",
   "main": "electron/main.js",
+  "author": "niko",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/baogutang/aurio.git"
+  },
+  "homepage": "https://github.com/baogutang/aurio#readme",
+  "bugs": {
+    "url": "https://github.com/baogutang/aurio/issues"
+  },
   "scripts": {
     "server": "node server/index.js",
     "start": "electron .",
     "dev": "electron .",
+    "test": "vitest run",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win"
   },
-  "author": "",
   "license": "MIT",
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -27,7 +36,8 @@
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "vitest": "^2.1.8"
   },
   "build": {
     "appId": "studio.niko.aurio",

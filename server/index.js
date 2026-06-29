@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { Readable } from 'node:stream';
 import express from 'express';
 import { WebSocketServer } from 'ws';
@@ -16,7 +17,7 @@ import { ncmLogin, netease } from './music/netease.js';
 import { qqmusic } from './music/qqmusic.js';
 import { buildProfile, getProfile } from './taste-profile.js';
 import { available as brainAvailable, providers as aiProviders, testProvider as aiTest } from './brain/index.js';
-import { TTS_CACHE_DIR, testVoice } from './tts/index.js';
+import { TTS_CACHE_DIR, testVoice, startTtsCacheGc } from './tts/index.js';
 import { testWeather } from './weather/openweather.js';
 import { testIcs } from './calendar/ics.js';
 import { openCalendarPrivacy, testSystemCalendar } from './calendar/system.js';
@@ -35,6 +36,27 @@ loadSettings();
 }
 
 const app = express();
+
+// ---- Trust boundary ----
+// Control endpoints (settings, chat, trigger, integration tests, profile build…)
+// can spend money, rewrite stored secrets, or fetch arbitrary URLs/files
+// server-side, so they're restricted to localhost. Only the static player and the
+// read-only media proxies — which UPnP/DLNA speakers fetch over the LAN while
+// casting — stay reachable from other hosts. Set AURIO_ALLOW_LAN=true to open the
+// whole API (e.g. when you front it with your own auth / reverse proxy).
+const ALLOW_LAN = String(process.env.AURIO_ALLOW_LAN || '').toLowerCase() === 'true';
+const LAN_OPEN_API = /^\/api\/(stream|cover|ncm\/stream|qq\/stream)\//;
+function isLoopback(req) {
+  const ip = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+  return ip === '127.0.0.1' || ip === '::1';
+}
+app.use((req, res, next) => {
+  if (!ALLOW_LAN && req.path.startsWith('/api/') && !LAN_OPEN_API.test(req.path) && !isLoopback(req)) {
+    return res.status(403).json({ ok: false, error: 'forbidden: control API is restricted to localhost' });
+  }
+  next();
+});
+
 app.use(express.json({ limit: '5mb' }));
 
 // ---- Static: the PWA player + cached TTS audio ----
@@ -442,7 +464,14 @@ app.get('/api/cover/:id', async (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/stream' });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // Same trust boundary as the control API: the live channel carries the queue,
+  // chat patter, and the heartbeat that drives (paid) refills, so keep it local.
+  if (!ALLOW_LAN && !isLoopback(req)) { try { ws.close(1008, 'localhost only'); } catch { /* noop */ } return; }
+
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
   const q = music.dedupeTracks(db.getQueue());
   if (q.length !== db.getQueue().length) db.setQueue(q);
   ws.send(JSON.stringify({ type: 'hello', queue: q }));
@@ -457,6 +486,21 @@ wss.on('connection', (ws) => {
   });
   ws.on('close', () => { if (wss.clients.size === 0) onClientGone(); });
 });
+
+// Reap dead sockets (laptop sleep, network drop, killed tab) so the radio engine
+// stops composing — and stops spending — when nobody is actually listening. The
+// browser answers protocol-level pings automatically, so this needs no client code.
+const wsPing = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch { /* noop */ }
+  }
+}, 30000);
+// Don't let this timer alone keep the process alive (a listening server already
+// does) — so merely importing this module, e.g. in CI smoke tests, still exits.
+if (wsPing.unref) wsPing.unref();
+wss.on('close', () => clearInterval(wsPing));
 
 function sendAll(obj) {
   const msg = JSON.stringify(obj);
@@ -475,6 +519,7 @@ export function startServer() {
       console.log('  features:', JSON.stringify(summarize()));
       startScheduler();
       startRadio();
+      startTtsCacheGc();
       brainAvailable().then((r) =>
         console.log(`  brain (${config.ai.provider}):  ${r.ok ? 'ready' : 'unavailable — ' + r.detail}`)
       );
@@ -483,7 +528,9 @@ export function startServer() {
   });
 }
 
-// Run directly (npm run server) vs. imported by Electron.
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('index.js')) {
+// Run directly (npm run server) vs. imported by Electron. Compare proper file://
+// URLs so the check is correct on Windows (backslashes, drive letters) and never
+// false-fires for an unrelated entry script that happens to be named index.js.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startServer();
 }

@@ -115,6 +115,24 @@ function validTrack(t) {
   return t.id && t.id !== '0' && t.title;
 }
 
+// Current QQ desktop search (musicu.fcg). More reliable than the legacy
+// search_for_qq_cp endpoint, which can return empty for many queries.
+async function searchModern(query, limit = 10) {
+  const body = await postJson('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+    comm: { ct: 24, cv: 0 },
+    req: {
+      module: 'music.search.SearchCgiService',
+      method: 'DoSearchForQQMusicDesktop',
+      param: { num_per_page: limit, page_num: 1, query: String(query), search_type: 0 },
+    },
+  }, SEARCH_REFERER);
+  const list = body?.req?.data?.body?.song?.list || [];
+  return list
+    .filter(isSearchPlayable)
+    .map(mapSong)
+    .filter(validTrack);
+}
+
 async function searchDirect(query, limit = 10) {
   const u = new URL('https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp');
   u.searchParams.set('w', query);
@@ -279,15 +297,19 @@ export const qqmusic = {
   enabled: () => true,
 
   async search(query, limit = 10) {
-    try { return await searchDirect(query, limit); }
-    catch (e) {
-      if (!config.qq.apiUrl) {
-        console.error('[qq] search:', e.message);
-        return [];
-      }
+    try {
+      const modern = await searchModern(query, limit);
+      if (modern.length) return modern;
+    } catch (e) { console.error('[qq] search modern:', e.message); }
+    try {
+      const legacy = await searchDirect(query, limit);
+      if (legacy.length) return legacy;
+    } catch (e) { console.error('[qq] search direct:', e.message); }
+    if (config.qq.apiUrl) {
       try { return await searchHosted(query, limit); }
-      catch (err) { console.error('[qq] search:', err.message); return []; }
+      catch (e) { console.error('[qq] search hosted:', e.message); }
     }
+    return [];
   },
 
   async streamUrl(id) {

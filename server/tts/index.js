@@ -2,6 +2,7 @@
 // depending on Fish Audio's overseas endpoint. Tencent Cloud TTS is available
 // as a domestic cloud option; Fish remains as an explicit fallback provider.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -14,8 +15,37 @@ const pending = new Map();
 
 export const TTS_CACHE_DIR = CACHE_DIR;
 
+const CACHE_MAX_FILES = 800; // keep the most-recent N synthesized clips
+
 function ensureDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+// Evict the oldest cached clips so cache/tts/ doesn't grow without bound. Cheap
+// (one readdir + a stat per file); runs at startup and then daily.
+export function pruneTtsCache(maxFiles = CACHE_MAX_FILES) {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) return;
+    const files = fs.readdirSync(CACHE_DIR)
+      .filter((f) => f.endsWith('.wav') || f.endsWith('.mp3'))
+      .map((f) => {
+        const full = path.join(CACHE_DIR, f);
+        try { return { full, mtime: fs.statSync(full).mtimeMs }; } catch { return null; }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtime - a.mtime); // newest first
+    for (const { full } of files.slice(maxFiles)) {
+      try { fs.unlinkSync(full); } catch { /* best effort */ }
+    }
+  } catch (e) { console.error('[tts] cache prune:', e.message); }
+}
+
+let gcTimer = null;
+export function startTtsCacheGc() {
+  if (gcTimer) return;
+  pruneTtsCache();
+  gcTimer = setInterval(() => pruneTtsCache(), 24 * 60 * 60 * 1000);
+  if (gcTimer.unref) gcTimer.unref(); // don't keep the process alive for GC alone
 }
 
 function voiceConfig(overrides = {}) {
@@ -47,39 +77,86 @@ function cachedLocal(text, cfg = voiceConfig()) {
   return null;
 }
 
-function run(cmd, args) {
+function run(cmd, args, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { windowsHide: true });
     let err = '';
+    const killer = setTimeout(() => {
+      try { child.kill(); } catch { /* noop */ }
+      reject(new Error(`${cmd} timed out`));
+    }, timeoutMs);
     child.stderr.on('data', (d) => { err += d.toString(); });
-    child.on('error', reject);
+    child.on('error', (e) => { clearTimeout(killer); reject(e); });
     child.on('close', (code) => {
+      clearTimeout(killer);
       if (code === 0) resolve();
       else reject(new Error((err || `${cmd} exited ${code}`).trim()));
     });
   });
 }
 
-async function synthesizeSystem(text, cfg = voiceConfig()) {
-  const cached = cachedLocal(text, cfg);
-  if (cached) return cached;
-  if (process.platform !== 'darwin') return null;
-  ensureDir();
-  const hash = hashFor(text, cfg);
+// macOS: `say` → AIFF, then `afconvert` → 16-bit WAV the browser can play.
+async function synthesizeMac(text, cfg, hash) {
   const aiff = path.join(CACHE_DIR, `${hash}.aiff`);
   const file = path.join(CACHE_DIR, `${hash}.wav`);
   const url = `/tts/${hash}.wav`;
-
   try {
     const args = cfg.systemVoice ? ['-v', cfg.systemVoice, '-o', aiff, text] : ['-o', aiff, text];
     await run('/usr/bin/say', args);
-  } catch (e) {
+  } catch {
     await run('/usr/bin/say', ['-o', aiff, text]);
   }
-
   await run('/usr/bin/afconvert', ['-f', 'WAVE', '-d', 'LEI16', aiff, file]);
   try { fs.unlinkSync(aiff); } catch { /* best effort */ }
   return { url, cached: false };
+}
+
+// Windows: synthesize with the built-in SAPI voices via System.Speech (PowerShell).
+// The configured voice is a hint; if it isn't installed (e.g. the macOS default
+// "Tingting") we fall back to any installed Chinese voice, else the system default.
+// Text/script go through the OS temp dir so they never land in the web-served cache.
+const WIN_TTS_SCRIPT = `param([string]$TextFile,[string]$OutFile,[string]$Voice)
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Speech
+$text=[System.IO.File]::ReadAllText($TextFile,[System.Text.Encoding]::UTF8)
+$synth=New-Object System.Speech.Synthesis.SpeechSynthesizer
+if($Voice){try{$synth.SelectVoice($Voice)}catch{$zh=$synth.GetInstalledVoices()|Where-Object{$_.Enabled -and $_.VoiceInfo.Culture.Name -like 'zh*'}|Select-Object -First 1;if($zh){$synth.SelectVoice($zh.VoiceInfo.Name)}}}
+$synth.SetOutputToWaveFile($OutFile)
+$synth.Speak($text)
+$synth.Dispose()`;
+
+let winScriptPath = '';
+function ensureWinScript() {
+  if (winScriptPath && fs.existsSync(winScriptPath)) return winScriptPath;
+  winScriptPath = path.join(os.tmpdir(), 'aurio-win-tts.ps1');
+  fs.writeFileSync(winScriptPath, WIN_TTS_SCRIPT, 'utf8');
+  return winScriptPath;
+}
+
+async function synthesizeWindows(text, cfg, hash) {
+  const file = path.join(CACHE_DIR, `${hash}.wav`);
+  const url = `/tts/${hash}.wav`;
+  const txtFile = path.join(os.tmpdir(), `aurio-tts-${hash}.txt`);
+  fs.writeFileSync(txtFile, text, 'utf8');
+  try {
+    await run('powershell', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', ensureWinScript(), txtFile, file, cfg.systemVoice || '',
+    ]);
+  } finally {
+    try { fs.unlinkSync(txtFile); } catch { /* best effort */ }
+  }
+  return { url, cached: false };
+}
+
+async function synthesizeSystem(text, cfg = voiceConfig()) {
+  const cached = cachedLocal(text, cfg);
+  if (cached) return cached;
+  ensureDir();
+  const hash = hashFor(text, cfg);
+  if (process.platform === 'darwin') return synthesizeMac(text, cfg, hash);
+  if (process.platform === 'win32') return synthesizeWindows(text, cfg, hash);
+  return null; // Linux/other: no built-in voice — configure Tencent or Fish.
 }
 
 function sha256Hex(data) {

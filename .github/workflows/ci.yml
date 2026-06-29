@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install server deps
+        run: npm ci
+        env:
+          # No need to download the Electron binary just to lint/import the server.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Smoke-import the server (catches import/syntax errors)
+        run: node -e "import('./server/index.js').then(() => console.log('server import ok'))"
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build the web frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build

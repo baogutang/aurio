@@ -43,7 +43,7 @@ Streaming apps play algorithms. Playlists need manual curation. Aurio is differe
 |---|---------|-------------|
 | 🧠 | **AI DJ Brain** | Local Claude / Codex CLI or API (GLM, DeepSeek, Kimi, OpenAI, Anthropic) |
 | 🎵 | **Multi-source Music** | Navidrome (Subsonic), NetEase Cloud Music, QQ Music — unified search & queue |
-| 🎙️ | **Voice Synthesis** | macOS system TTS, Tencent Cloud, Fish Audio — cached locally |
+| 🎙️ | **Voice Synthesis** | System TTS (macOS `say` · Windows SAPI), Tencent Cloud, Fish Audio — cached locally |
 | 📅 | **Context-aware** | Weather, macOS Calendar, ICS import/subscribe feed into every segment |
 | ⏰ | **Scheduled Show** | 07:00 daily plan · 09:00 morning open · hourly mood checks 10–23 |
 | 💬 | **Chat to Request** | "来点爵士" — intent-based enqueue, steer, or talk-only |
@@ -157,7 +157,7 @@ Full details: [docs/architecture.md](docs/architecture.md)
 | **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, Framer Motion |
 | **AI** | Claude CLI · Codex CLI · OpenAI-compatible / Anthropic APIs |
 | **Music** | Subsonic (Navidrome), NeteaseCloudMusicApi, QQ public adapter |
-| **TTS** | macOS `say`, Tencent Cloud TTS, Fish Audio |
+| **TTS** | System (macOS `say` · Windows SAPI/System.Speech), Tencent Cloud TTS, Fish Audio |
 | **Cast** | node-ssdp, upnp-mediarenderer-client |
 | **Storage** | JSON files (`data/state.json`, `data/settings.json`) |
 
@@ -343,9 +343,10 @@ See [SECURITY.md](SECURITY.md) for the full security model and vulnerability rep
 | ✅ Shipped | Navidrome, NetEase (QR login), QQ Music |
 | ✅ Shipped | CLI + API brain, TTS, weather, calendars, UPnP |
 | ✅ Shipped | In-app settings + onboarding |
+| ✅ Shipped | CI build workflow (GitHub Actions) |
 | ⏳ Planned | DingTalk / WeCom native OAuth |
 | ⏳ Planned | TTS voiceover via UPnP cast |
-| ⏳ Planned | CI workflows, automated tests |
+| ⏳ Planned | Automated tests |
 
 ---
 

@@ -28,7 +28,18 @@ export async function composeSegment(trigger = {}) {
   }
 
   const prompt = await assemble(trigger);
-  const action = await think(prompt); // { say, play[], reason, segue, intent, placement, mood }
+  // The brain can be down (CLI not logged in, API key wrong, network). Don't let
+  // that kill the segment: degrade to an empty action so a music trigger can still
+  // fall back to library recommendations (see runSegment) instead of going silent.
+  let action; // { say, play[], reason, segue, intent, placement, mood }
+  let degraded = false;
+  try {
+    action = await think(prompt);
+  } catch (e) {
+    console.error('[dj] brain unavailable:', e.message);
+    action = { say: '', play: [], reason: '', segue: '', intent: '', placement: '', mood: '' };
+    degraded = true;
+  }
 
   let tracks = dedupeTracks(await resolveQueue(action.play));
   for (const t of tracks) t.url = await playbackUrl(t);
@@ -36,7 +47,7 @@ export async function composeSegment(trigger = {}) {
   const tts = cachedSynthesis(action.say);
   return {
     say: action.say, segue: action.segue, reason: action.reason,
-    ttsUrl: tts?.url || null, tracks,
+    ttsUrl: tts?.url || null, tracks, degraded,
     intent: action.intent || '', placement: action.placement || '', mood: action.mood || '',
   };
 }
@@ -97,6 +108,16 @@ export async function runSegment(trigger = {}, { mode = 'replace', currentIndex 
         for (const t of rec) t.url = await playbackUrl(t);
         seg.tracks = dedupeTracks(rec);
       } catch (e) { console.error('[dj] refill fallback:', e.message); }
+    }
+
+    // Brain down: keep the user informed instead of dead air. Background station
+    // refills (append) stay silent — no patter to synthesize and speak every few
+    // minutes — but anything the user kicked off gets an honest one-liner so the
+    // UI never strands the "thinking…" placeholder.
+    if (seg.degraded && !seg.say && eff !== 'append') {
+      seg.say = seg.tracks.length
+        ? '我的大脑这会儿连不上，先按你的曲库顺了几首，边听边等它回来。'
+        : '我的大脑这会儿连不上（去设置里看看 AI 配置），先陪你安静待一会儿。';
     }
 
     const base = { ts: Date.now(), kind: trigger.kind || 'chat', say: seg.say, segue: seg.segue, reason: seg.reason };

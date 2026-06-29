@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let win = null;
 let tray = null;
+let hasTray = false;
 
 function createWindow(port) {
   win = new BrowserWindow({
@@ -33,13 +34,19 @@ function createWindow(port) {
   });
 
   win.on('close', (e) => {
-    if (!app.isQuitting) { e.preventDefault(); win.hide(); }
+    // Only minimize-to-tray if there's an actual tray icon to restore from;
+    // otherwise let the close quit normally so the app can't get stuck hidden.
+    if (!app.isQuitting && hasTray) { e.preventDefault(); win.hide(); }
   });
 }
 
+// Returns true if a usable (non-empty) tray icon was created.
 function createTray() {
-  const icon = nativeImage.createEmpty();
-  try { tray = new Tray(icon); } catch { return; }
+  const iconPath = path.join(__dirname, '..', 'pwa', 'aurio-logo.png');
+  let icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) return false; // no real icon → don't trap the window on close
+  icon = icon.resize({ width: 16, height: 16 });
+  try { tray = new Tray(icon); } catch { return false; }
   const menu = Menu.buildFromTemplate([
     { label: '显示 Aurio', click: () => win?.show() },
     { type: 'separator' },
@@ -48,6 +55,7 @@ function createTray() {
   tray.setToolTip('Aurio');
   tray.setContextMenu(menu);
   tray.on('click', () => win?.show());
+  return true;
 }
 
 // 打包后首次启动，把只读的品味模板播种到可写的 userData/user，供用户编辑。
@@ -79,7 +87,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow(port);
-  createTray();
+  hasTray = createTray();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(port);
@@ -88,6 +96,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  // Keep running in the tray (radio keeps playing).
-  if (process.platform !== 'darwin') { /* stay alive in tray */ }
+  // With a tray we keep running in the background (radio keeps playing). Without
+  // one, there'd be no way back to the app, so quit (except on macOS, which keeps
+  // apps alive via the dock by convention).
+  if (process.platform !== 'darwin' && !hasTray) app.quit();
 });

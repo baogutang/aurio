@@ -216,10 +216,18 @@ export default function App() {
       setSay(b.say || t('sayError'));
       return;
     }
-    if (b.say) {
-      const cleanSay = cleanSayText(b.say);
+    const cleanSay = b.say ? cleanSayText(b.say) : '';
+    if (cleanSay) {
       setSay(cleanSay);
       setMessages((m) => [...m, { role: 'dj', text: cleanSay }]);
+    } else {
+      // A response with no patter (silent music refill, or the brain declined to
+      // talk) must still clear the transient "thinking/arranging" placeholder,
+      // or the 口播 line gets stuck. Leave a real DJ line from a prior segment
+      // untouched during background refills.
+      setSay((prev) => (prev === t('sayThinking') || prev === t('sayArranging'))
+        ? (b.queue?.length ? t('sayTapPlay') : t('sayReady'))
+        : prev);
     }
 
     const playTts = (after?: () => void) => playTtsUrl(b.ttsUrl, after);

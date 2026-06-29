@@ -9,8 +9,9 @@ export const MUSIC_SOURCES = ['combined', 'netease', 'navidrome', 'qqmusic'];
 
 export function sourceServices() {
   return {
-    // 网易云只有登录后才算用户已配置的音源；QQ 走内置适配器，默认可用。
-    netease: netease.loggedIn(),
+    // 网易云与 QQ 都走内置适配器，搜索开箱即用（无需登录）。网易云登录后能解锁
+    // 更多可播曲目与每日推荐；未登录时版权受限曲的播放地址会解析失败（前端降级）。
+    netease: netease.enabled(),
     navidrome: navidrome.enabled(),
     qqmusic: qqmusic.enabled(),
   };

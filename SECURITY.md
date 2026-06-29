@@ -18,9 +18,17 @@ We aim to acknowledge reports within 72 hours.
 
 Aurio is designed as a **local-first** application:
 
-- The Node.js server binds to `localhost` by default (`PORT=8080`).
-- API keys, cookies, and credentials are stored in `data/settings.json` on the user's machine (gitignored).
-- TTS audio is cached locally in `cache/tts/`.
+- **The control API is restricted to `localhost`.** The server listens on the
+  configured port (`PORT=8080`) on all interfaces — this is required so UPnP/DLNA
+  speakers can fetch audio over the LAN while casting — but every state-changing or
+  sensitive endpoint (settings, chat, trigger, integration tests, profile build,
+  and the WebSocket control channel) rejects non-loopback requests with `403`. Only
+  the static player and the read-only media proxies (`/api/stream/*`, `/api/cover/*`,
+  `/api/ncm/stream/*`, `/api/qq/stream/*`) are reachable from other hosts.
+- Set `AURIO_ALLOW_LAN=true` to lift the restriction and open the whole API to the
+  LAN — only do this behind your own authentication / reverse proxy.
+- API keys, cookies, and credentials are stored in `data/settings.json` on the user's machine (gitignored), written atomically (temp-file + rename).
+- TTS audio is cached locally in `cache/tts/` (oldest clips are evicted automatically).
 
 ### What Aurio Stores Locally
 
@@ -32,9 +40,10 @@ Aurio is designed as a **local-first** application:
 
 ### Network Exposure
 
-- When running `npm run server`, the API and PWA are only reachable on the configured port on your machine unless you explicitly expose it (reverse proxy, firewall rules, etc.).
-- Music stream proxies (`/api/stream/*`, `/api/ncm/stream/*`, `/api/qq/stream/*`) forward audio from external CDNs; they do not expose your credentials to the browser.
+- The control API and the WebSocket stream are loopback-only by default (see above); other machines on your network get `403`. The PWA works on the same machine (Electron, or a browser pointed at `localhost`).
+- Music stream proxies (`/api/stream/*`, `/api/ncm/stream/*`, `/api/qq/stream/*`) and cover art (`/api/cover/*`) forward audio from external CDNs; they stay LAN-reachable so speakers can play while casting, and they do not expose your credentials to the browser.
 - Navidrome credentials are used server-side only; the PWA never receives raw passwords.
+- Do not set `AURIO_ALLOW_LAN=true` (or otherwise expose the port) on an untrusted network without putting your own authentication in front of it.
 
 ### Third-Party Services
 

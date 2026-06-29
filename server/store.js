@@ -46,7 +46,12 @@ function scheduleSave() {
     saveTimer = null;
     try {
       ensureDir();
-      fs.writeFileSync(FILE, JSON.stringify(state, null, 2));
+      // Atomic write: a crash/power-loss mid-write would otherwise truncate
+      // state.json and lose the queue + play history. Write a temp file, then
+      // rename (atomic on the same volume) so the real file is never partial.
+      const tmp = `${FILE}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+      fs.renameSync(tmp, FILE);
     } catch (e) {
       console.error('[store] save failed:', e.message);
     }
