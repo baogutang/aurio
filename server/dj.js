@@ -6,7 +6,10 @@
 import { EventEmitter } from 'node:events';
 import { assemble } from './context.js';
 import { think } from './brain/index.js';
-import { resolveQueue, playbackUrl, candidatesText, recommend, dedupeTracks } from './music/index.js';
+import {
+  resolveQueue, playbackUrl, requestConstraints, hasHardConstraints,
+  describeConstraints, requestCandidates, candidatesToText, recommend, dedupeTracks,
+} from './music/index.js';
 import { cachedSynthesis, synthesizeBackground } from './tts/index.js';
 import { db } from './store.js';
 
@@ -18,11 +21,16 @@ export function isBusy() { return running; }
 // Compose one segment without touching the queue: brain picks songs + patter.
 // Returns { say, segue, reason, ttsUrl, tracks, intent, placement, mood }.
 export async function composeSegment(trigger = {}) {
+  const constraints = trigger.text ? requestConstraints(trigger.text) : {};
+  const hardRequest = hasHardConstraints(constraints);
+  let candidateTracks = [];
+
   // Seed the prompt with real, in-library candidates so the brain picks songs
   // that actually exist instead of guessing titles not in the library.
   if (!trigger.toolResults && trigger.text) {
     try {
-      const cands = await candidatesText(trigger.text, 20);
+      candidateTracks = await requestCandidates(trigger.text, 20);
+      const cands = candidatesToText(candidateTracks);
       if (cands) trigger = { ...trigger, toolResults: cands };
     } catch (e) { console.error('[dj] candidates:', e.message); }
   }
@@ -41,7 +49,10 @@ export async function composeSegment(trigger = {}) {
     degraded = true;
   }
 
-  let tracks = dedupeTracks(await resolveQueue(action.play));
+  let tracks = dedupeTracks(await resolveQueue(action.play, constraints));
+  if (hardRequest && !tracks.length && candidateTracks.length) {
+    tracks = dedupeTracks(candidateTracks.slice(0, 4));
+  }
   for (const t of tracks) t.url = await playbackUrl(t);
 
   const tts = cachedSynthesis(action.say);
@@ -49,6 +60,7 @@ export async function composeSegment(trigger = {}) {
     say: action.say, segue: action.segue, reason: action.reason,
     ttsUrl: tts?.url || null, tracks, degraded,
     intent: action.intent || '', placement: action.placement || '', mood: action.mood || '',
+    constraints, hardRequest, requested: describeConstraints(constraints),
   };
 }
 
@@ -84,6 +96,7 @@ function persistQueuedTts(track, ttsUrl) {
 }
 
 function queueTtsPatch(seg, broadcast) {
+  if (broadcast.mode === 'append') return;
   if (!seg.say || seg.ttsUrl) return;
   const firstTrack = broadcast.mode === 'append' ? trackRef(broadcast.queue?.[0]) : null;
   synthesizeBackground(seg.say, (tts) => {
@@ -124,13 +137,28 @@ export async function runSegment(trigger = {}, { mode = 'replace', currentIndex 
       else { eff = 'insert'; placement = seg.placement === 'append' ? 'append' : 'next'; }
     }
 
-    // A music action must never go silent: if the brain returned no songs, top up.
+    // A generic music action should not go silent, but a hard request ("NAS 里的
+    // 周杰伦") must not be fulfilled with unrelated tracks.
     if (['append', 'insert', 'replace'].includes(eff) && !seg.tracks.length) {
-      try {
-        const rec = await recommend(4);
-        for (const t of rec) t.url = await playbackUrl(t);
-        seg.tracks = dedupeTracks(rec);
-      } catch (e) { console.error('[dj] refill fallback:', e.message); }
+      if (seg.hardRequest) {
+        if (seg.constraints?.source && !seg.constraints?.artist) {
+          try {
+            const rec = await recommend(4, seg.constraints);
+            for (const t of rec) t.url = await playbackUrl(t);
+            seg.tracks = dedupeTracks(rec);
+          } catch (e) { console.error('[dj] constrained fallback:', e.message); }
+        }
+        if (!seg.tracks.length) {
+          seg.say = `我在${seg.requested || '指定范围'}里没找到能播的歌，先不乱放。`;
+          eff = 'chat';
+        }
+      } else {
+        try {
+          const rec = await recommend(4);
+          for (const t of rec) t.url = await playbackUrl(t);
+          seg.tracks = dedupeTracks(rec);
+        } catch (e) { console.error('[dj] refill fallback:', e.message); }
+      }
     }
 
     // Brain down: keep the user informed instead of dead air. Background station
@@ -143,14 +171,12 @@ export async function runSegment(trigger = {}, { mode = 'replace', currentIndex 
         : '我的大脑这会儿连不上（去设置里看看 AI 配置），先陪你安静待一会儿。';
     }
 
-    const base = { ts: Date.now(), kind: trigger.kind || 'chat', say: seg.say, segue: seg.segue, reason: seg.reason };
+    const base = { ts: Date.now(), kind: trigger.kind || 'chat', say: eff === 'append' ? '' : seg.say, segue: seg.segue, reason: seg.reason };
     let broadcast;
 
     if (eff === 'append') {
-      // Patter rides on the segment's first track (narrated at the boundary).
       const q = dedupeTracks(db.getQueue());
       const incoming = dedupeTracks(seg.tracks, q);
-      if (incoming[0]) { incoming[0].segue = seg.say || ''; incoming[0].segueTtsUrl = seg.ttsUrl || null; }
       db.setQueue([...q, ...incoming]);
       broadcast = { ...base, mode: 'append', ttsUrl: null, queue: incoming };
     } else if (eff === 'insert') {
@@ -176,7 +202,7 @@ export async function runSegment(trigger = {}, { mode = 'replace', currentIndex 
       broadcast = { ...base, mode: 'replace', ttsUrl: seg.ttsUrl, queue: q };
     }
 
-    if (seg.say) db.addMessage('dj', seg.say, { kind: trigger.kind || 'chat', reason: seg.reason });
+    if (seg.say && eff !== 'append') db.addMessage('dj', seg.say, { kind: trigger.kind || 'chat', reason: seg.reason });
     bus.emit('broadcast', broadcast);
     queueTtsPatch(seg, broadcast);
     return broadcast;

@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.10] - 2026-06-30
+
+### Fixed
+
+- Enforced hard source and artist constraints for user requests such as "play Jay Chou from NAS", so Aurio no longer falls back to NetEase/QQ/random tracks when the user explicitly asked for NAS or a specific artist.
+- Fixed NAS playback reliability by keeping established proxied audio streams alive and requesting browser-compatible MP3 streams from Navidrome for files that Chromium cannot decode directly.
+- Fixed the up-next queue showing previously played or skipped tracks after manual next, automatic end, or playback-error recovery.
+
+### Changed
+
+- Made background station refills quiet: automatic append now adds music without attaching extra voiceover or spending TTS on every refill.
+- Tightened DJ copy rules so point-and-play patter is shorter, avoids unnatural phrases, does not call 周杰伦 "Jay", and only talks about songs that were actually found.
+- Added regression coverage for NAS/artist request constraints, source filtering, candidate formatting, and wrong-source rejection.
+
 ## [0.2.9] - 2026-06-30
 
 ### Fixed
@@ -91,6 +105,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS voiceover not cast via UPnP (music casting only)
 - Packaged builds require building frontend into `pwa/` before `npm run dist`
 
+[0.2.10]: https://github.com/baogutang/aurio/releases/tag/v0.2.10
 [0.2.9]: https://github.com/baogutang/aurio/releases/tag/v0.2.9
 [0.2.8]: https://github.com/baogutang/aurio/releases/tag/v0.2.8
 [0.2.7]: https://github.com/baogutang/aurio/releases/tag/v0.2.7

@@ -184,6 +184,18 @@ export default function App() {
     reportState();
   }, [syncQueueState, playTrack, reportState]);
 
+  const playQueueIndex = useCallback((index: number, prunePlayed = false) => {
+    const q = queueRef.current;
+    if (index < 0 || index >= q.length) return;
+    if (prunePlayed && index > 0) {
+      const trimmed = q.slice(index);
+      applyQueueEdit(trimmed, 0);
+      playTrack(trimmed[0], 0);
+      return;
+    }
+    playTrack(q[index], index);
+  }, [applyQueueEdit, playTrack]);
+
   const playTtsUrl = useCallback((url?: string | null, after?: () => void) => {
     if (!url || !ttsRef.current) {
       after?.();
@@ -323,7 +335,7 @@ export default function App() {
     const q = queueRef.current;
     if (idxRef.current < q.length - 1) {
       const ni = idxRef.current + 1;
-      playTrack(q[ni], ni);
+      playQueueIndex(ni, true);
     } else if (q.length > 0 && idxRef.current === q.length - 1) {
       reportState();
     }
@@ -336,7 +348,7 @@ export default function App() {
     if (idxRef.current >= 0 && idxRef.current < q.length - 1) {
       const ni = idxRef.current + 1;
       setSay(t('sayTrackFailNext'));
-      window.setTimeout(() => playTrack(q[ni], ni), 250);
+      window.setTimeout(() => playQueueIndex(ni, true), 250);
       return;
     }
     setSay(t('sayTrackFail'));
@@ -356,7 +368,7 @@ export default function App() {
     const q = queueRef.current;
     if (idxRef.current > 0) {
       const pi = idxRef.current - 1;
-      playTrack(q[pi], pi);
+      playQueueIndex(pi);
     }
   };
 
@@ -604,7 +616,7 @@ export default function App() {
           services={services}
           queue={queue}
           queueIndex={queueIndex}
-          onPick={(i) => playTrack(queueRef.current[i], i)}
+          onPick={(i) => playQueueIndex(i, true)}
           onReorder={reorderUpNext}
           onRemove={removeAt}
           onClear={clearUpNext}

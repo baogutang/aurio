@@ -57,6 +57,22 @@ function useQQ() {
   return m === 'combined' || m === 'qqmusic';
 }
 
+function sourceEnabled(source) {
+  const svc = sourceServices();
+  if (source === 'navidrome') return !!svc.navidrome;
+  if (source === 'netease') return !!svc.netease;
+  if (source === 'qqmusic') return !!svc.qqmusic;
+  return false;
+}
+
+function shouldUseSource(source, constraints = {}) {
+  if (constraints.source) return constraints.source === source && sourceEnabled(source);
+  if (source === 'navidrome') return useNavidrome();
+  if (source === 'netease') return useNetease();
+  if (source === 'qqmusic') return useQQ();
+  return false;
+}
+
 function normKeyPart(value = '') {
   return value
     .toString()
@@ -73,6 +89,79 @@ export function trackKeys(track = {}) {
   const artist = normKeyPart(track.artist);
   if (title && artist) keys.push(`song:${artist} - ${title}`);
   return keys;
+}
+
+function normMatch(value = '') {
+  return value
+    .toString()
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+function cleanArtistHint(value = '') {
+  const cleaned = value
+    .toString()
+    .replace(/navidrome|nas|NAS|网易云|网易|qq音乐|QQ音乐|qq|QQ/g, ' ')
+    .replace(/里面|里边|里的|中的|中|上面|上|本地|曲库|音乐库/g, ' ')
+    .replace(/我让|给我|帮我|想听|我想听|播放|放|播|来点|来几首|来首|几首|一首|一些|的歌|歌曲|歌|音乐|唱的/g, ' ')
+    .replace(/[，。,.、：:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const alias = cleaned.toLowerCase().replace(/\s+/g, '');
+  if (alias === 'jay' || alias === 'jaychou') return '周杰伦';
+  return cleaned;
+}
+
+function requestedSource(text = '') {
+  if (/navidrome|nas|本地|曲库|音乐库/i.test(text)) return 'navidrome';
+  if (/网易云|网易|netease/i.test(text)) return 'netease';
+  if (/qq音乐|QQ音乐|qqmusic/i.test(text)) return 'qqmusic';
+  return '';
+}
+
+function requestedArtist(text = '') {
+  const patterns = [
+    /(?:歌手|艺人|artist)\s*[:：]?\s*([\u3400-\u9fffA-Za-z0-9 .·&-]{2,40})/i,
+    /([\u3400-\u9fffA-Za-z0-9 .·&-]{2,40})(?:的歌|歌曲|唱的)/i,
+  ];
+  for (const pattern of patterns) {
+    const hit = text.match(pattern);
+    const cleaned = cleanArtistHint(hit?.[1] || '');
+    if (cleaned) return cleaned;
+  }
+  return '';
+}
+
+export function requestConstraints(text = '') {
+  return {
+    source: requestedSource(text),
+    artist: requestedArtist(text),
+  };
+}
+
+export function hasHardConstraints(constraints = {}) {
+  return !!(constraints.source || constraints.artist);
+}
+
+export function describeConstraints(constraints = {}) {
+  const parts = [];
+  if (constraints.source === 'navidrome') parts.push('NAS');
+  if (constraints.source === 'netease') parts.push('网易云');
+  if (constraints.source === 'qqmusic') parts.push('QQ音乐');
+  if (constraints.artist) parts.push(constraints.artist);
+  return parts.join(' / ');
+}
+
+export function trackMatchesConstraints(track = {}, constraints = {}) {
+  if (constraints.source && track.source !== constraints.source) return false;
+  if (constraints.artist) {
+    const wanted = normMatch(constraints.artist);
+    const artist = normMatch(track.artist);
+    if (!artist || (!artist.includes(wanted) && !wanted.includes(artist))) return false;
+  }
+  return true;
 }
 
 function markTrack(seen, track) {
@@ -96,21 +185,22 @@ export function dedupeTracks(tracks = [], existing = []) {
   return out;
 }
 
-export async function search(query, limit = 8) {
+export async function search(query, limit = 8, options = {}) {
+  const constraints = options.constraints || {};
   const results = [];
-  if (useNavidrome()) {
+  if (shouldUseSource('navidrome', constraints)) {
     try { results.push(...await navidrome.search(query, limit)); }
     catch (e) { console.error('[music] navidrome search:', e.message); }
   }
-  if (useNetease()) {
+  if (shouldUseSource('netease', constraints)) {
     try { results.push(...await netease.search(query, limit)); }
     catch (e) { console.error('[music] netease search:', e.message); }
   }
-  if (useQQ()) {
+  if (shouldUseSource('qqmusic', constraints)) {
     try { results.push(...await qqmusic.search(query, limit)); }
     catch (e) { console.error('[music] qq search:', e.message); }
   }
-  return dedupeTracks(results);
+  return dedupeTracks(results.filter((track) => trackMatchesConstraints(track, constraints)));
 }
 
 // The DJ writes queries as "歌手 - 歌名", but Subsonic/Navidrome full-text
@@ -120,32 +210,35 @@ function normalizeQuery(q = '') {
   return q.replace(/\s+[-–—]\s+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-async function searchOne(query) {
-  if (useNavidrome()) {
+async function searchOne(query, constraints = {}) {
+  if (shouldUseSource('navidrome', constraints)) {
     try {
-      const hits = await navidrome.search(query, 1);
-      if (hits[0]) return hits[0];
+      const hits = await navidrome.search(query, 8);
+      const hit = hits.find((track) => trackMatchesConstraints(track, constraints));
+      if (hit) return hit;
     } catch (e) { console.error('[music] navidrome resolve:', e.message); }
   }
-  if (useNetease()) {
+  if (shouldUseSource('netease', constraints)) {
     try {
-      const hits = await netease.search(query, 1);
-      if (hits[0]) return hits[0];
+      const hits = await netease.search(query, 8);
+      const hit = hits.find((track) => trackMatchesConstraints(track, constraints));
+      if (hit) return hit;
     } catch (e) { console.error('[music] netease resolve:', e.message); }
   }
-  if (useQQ()) {
+  if (shouldUseSource('qqmusic', constraints)) {
     try {
-      const hits = await qqmusic.search(query, 1);
-      if (hits[0]) return hits[0];
+      const hits = await qqmusic.search(query, 8);
+      const hit = hits.find((track) => trackMatchesConstraints(track, constraints));
+      if (hit) return hit;
     } catch (e) { console.error('[music] qq resolve:', e.message); }
   }
   return null;
 }
 
-export async function resolve(query) {
+export async function resolve(query, constraints = {}) {
   const norm = normalizeQuery(query);
-  let hit = await searchOne(norm);
-  if (!hit && norm !== query) hit = await searchOne(query); // fall back to raw
+  let hit = await searchOne(norm, constraints);
+  if (!hit && norm !== query) hit = await searchOne(query, constraints); // fall back to raw
   return hit;
 }
 
@@ -159,15 +252,21 @@ function keywordsFor(text = '') {
 // Real, in-library candidates for a free-text request, formatted for the prompt.
 // Returns '' when nothing matches (caller then lets the brain free-associate).
 export async function candidatesText(text, limit = 20) {
+  return candidatesToText(await requestCandidates(text, limit));
+}
+
+export async function requestCandidates(text, limit = 20) {
+  const constraints = requestConstraints(text);
   const kw = keywordsFor(text);
   const queries = [];
+  if (constraints.artist) queries.push(constraints.artist);
   if (kw) queries.push(kw);
   if (text && text.trim() && text.trim() !== kw) queries.push(text.trim());
   const seen = new Set();
   const out = [];
   for (const q of queries) {
     let hits = [];
-    try { hits = await search(q, limit); } catch { /* ignore */ }
+    try { hits = await search(q, limit, { constraints }); } catch { /* ignore */ }
     for (const h of hits) {
       if (hasTrack(seen, h)) continue;
       markTrack(seen, h);
@@ -176,17 +275,21 @@ export async function candidatesText(text, limit = 20) {
     }
     if (out.length >= limit) break;
   }
-  return out
-    .map((t) => `- ${t.artist} - ${t.title}${t.album ? ` 《${t.album}》` : ''} [${t.source}]`)
+  return out;
+}
+
+export function candidatesToText(tracks = []) {
+  return tracks
+    .map((t) => `- ${t.artist} - ${t.title}${t.album ? ` 《${t.album}》` : ''} [${sourceLabel(t.source)}]`)
     .join('\n');
 }
 
-export async function resolveQueue(requests = []) {
+export async function resolveQueue(requests = [], constraints = {}) {
   const out = [];
   for (const req of requests) {
     const q = typeof req === 'string' ? req : req.query;
     if (!q) continue;
-    const track = await resolve(q);
+    const track = await resolve(q, constraints);
     if (track) out.push({ ...track, reason: req.reason || '' });
   }
   return dedupeTracks(out);
@@ -249,18 +352,25 @@ export async function lyricsLines(track = {}) {
   return { synced: false, lines: [] };
 }
 
-export async function recommend(count = 20) {
+function sourceLabel(source) {
+  if (source === 'navidrome') return 'NAS';
+  if (source === 'netease') return '网易云';
+  if (source === 'qqmusic') return 'QQ音乐';
+  return source || 'unknown';
+}
+
+export async function recommend(count = 20, constraints = {}) {
   const pools = [];
-  if (useNavidrome()) {
+  if (shouldUseSource('navidrome', constraints)) {
     try { pools.push(await navidrome.random(count)); } catch (e) { console.error('[music] recommend:', e.message); }
   }
-  if (useNetease()) {
+  if (shouldUseSource('netease', constraints)) {
     try {
       const rec = await netease.dailyRecommend();
       if (rec?.length) pools.push(rec);
     } catch (e) { console.error('[music] netease recommend:', e.message); }
   }
-  if (useQQ()) {
+  if (shouldUseSource('qqmusic', constraints)) {
     try {
       const rec = await qqmusic.recommend(count);
       if (rec?.length) pools.push(rec);
@@ -273,7 +383,7 @@ export async function recommend(count = 20) {
       if (p[i]) mixed.push(p[i]);
     }
   }
-  return dedupeTracks(mixed).slice(0, count);
+  return dedupeTracks(mixed.filter((track) => trackMatchesConstraints(track, constraints))).slice(0, count);
 }
 
 export { navidrome, netease, qqmusic };

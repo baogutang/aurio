@@ -507,7 +507,6 @@ async function proxyAudio(upstreamUrl, req, res, fallbackType = 'audio/mpeg') {
     const v = h === 'content-type' ? ct : upstream.headers.get(h);
     if (v) res.setHeader(h, v);
   }
-  req.on('close', () => controller.abort());
   res.on('close', () => controller.abort());
   if (upstream.body) {
     const stream = Readable.fromWeb(upstream.body);

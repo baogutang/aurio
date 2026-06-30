@@ -116,9 +116,11 @@ export const navidrome = {
     } catch { return ''; }
   },
 
-  // Direct stream URL (with auth baked in) — used by the local proxy.
-  streamUrl(id) {
-    return buildUrl('stream', { id }).toString();
+  // Direct stream URL (with auth baked in) — used by the local proxy. Ask
+  // Navidrome for an MP3 stream so browser playback is reliable even when the
+  // NAS file is ALAC/APE/DSD or another format Chromium cannot decode directly.
+  streamUrl(id, options = {}) {
+    return buildUrl('stream', { id, format: 'mp3', maxBitRate: 320, ...options }).toString();
   },
 
   coverUrl(id, size = 300) {
