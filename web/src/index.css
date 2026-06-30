@@ -130,7 +130,7 @@ body {
 .app-card-body {
   position: relative;
   z-index: 2;
-  overflow-y: auto;
+  overflow-y: hidden;
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -409,7 +409,10 @@ body {
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
 }
 .header-pill:hover {
   color: var(--text-primary);
@@ -451,7 +454,7 @@ body {
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.4rem;
 }
 
@@ -525,6 +528,105 @@ body {
   border: 1px solid var(--glass-border);
 }
 
+.pressable,
+.panel-dot,
+.glass-card,
+.app-card {
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+.pressable {
+  position: relative;
+  overflow: hidden;
+  will-change: transform;
+}
+
+.main-card {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main-card--play {
+  display: flex;
+  flex-direction: column;
+  padding: 0.9rem;
+}
+
+.main-card--clock {
+  padding-right: 0.12rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.play-card-scroll {
+  flex: 1;
+  min-height: 0;
+  padding-right: 0.12rem;
+}
+
+.lyrics-panel {
+  max-height: clamp(96px, 19vh, 146px);
+}
+
+.lyrics-empty {
+  min-height: 42px;
+}
+
+.upnext-list {
+  max-height: clamp(76px, 16vh, 132px);
+}
+
+.upnext-row {
+  min-height: 32px;
+}
+
+.onboarding-overlay {
+  background:
+    linear-gradient(180deg, rgba(6, 8, 12, 0.72), rgba(6, 8, 12, 0.9)),
+    rgba(6, 8, 12, 0.84);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.onboarding-card {
+  border-radius: 24px;
+  color: #f8fafc;
+  background: rgba(13, 17, 24, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.onboarding-subtitle,
+.onboarding-step-desc {
+  color: rgba(248, 250, 252, 0.72);
+}
+
+.onboarding-step {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+.onboarding-step:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(90, 209, 154, 0.4);
+  transform: translateY(-1px);
+}
+.onboarding-step-action {
+  color: #7ee2ad;
+}
+.onboarding-skip {
+  color: rgba(248, 250, 252, 0.64);
+}
+.onboarding-skip:hover {
+  color: #f8fafc;
+}
+
 /* Content sections inside the card (no nested card chrome) */
 .panel-header {
   padding: 0 0.25rem 0.75rem;
@@ -578,7 +680,12 @@ body {
     color: var(--text-secondary);
     background: var(--inset-bg);
     border: 1px solid var(--glass-border);
-    transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    transition:
+      color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      background 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
     cursor: pointer;
   }
   .pill-btn:hover {
@@ -606,7 +713,11 @@ body {
     background: var(--inset-bg);
     color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition:
+      color 0.2s ease,
+      background 0.2s ease,
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
   }
   .option-chip:hover { color: var(--text-secondary); }
   .option-chip.is-active {
@@ -684,7 +795,12 @@ body {
     color: var(--text-muted);
     background: var(--inset-bg);
     border: 1px solid var(--glass-border);
-    transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    transition:
+      color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      background 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
     cursor: pointer;
   }
   .transport:hover:not(:disabled) {
@@ -764,7 +880,10 @@ body {
     background: var(--inset-bg);
     border: 1px solid var(--glass-border);
     cursor: pointer;
-    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    transition:
+      border-color 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .input-bar:hover {
     border-color: rgba(var(--accent-rgb), 0.3);
@@ -793,5 +912,39 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 460px) {
+  .app-frame { padding: 10px; }
+  .header-avatar {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 14px;
+  }
+  .header-pill {
+    padding-inline: 0.5rem;
+    font-size: 0.56rem;
+  }
+  .status-cell {
+    padding-inline: 0.5rem;
+  }
+  .status-cell-label {
+    font-size: 0.52rem;
+  }
+  .status-cell-value {
+    font-size: 0.66rem;
+  }
+  .transport-row {
+    gap: 1rem;
+  }
+  .main-card--play {
+    padding: 0.78rem;
+  }
+  .lyrics-panel {
+    max-height: 110px;
+  }
+  .upnext-list {
+    max-height: 96px;
   }
 }

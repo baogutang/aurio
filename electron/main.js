@@ -14,6 +14,27 @@ let tray = null;
 let hasTray = false;
 let updateDownloaded = false;
 
+function describeRuntimeError(error) {
+  if (!error) return 'Unknown runtime error';
+  if (error instanceof Error) return error.stack || error.message;
+  return String(error);
+}
+
+function handleRuntimeError(error) {
+  const message = describeRuntimeError(error);
+  console.error('[Aurio runtime]', message);
+  try {
+    if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('aurio:runtime-warning', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  } catch { /* keep non-fatal runtime errors non-fatal */ }
+}
+
+process.on('uncaughtException', handleRuntimeError);
+process.on('unhandledRejection', handleRuntimeError);
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
@@ -130,10 +151,11 @@ ipcMain.handle('aurio:update:install', async () => {
 
 function createWindow(port) {
   win = new BrowserWindow({
-    width: 420,
-    height: 760,
-    minWidth: 360,
-    minHeight: 600,
+    width: 520,
+    height: 820,
+    minWidth: 440,
+    minHeight: 680,
+    useContentSize: true,
     title: 'Aurio',
     backgroundColor: '#030303',
     autoHideMenuBar: true,

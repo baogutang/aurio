@@ -15,9 +15,9 @@ function Row({ track, absIndex, onPick, onRemove }: {
       value={track}
       dragListener={false}
       dragControls={controls}
-      className="flex items-center gap-1.5 px-1 py-1 rounded-md select-none"
+      className="upnext-row flex items-center gap-1.5 px-1 py-1 rounded-md select-none"
       style={{ background: 'rgba(127,127,127,0.08)' }}
-      whileDrag={{ scale: 1.04, background: 'rgba(127,127,127,0.16)' }}
+      whileDrag={{ scale: 1.015, background: 'rgba(127,127,127,0.16)' }}
     >
       <button
         type="button"
@@ -57,7 +57,7 @@ export default function UpNext({ items, baseIndex, onPick, onRemove, onReorder, 
 }) {
   if (!items.length) return null;
   return (
-    <div className="mt-4 pt-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
+    <div className="upnext mt-3 pt-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
       <div className="flex items-center justify-between mb-1.5">
         <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)]">待播 · {items.length}</p>
         <button
@@ -72,7 +72,7 @@ export default function UpNext({ items, baseIndex, onPick, onRemove, onReorder, 
         axis="y"
         values={items}
         onReorder={onReorder}
-        className="max-h-[170px] overflow-y-auto scroll-panel space-y-1"
+        className="upnext-list scroll-panel space-y-1"
       >
         {items.map((track, i) => (
           <Row

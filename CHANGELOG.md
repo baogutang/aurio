@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.7] - 2026-06-30
+
+### Fixed
+
+- Prevented transient AI, music, or network timeouts from surfacing as macOS main-process JavaScript error dialogs.
+- Increased and protected the default desktop window size so the player opens in a usable layout.
+- Contained the now-playing card, lyrics, and queue scrolling so page scroll cannot collapse the transport controls or overlap the queue.
+- Refreshed main-page source availability immediately after settings changes, including a newly saved NAS/Navidrome source.
+- Improved first-run onboarding contrast so text stays readable over the dark setup overlay.
+- Added playback stall recovery so a stuck audio stream does not leave the UI showing playback with no sound.
+- Smoothed button and panel motion by removing high-frequency click ripples and tightening animation transitions.
+- Tuned DJ prompt rules so generated patter sounds shorter, more natural, and less like an AI assistant.
+
 ## [0.2.6] - 2026-06-30
 
 ### Fixed
@@ -57,6 +70,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS voiceover not cast via UPnP (music casting only)
 - Packaged builds require building frontend into `pwa/` before `npm run dist`
 
+[0.2.7]: https://github.com/baogutang/aurio/releases/tag/v0.2.7
 [0.2.6]: https://github.com/baogutang/aurio/releases/tag/v0.2.6
 [0.2.5]: https://github.com/baogutang/aurio/releases/tag/v0.2.5
 [0.2.4]: https://github.com/baogutang/aurio/releases/tag/v0.2.4

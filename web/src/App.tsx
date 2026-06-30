@@ -31,6 +31,7 @@ export default function App() {
   const lastBroadcastTs = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const audioPrimed = useRef(false);
+  const playbackRecoveryTimer = useRef<number | undefined>(undefined);
 
   const [current, setCurrent] = useState<Track | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -146,6 +147,7 @@ export default function App() {
 
   const playTrack = useCallback((tr: Track, idx: number) => {
     if (!tr?.url) return;
+    clearPlaybackRecovery();
     scrobbled.current = false;
     setCurrent(tr);
     setQueueIndex(idx);
@@ -311,6 +313,13 @@ export default function App() {
   const applyTtsPatchRef = useRef(applyTtsPatch);
   applyTtsPatchRef.current = applyTtsPatch;
 
+  const clearPlaybackRecovery = () => {
+    if (playbackRecoveryTimer.current) {
+      window.clearTimeout(playbackRecoveryTimer.current);
+      playbackRecoveryTimer.current = undefined;
+    }
+  };
+
   const next = () => {
     const q = queueRef.current;
     if (idxRef.current < q.length - 1) {
@@ -322,6 +331,7 @@ export default function App() {
   };
 
   const onAudioError = () => {
+    clearPlaybackRecovery();
     setPlaying(false);
     const q = queueRef.current;
     if (idxRef.current >= 0 && idxRef.current < q.length - 1) {
@@ -332,6 +342,15 @@ export default function App() {
     }
     setSay(t('sayTrackFail'));
     reportState();
+  };
+
+  const schedulePlaybackRecovery = () => {
+    clearPlaybackRecovery();
+    playbackRecoveryTimer.current = window.setTimeout(() => {
+      const a = audioRef.current;
+      if (!a || a.paused) return;
+      if (a.readyState < 3) onAudioError();
+    }, 10000);
   };
 
   const prev = () => {
@@ -390,8 +409,9 @@ export default function App() {
     return () => { stop = true; wsRef.current = null; ws?.close(); };
   }, [syncQueueState, reportState]);
 
-  useEffect(() => {
-    api.status().then((s) => {
+  const refreshStatus = useCallback(async (announce = false) => {
+    try {
+      const s = await api.status();
       if (s?.config) {
         const sourceServices = Array.isArray(s.sourceModes)
           ? servicesFromModes(s.sourceModes)
@@ -409,16 +429,27 @@ export default function App() {
       if (s?.musicSource === 'netease' || s?.musicSource === 'navidrome' || s?.musicSource === 'qqmusic' || s?.musicSource === 'combined') {
         setMusicSource(s.musicSource);
       }
-      if (!s?.config?.navidrome && !s?.config?.netease && !s?.config?.qqmusic) {
-        setSay(t('sayNoSource'));
-      } else {
-        setSay(t('sayReady'));
+      if (announce && idxRef.current < 0) {
+        if (!s?.config?.navidrome && !s?.config?.netease && !s?.config?.qqmusic) {
+          setSay(t('sayNoSource'));
+        } else {
+          setSay(t('sayReady'));
+        }
       }
-    }).catch(() => {
-      setSay(t('sayServerDown'));
+    } catch {
+      if (announce) setSay(t('sayServerDown'));
       setConn('');
-    });
+    }
   }, [t]);
+
+  useEffect(() => {
+    void refreshStatus(true);
+    const onSettingsChanged = () => { void refreshStatus(false); };
+    window.addEventListener('aurio:settings-changed', onSettingsChanged);
+    return () => window.removeEventListener('aurio:settings-changed', onSettingsChanged);
+  }, [refreshStatus]);
+
+  useEffect(() => () => clearPlaybackRecovery(), []);
 
   useEffect(() => {
     api.messages(120).then((r) => {
@@ -561,7 +592,7 @@ export default function App() {
         />
       </motion.div>
 
-      <motion.div {...stagger(2)} className="min-h-0 flex-1">
+      <motion.div {...stagger(2)} className="min-h-0 flex-1 overflow-hidden">
         <MainCard
           track={current}
           progress={progress}
@@ -634,8 +665,12 @@ export default function App() {
         onTimeUpdate={onTime}
         onEnded={next}
         onError={onAudioError}
-        onPlay={() => { setPlaying(true); reportState(); }}
-        onPause={() => { setPlaying(false); reportState(); }}
+        onWaiting={schedulePlaybackRecovery}
+        onStalled={schedulePlaybackRecovery}
+        onCanPlay={clearPlaybackRecovery}
+        onPlaying={clearPlaybackRecovery}
+        onPlay={() => { clearPlaybackRecovery(); setPlaying(true); reportState(); }}
+        onPause={() => { clearPlaybackRecovery(); setPlaying(false); reportState(); }}
       />
       <audio ref={ttsRef} />
     </WidgetShell>

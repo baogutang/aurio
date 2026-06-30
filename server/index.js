@@ -432,8 +432,13 @@ app.get('/api/lyrics', async (req, res) => {
 app.post('/api/chat', async (req, res) => {
   const text = (req.body?.text || '').toString().trim();
   if (!text) return res.status(400).json({ error: 'empty' });
-  const result = await runSegment({ kind: 'chat', text }, { mode: 'auto', currentIndex: currentIndex() });
-  res.json(result);
+  try {
+    const result = await runSegment({ kind: 'chat', text }, { mode: 'auto', currentIndex: currentIndex() });
+    res.json(result);
+  } catch (e) {
+    console.error('[chat] segment failed:', e);
+    res.json({ ok: false, error: e?.message || String(e), say: '我这边刚才卡了一下，别急，播放还在。' });
+  }
 });
 
 // ---- Manually fire a scheduled-style beat (plan / morning / mood) ----
@@ -442,8 +447,13 @@ app.post('/api/trigger', async (req, res) => {
   if (!['plan', 'morning', 'mood', 'station'].includes(kind)) {
     return res.status(400).json({ ok: false, error: 'invalid trigger kind' });
   }
-  const result = await run({ kind });
-  res.json(result);
+  try {
+    const result = await run({ kind });
+    res.json(result);
+  } catch (e) {
+    console.error('[trigger] segment failed:', e);
+    res.json({ ok: false, error: e?.message || String(e), say: '刚才这一段没接稳，我先保持当前播放。' });
+  }
 });
 
 // ---- Current queue / plan ----

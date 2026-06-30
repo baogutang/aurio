@@ -20,6 +20,7 @@ export default function Lyrics({ track, audioRef }: {
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [synced, setSynced] = useState(false);
   const [active, setActive] = useState(-1);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<(HTMLParagraphElement | null)[]>([]);
 
   // Fetch lyrics whenever the track changes.
@@ -41,17 +42,22 @@ export default function Lyrics({ track, audioRef }: {
     return () => a.removeEventListener('timeupdate', onTime);
   }, [audioRef, synced, lines]);
 
-  // Auto-scroll the active line to center.
+  // Auto-scroll inside the lyric panel only. scrollIntoView can move the app
+  // shell itself, which makes the player layout jump while music is playing.
   useEffect(() => {
-    rowRefs.current[active]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const row = rowRefs.current[active];
+    const container = containerRef.current;
+    if (!row || !container) return;
+    const target = row.offsetTop - (container.clientHeight - row.clientHeight) / 2;
+    container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
   }, [active]);
 
   if (!lines.length) {
-    return <p className="text-center text-[12px] text-[var(--text-muted)] py-4">暂无歌词</p>;
+    return <p className="lyrics-empty text-center text-[12px] text-[var(--text-muted)] py-3">暂无歌词</p>;
   }
 
   return (
-    <div className="max-h-[180px] overflow-y-auto scroll-panel py-2 text-center">
+    <div ref={containerRef} className="lyrics-panel scroll-panel py-2 text-center">
       {lines.map((l, i) => {
         const on = synced && i === active;
         return (

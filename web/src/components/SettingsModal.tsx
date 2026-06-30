@@ -774,6 +774,9 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
   const [settings, setSettings] = useState<SettingsResp | null>(null);
 
   const reload = () => api.settings().then(setSettings).catch(() => {});
+  const reloadAfterChange = () => reload().finally(() => {
+    window.dispatchEvent(new Event('aurio:settings-changed'));
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -797,13 +800,13 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
   const panel = (g: Group) => {
     switch (g) {
       case 'appearance': return <AppearancePanel t={t} />;
-      case 'ai': return <AiPanel t={t} onChanged={reload} />;
-      case 'ncm': return <NcmPanel t={t} onChanged={reload} />;
-      case 'nas': return <NasPanel t={t} settings={settings} onChanged={reload} />;
-      case 'qq': return <QQPanel t={t} settings={settings} onChanged={reload} />;
-      case 'fish': return <FishPanel t={t} settings={settings} onChanged={reload} />;
-      case 'calendar': return <CalendarPanel t={t} settings={settings} onChanged={reload} />;
-      case 'weather': return <WeatherPanel t={t} settings={settings} onChanged={reload} />;
+      case 'ai': return <AiPanel t={t} onChanged={reloadAfterChange} />;
+      case 'ncm': return <NcmPanel t={t} onChanged={reloadAfterChange} />;
+      case 'nas': return <NasPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
+      case 'qq': return <QQPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
+      case 'fish': return <FishPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
+      case 'calendar': return <CalendarPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
+      case 'weather': return <WeatherPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
       case 'cast': return <CastPanel t={t} currentTrack={currentTrack} />;
       case 'updates': return <UpdatesPanel t={t} />;
     }

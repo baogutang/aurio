@@ -1,9 +1,9 @@
 /** Shared framer-motion presets — Apple-like springs */
 export const spring = {
-  snappy: { type: 'spring' as const, stiffness: 420, damping: 32, mass: 0.8 },
-  gentle: { type: 'spring' as const, stiffness: 260, damping: 28, mass: 1 },
-  sheet: { type: 'spring' as const, stiffness: 340, damping: 36, mass: 0.9 },
-  soft: { type: 'spring' as const, stiffness: 180, damping: 26, mass: 1.1 },
+  snappy: { type: 'spring' as const, stiffness: 330, damping: 34, mass: 0.86 },
+  gentle: { type: 'spring' as const, stiffness: 230, damping: 30, mass: 1 },
+  sheet: { type: 'spring' as const, stiffness: 300, damping: 36, mass: 0.95 },
+  soft: { type: 'spring' as const, stiffness: 170, damping: 28, mass: 1.1 },
 };
 
 export const fadeUp = {
