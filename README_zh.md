@@ -6,8 +6,13 @@
 
 # Aurio
 
-*你的私人 AI 电台 —— 懂上下文、连真曲库、跑在本地。*
+**你的私人 AI 电台。**
 
+*懂上下文 · 连真曲库 · 跑在本地。*
+
+<br />
+
+[![Version](https://img.shields.io/badge/version-0.1.0-ff6a3d?style=flat-square)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-5ad19a?style=flat-square)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/Node-20%2B-339933?style=flat-square&logo=node.js&logoColor=white)](package.json)
 [![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white)](package.json)
@@ -17,6 +22,11 @@
 <br />
 
 **[快速开始](#快速开始)** · **[API 中转站](#api-中转站)** · **[界面一览](#界面一览)** · **[架构](#架构)** · **[文档](#文档)**
+
+<br />
+
+<a href="https://github.com/baogutang/aurio/releases/latest"><img src="https://img.shields.io/badge/下载-macOS_DMG-ff6a3d?style=for-the-badge&logo=apple&logoColor=white" alt="下载 Aurio macOS 版" /></a>
+<a href="https://github.com/baogutang/aurio/releases/latest"><img src="https://img.shields.io/badge/下载-Windows_EXE-47848F?style=for-the-badge&logo=windows&logoColor=white" alt="下载 Aurio Windows 版" /></a>
 
 </div>
 
@@ -45,16 +55,34 @@
   <img src="assets/hero-banner.png" width="920" alt="Aurio 播放器 —— 深色主题待机界面，点阵时钟，渐变背景" />
 </picture>
 
-<p align="center"><sub>Electron · 浏览器 PWA · 420×760 播放器 · 深色 / 浅色主题</sub></p>
+<p align="center">
+  <sub>Electron 桌面 · 浏览器 PWA · 420×760 播放器 · 深色 / 浅色主题</sub>
+</p>
+
+<p align="center">
+  <sub>
+    <strong>支持接入</strong>
+    &nbsp; Claude · Codex · OpenAI 兼容 API
+    &nbsp;·&nbsp; Navidrome · 网易云 · QQ 音乐
+    &nbsp;·&nbsp; macOS 日历 · ICS · OpenWeather
+    &nbsp;·&nbsp; UPnP / DLNA
+  </sub>
+</p>
 
 ---
 
 ## 一眼看懂
 
-| | | |
-|:--|:--|:--|
-| **不是歌单 App** | **不是聊天机器人** | **是本地 AI 电台** |
-| 从 Navidrome、网易云、QQ 拉真歌 | 曲目之间口播，TTS 本地缓存 | 读日历、天气和 `user/taste.md` 再开口 |
+> **不是歌单 App。** 不是聊天机器人。  
+> 是本地 AI DJ —— 从你的曲库拉真歌，读懂你的日程，在曲目之间开口说话。
+
+<table>
+<tr>
+<td align="center" width="33%"><strong>真曲库</strong><br/><sub>Navidrome · 网易云 · QQ</sub></td>
+<td align="center" width="33%"><strong>懂上下文</strong><br/><sub>日历 · 天气 · 品味文档</sub></td>
+<td align="center" width="33%"><strong>本地运行</strong><br/><sub>localhost API · TTS 本地缓存</sub></td>
+</tr>
+</table>
 
 ---
 
@@ -62,6 +90,10 @@
 
 <p align="center">
   <img src="assets/hero-showcase.png" width="920" alt="Aurio —— 浅色待机、深色待机、播出中三屏并列" />
+</p>
+
+<p align="center">
+  <img src="assets/demo-strip.png" width="920" alt="Aurio 界面流程 —— 待机、播出、对话、设置、大脑" />
 </p>
 
 <p align="center">
@@ -74,7 +106,7 @@
 
 ## 为什么做 Aurio
 
-流媒体推算法，歌单靠手搓。**Aurio 走第三条路**：跑在你电脑上的电台主持人，懂你的日程，从你的曲库里选歌。
+流媒体推算法，歌单靠手搓。**Aurio 走第三条路** —— 跑在你电脑上的电台主持人，懂你的日程，从你的曲库里选歌。
 
 | | 算法流媒体 | Aurio |
 |:--|:--|:--|
@@ -84,22 +116,65 @@
 | 口播 | 无 | 系统 / 腾讯 / Fish 语音 |
 | 隐私 | 云端优先 | 本地服务 · 控制面默认 localhost |
 
+### 设计原则
+
+| 原则 | 含义 |
+|:--|:--|
+| **本地优先** | 大脑、队列、TTS 缓存、设置都在本机 —— 云端是可选增强 |
+| **上下文原生** | 每次口播前组装人设、品味、天气、日历、播放记忆 |
+| **曲库落地** | 曲目从真实库解析，不是 AI 幻觉歌名 |
+
+---
+
+## 一天的开台节奏
+
+Aurio 不等你按播放。定时 beat 让节目自己活着：
+
+| 时间 | Beat | 做什么 |
+|:--|:--|:--|
+| **07:00** | `plan` | 日计划 —— 为今天定调 |
+| **09:00** | `morning` | 早安开场 —— 天气、日程、首批选曲 |
+| **10:00–23:00** | `mood` | 整点心情 —— 向队列追加新段落 |
+| **随时** | `open` | 队列见底，电台引擎自动补货 |
+| **按需** | `chat` | 「来点爵士」—— 插播、换 mood、纯聊天 |
+
 ---
 
 ## 核心能力
 
+<details>
+<summary><strong>智能</strong></summary>
+
 | | 功能 | 说明 |
 |:--|:--|:--|
 | 🧠 | **AI 大脑** | Claude / Codex CLI，或任意 OpenAI 兼容 API |
+| 📅 | **情境引擎** | 天气、系统日历、ICS 订阅注入每次口播 |
+| 💬 | **对话点播** | 「放首周杰伦」— 插播、换 mood、纯聊天 |
+| ⏰ | **定时节目** | 07:00 日计划 · 09:00 早安 · 10–23 整点心情 |
+
+</details>
+
+<details>
+<summary><strong>音乐与播出</strong></summary>
+
+| | 功能 | 说明 |
+|:--|:--|:--|
 | 🎵 | **多音源** | Navidrome · 网易云（扫码）· QQ — 搜索、队列、歌词 |
 | 🎙️ | **语音合成** | macOS `say` · Windows SAPI · 腾讯云 · Fish |
-| 📅 | **情境引擎** | 天气、系统日历、ICS 订阅注入每次口播 |
-| ⏰ | **定时节目** | 07:00 日计划 · 09:00 早安 · 10–23 整点心情 |
-| 💬 | **对话点播** | 「来点爵士」— 插播、换 mood、纯聊天 |
 | 📻 | **电台引擎** | 队列见底 WebSocket 自动补货 |
 | 🔊 | **UPnP 投放** | DLNA 音响局域网播放 |
+
+</details>
+
+<details>
+<summary><strong>平台</strong></summary>
+
+| | 功能 | 说明 |
+|:--|:--|:--|
 | 🛡️ | **默认安全** | 控制 API 仅本机；投屏媒体代理可局域网访问 |
 | 🖥️ | **跨平台** | Electron 桌面 + 浏览器 PWA 同一套 UI |
+
+</details>
 
 ---
 
@@ -154,13 +229,14 @@ AI_API_KEY=your-key-from-portal
 
 **需要 Node.js 20+ · macOS 或 Windows**
 
-```bash
-git clone https://github.com/baogutang/aurio.git
-cd aurio && npm install
-cp .env.example .env    # 所有配置均可选
-npm run server          # → http://localhost:8080
-npm start               # Electron 桌面版
-```
+想直接安装？前往 [Releases](https://github.com/baogutang/aurio/releases/latest) 下载最新 **macOS** 或 **Windows** 安装包。
+
+| 步骤 | 命令 |
+|:--:|:--|
+| **1** | `git clone https://github.com/baogutang/aurio.git && cd aurio && npm install` |
+| **2** | `cp .env.example .env` — 所有配置均可选 |
+| **3** | `npm run server` → 打开 `http://localhost:8080` |
+| **4** | `npm start` — Electron 桌面版（可选） |
 
 首次启动有引导向导（AI → 音乐 → 语音），之后随时在 **设置** 里改。
 
@@ -175,7 +251,11 @@ cd web && npm run dev   # 前端热更新
 ## 架构
 
 <p align="center">
-  <img src="assets/architecture.svg" width="720" alt="系统架构" />
+  <img src="assets/architecture.svg" width="720" alt="系统架构 — Electron、PWA、Node 服务、大脑、音乐、TTS" />
+</p>
+
+<p align="center">
+  <img src="assets/workflow.svg" width="720" alt="节目流水线 — 触发、上下文、大脑、解析、TTS、广播" />
 </p>
 
 ```
@@ -183,19 +263,43 @@ cd web && npm run dev   # 前端热更新
 ```
 
 <details>
-<summary><strong>节目流水线</strong></summary>
+<summary><strong>节目流水线（时序）</strong></summary>
 
 ```mermaid
-flowchart LR
-    A[触发] --> B[上下文]
-    B --> C[大脑]
-    C --> D[音乐]
-    D --> E[TTS]
-    E --> F[广播]
+sequenceDiagram
+    participant T as 触发
+    participant C as 上下文
+    participant B as 大脑
+    participant M as 音乐
+    participant V as TTS
+    participant P as 播放器
+
+    T->>C: assemble(trigger)
+    C->>B: think(prompt)
+    B-->>C: {say, play[], intent, ...}
+    C->>M: resolveQueue(play[])
+    M-->>C: tracks with URLs
+    C->>V: cachedSynthesis(say)
+    V-->>P: WebSocket broadcast
 ```
 
 每次 beat 返回 `{ say, play[], reason, segue, intent, placement, mood }`。  
 → [docs/architecture.md](docs/architecture.md)
+
+</details>
+
+<details>
+<summary><strong>技术栈</strong></summary>
+
+| 层级 | 技术 |
+|:--|:--|
+| 桌面 | Electron 33 |
+| 前端 | React 18 · Vite · Tailwind · Framer Motion |
+| 服务 | Node.js 20 · Express · WebSocket |
+| 大脑 | Claude / Codex CLI · OpenAI 兼容 API |
+| 音乐 | Navidrome (Subsonic) · 网易云 API · QQ 音乐 |
+| 语音 | macOS `say` · 腾讯云 · Fish Audio |
+| 投放 | UPnP / DLNA via `node-ssdp` |
 
 </details>
 
@@ -245,7 +349,9 @@ curl -X POST http://localhost:8080/api/chat \
 | 架构 | [docs/architecture.md](docs/architecture.md) |
 | 前端规范 | [docs/FRONTEND_SPEC.md](docs/FRONTEND_SPEC.md) |
 | 安全模型 | [SECURITY.md](SECURITY.md) |
+| 更新日志 | [CHANGELOG.md](CHANGELOG.md) |
 | 贡献指南 | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| 社交预览图 | [PNG](.github/social-preview.png) · [SVG 源文件](.github/social-preview.svg) |
 
 重新生成 README 素材（需先启动服务）：
 
@@ -305,7 +411,9 @@ cd web && npm run build
 
 <div align="center">
 
-**作者 [baogutang](https://github.com/baogutang)** · API 中转站 → **[token.baogutang.top](https://token.baogutang.top)**
+**作者 [baogutang](https://github.com/baogutang)**
+
+API 中转站 → **[token.baogutang.top](https://token.baogutang.top)**
 
 <br />
 

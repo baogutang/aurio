@@ -1,0 +1,87 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="warm" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1030 120) rotate(134) scale(780 600)">
+      <stop offset="0" stop-color="#ff6a3d" stop-opacity="0.85"/>
+      <stop offset="0.42" stop-color="#ff6a3d" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ff6a3d" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="green" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(210 560) rotate(-28) scale(700 480)">
+      <stop offset="0" stop-color="#5ad19a" stop-opacity="0.72"/>
+      <stop offset="0.5" stop-color="#5ad19a" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#5ad19a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="230" y1="90" x2="1040" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#15151b" stop-opacity="0.94"/>
+      <stop offset="1" stop-color="#0c0c10" stop-opacity="0.88"/>
+    </linearGradient>
+    <linearGradient id="line" x1="253" y1="134" x2="1009" y2="494" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff6a3d"/>
+      <stop offset="1" stop-color="#5ad19a"/>
+    </linearGradient>
+    <linearGradient id="auriBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff8a5f"/>
+      <stop offset="1" stop-color="#ff6a3d"/>
+    </linearGradient>
+    <linearGradient id="auriBelly" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7ce6b0"/>
+      <stop offset="1" stop-color="#5ad19a"/>
+    </linearGradient>
+    <filter id="auriGlow" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="174" y="50" width="932" height="548" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="34" stdDeviation="38" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="640" fill="#08080b"/>
+  <rect width="1280" height="640" fill="url(#warm)"/>
+  <rect width="1280" height="640" fill="url(#green)"/>
+
+  <g opacity="0.34">
+    <path d="M0 516C158 488 256 492 398 528C548 566 674 570 828 520C998 466 1126 452 1280 486" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+    <path d="M0 148C174 184 286 186 430 144C564 105 702 98 858 144C1024 192 1130 198 1280 170" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+  </g>
+
+  <g opacity="0.18">
+    <circle cx="82" cy="80" r="2" fill="#ededf0"/>
+    <circle cx="140" cy="236" r="2" fill="#ededf0"/>
+    <circle cx="1122" cy="96" r="2" fill="#ededf0"/>
+    <circle cx="1190" cy="420" r="2" fill="#ededf0"/>
+    <circle cx="1034" cy="536" r="2" fill="#ededf0"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="214" y="82" width="852" height="476" rx="44" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.12"/>
+    <rect x="238" y="106" width="804" height="428" rx="32" stroke="url(#line)" stroke-opacity="0.75" stroke-width="2"/>
+  </g>
+
+  <g transform="translate(544 94)">
+    <rect x="34" y="58" width="124" height="114" rx="38" fill="#ff6a3d" fill-opacity="0.18" filter="url(#auriGlow)"/>
+    <g fill="none" stroke="#5ad19a" stroke-linecap="round" filter="url(#auriGlow)">
+      <path d="M70 44 A38 38 0 0 1 122 44" stroke-width="7" stroke-opacity="0.9"/>
+      <path d="M58 36 A54 54 0 0 1 134 36" stroke-width="7" stroke-opacity="0.45"/>
+    </g>
+    <line x1="96" y1="86" x2="96" y2="50" stroke="#5ad19a" stroke-width="8" stroke-linecap="round" filter="url(#auriGlow)"/>
+    <circle cx="96" cy="47" r="12" fill="#eafff2" filter="url(#auriGlow)"/>
+    <rect x="48" y="82" width="96" height="92" rx="34" fill="url(#auriBody)" filter="url(#auriGlow)"/>
+    <rect x="65" y="128" width="62" height="30" rx="15" fill="url(#auriBelly)" fill-opacity="0.92"/>
+    <g fill="#120d09">
+      <circle cx="78" cy="115" r="10"/>
+      <circle cx="114" cy="115" r="10"/>
+    </g>
+    <g fill="#ffffff">
+      <circle cx="74.5" cy="111.5" r="3"/>
+      <circle cx="110.5" cy="111.5" r="3"/>
+    </g>
+  </g>
+
+  <text x="640" y="350" text-anchor="middle" fill="#ededf0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="104" font-weight="800" letter-spacing="-4">Aurio</text>
+  <text x="640" y="418" text-anchor="middle" fill="#9ee8c4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="38" font-weight="650" letter-spacing="-0.7">Your personal AI radio</text>
+
+  <path d="M500 457H614" stroke="#ff6a3d" stroke-opacity="0.62" stroke-width="2"/>
+  <circle cx="640" cy="457" r="4" fill="#ffd09a"/>
+  <path d="M666 457H780" stroke="#5ad19a" stroke-opacity="0.62" stroke-width="2"/>
+  <text x="640" y="502" text-anchor="middle" fill="#c6c6cc" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="500">Context-aware &#183; library-native &#183; locally hosted</text>
+</svg>
