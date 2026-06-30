@@ -14,6 +14,12 @@ let tray = null;
 let hasTray = false;
 let updateDownloaded = false;
 
+function requestQuit() {
+  app.isQuitting = true;
+  try { tray?.destroy(); } catch { /* ignore tray teardown failures */ }
+  app.quit();
+}
+
 function describeRuntimeError(error) {
   if (!error) return 'Unknown runtime error';
   if (error instanceof Error) return error.stack || error.message;
@@ -202,7 +208,7 @@ function createTray() {
   const menu = Menu.buildFromTemplate([
     { label: '显示 Aurio', click: () => win?.show() },
     { type: 'separator' },
-    { label: '退出', click: () => { app.isQuitting = true; app.quit(); } },
+    { label: '退出', click: requestQuit },
   ]);
   tray.setToolTip('Aurio');
   tray.setContextMenu(menu);
@@ -225,6 +231,10 @@ app.on('second-instance', () => {
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+});
+
+app.on('before-quit', () => {
+  app.isQuitting = true;
 });
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {

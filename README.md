@@ -12,7 +12,7 @@
 
 <br />
 
-[![Version](https://img.shields.io/badge/version-0.2.8-ff6a3d?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.9-ff6a3d?style=flat-square)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-5ad19a?style=flat-square)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/Node-20%2B-339933?style=flat-square&logo=node.js&logoColor=white)](package.json)
 [![Electron](https://img.shields.io/badge/Electron-41-47848F?style=flat-square&logo=electron&logoColor=white)](package.json)

@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.9] - 2026-06-30
+
+### Fixed
+
+- Fixed macOS quitting when Aurio has a tray icon: Dock Quit, Cmd+Q, and system quit now mark the app as actually quitting before the window close handler can minimize it to tray.
+- Cleaned up the tray during explicit quit so the app does not linger hidden in the background.
+
 ## [0.2.8] - 2026-06-30
 
 ### Added
@@ -84,6 +91,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS voiceover not cast via UPnP (music casting only)
 - Packaged builds require building frontend into `pwa/` before `npm run dist`
 
+[0.2.9]: https://github.com/baogutang/aurio/releases/tag/v0.2.9
 [0.2.8]: https://github.com/baogutang/aurio/releases/tag/v0.2.8
 [0.2.7]: https://github.com/baogutang/aurio/releases/tag/v0.2.7
 [0.2.6]: https://github.com/baogutang/aurio/releases/tag/v0.2.6
