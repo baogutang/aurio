@@ -3,11 +3,199 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const sourcePath = path.join(root, 'pwa', 'aurio-logo.png');
 const outDir = path.join(root, 'build');
-const iconsetDir = path.join(outDir, 'icon.iconset');
-
 const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+const clamp = (v, min = 0, max = 1) => Math.max(min, Math.min(max, v));
+
+function color(hex, alpha = 1) {
+  const clean = hex.replace('#', '');
+  return {
+    r: Number.parseInt(clean.slice(0, 2), 16),
+    g: Number.parseInt(clean.slice(2, 4), 16),
+    b: Number.parseInt(clean.slice(4, 6), 16),
+    a: alpha,
+  };
+}
+
+function mix(a, b, t) {
+  return {
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+    a: a.a + (b.a - a.a) * t,
+  };
+}
+
+function image(size) {
+  return { width: size, height: size, pixels: Buffer.alloc(size * size * 4) };
+}
+
+function blendPixel(img, x, y, c, coverage = 1) {
+  x = Math.round(x);
+  y = Math.round(y);
+  if (x < 0 || y < 0 || x >= img.width || y >= img.height) return;
+  const i = (y * img.width + x) * 4;
+  const a = clamp((c.a ?? 1) * coverage);
+  const inv = 1 - a;
+  img.pixels[i] = Math.round(c.r * a + img.pixels[i] * inv);
+  img.pixels[i + 1] = Math.round(c.g * a + img.pixels[i + 1] * inv);
+  img.pixels[i + 2] = Math.round(c.b * a + img.pixels[i + 2] * inv);
+  img.pixels[i + 3] = Math.round(255 * a + img.pixels[i + 3] * inv);
+}
+
+function fillRoundedRect(img, x, y, w, h, r, paint) {
+  const minX = Math.floor(x - 2);
+  const maxX = Math.ceil(x + w + 2);
+  const minY = Math.floor(y - 2);
+  const maxY = Math.ceil(y + h + 2);
+  for (let py = minY; py <= maxY; py++) {
+    for (let px = minX; px <= maxX; px++) {
+      const qx = Math.abs(px + 0.5 - (x + w / 2)) - w / 2 + r;
+      const qy = Math.abs(py + 0.5 - (y + h / 2)) - h / 2 + r;
+      const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+      const coverage = clamp(0.75 - outside);
+      if (coverage > 0) blendPixel(img, px, py, typeof paint === 'function' ? paint(px, py) : paint, coverage);
+    }
+  }
+}
+
+function fillEllipse(img, cx, cy, rx, ry, paint) {
+  const minX = Math.floor(cx - rx - 2);
+  const maxX = Math.ceil(cx + rx + 2);
+  const minY = Math.floor(cy - ry - 2);
+  const maxY = Math.ceil(cy + ry + 2);
+  const aa = Math.max(1, Math.min(rx, ry) * 0.008);
+  for (let py = minY; py <= maxY; py++) {
+    for (let px = minX; px <= maxX; px++) {
+      const dx = (px + 0.5 - cx) / rx;
+      const dy = (py + 0.5 - cy) / ry;
+      const d = (Math.hypot(dx, dy) - 1) * Math.min(rx, ry);
+      const coverage = clamp(0.75 - d / aa);
+      if (coverage > 0) blendPixel(img, px, py, typeof paint === 'function' ? paint(px, py) : paint, coverage);
+    }
+  }
+}
+
+function drawLine(img, x1, y1, x2, y2, width, paint) {
+  const minX = Math.floor(Math.min(x1, x2) - width - 2);
+  const maxX = Math.ceil(Math.max(x1, x2) + width + 2);
+  const minY = Math.floor(Math.min(y1, y2) - width - 2);
+  const maxY = Math.ceil(Math.max(y1, y2) + width + 2);
+  const vx = x2 - x1;
+  const vy = y2 - y1;
+  const len2 = vx * vx + vy * vy || 1;
+  for (let py = minY; py <= maxY; py++) {
+    for (let px = minX; px <= maxX; px++) {
+      const t = clamp(((px + 0.5 - x1) * vx + (py + 0.5 - y1) * vy) / len2);
+      const dx = px + 0.5 - (x1 + vx * t);
+      const dy = py + 0.5 - (y1 + vy * t);
+      const d = Math.hypot(dx, dy) - width / 2;
+      const coverage = clamp(0.8 - d);
+      if (coverage > 0) blendPixel(img, px, py, typeof paint === 'function' ? paint(px, py) : paint, coverage);
+    }
+  }
+}
+
+function drawArc(img, cx, cy, rx, ry, start, end, width, paint) {
+  const steps = Math.max(24, Math.round(Math.abs(end - start) * Math.max(rx, ry) / 10));
+  let prev = null;
+  for (let i = 0; i <= steps; i++) {
+    const t = start + (end - start) * (i / steps);
+    const p = { x: cx + Math.cos(t) * rx, y: cy + Math.sin(t) * ry };
+    if (prev) drawLine(img, prev.x, prev.y, p.x, p.y, width, paint);
+    prev = p;
+  }
+}
+
+function radialGlow(img, cx, cy, radius, base) {
+  const minX = Math.floor(cx - radius);
+  const maxX = Math.ceil(cx + radius);
+  const minY = Math.floor(cy - radius);
+  const maxY = Math.ceil(cy + radius);
+  for (let py = minY; py <= maxY; py++) {
+    for (let px = minX; px <= maxX; px++) {
+      const d = Math.hypot(px + 0.5 - cx, py + 0.5 - cy) / radius;
+      if (d < 1) blendPixel(img, px, py, { ...base, a: base.a * (1 - d) * (1 - d) });
+    }
+  }
+}
+
+function renderIcon(size) {
+  const img = image(size);
+  const s = size / 1024;
+  const sx = (v) => v * s;
+  const top = color('#1d2124');
+  const bottom = color('#070909');
+  const green = color('#76f3ad');
+  const orange1 = color('#ff9a35');
+  const orange2 = color('#ff642f');
+
+  fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), (x, y) => mix(top, bottom, y / size));
+  fillRoundedRect(img, sx(76), sx(76), sx(872), sx(872), sx(184), color('#ffffff', 0.035));
+  radialGlow(img, sx(512), sx(315), sx(345), color('#65f0a0', 0.34));
+  radialGlow(img, sx(512), sx(650), sx(360), color('#ff6a3d', 0.13));
+
+  for (let y = 128; y < 900; y += 54) {
+    for (let x = 128; x < 900; x += 54) fillEllipse(img, sx(x), sx(y), sx(4), sx(4), color('#ffffff', 0.055));
+  }
+
+  drawArc(img, sx(512), sx(313), sx(138), sx(100), Math.PI * 1.05, Math.PI * 1.95, sx(15), color('#9cffc5', 0.86));
+  drawArc(img, sx(512), sx(310), sx(210), sx(154), Math.PI * 1.07, Math.PI * 1.93, sx(13), color('#6df0a4', 0.50));
+  drawArc(img, sx(512), sx(306), sx(280), sx(205), Math.PI * 1.1, Math.PI * 1.9, sx(10), color('#5ad19a', 0.28));
+
+  drawLine(img, sx(512), sx(430), sx(512), sx(330), sx(21), color('#7df5ae', 0.92));
+  fillEllipse(img, sx(512), sx(303), sx(39), sx(39), color('#eafff2', 1));
+  fillEllipse(img, sx(512), sx(303), sx(22), sx(22), color('#5dff9e', 0.9));
+
+  fillEllipse(img, sx(512), sx(642), sx(248), sx(250), (x, y) => mix(orange1, orange2, clamp((y - sx(440)) / sx(430))));
+  fillEllipse(img, sx(333), sx(657), sx(82), sx(118), color('#ff6937', 0.98));
+  fillEllipse(img, sx(691), sx(657), sx(82), sx(118), color('#ff6937', 0.98));
+  fillRoundedRect(img, sx(396), sx(807), sx(90), sx(82), sx(30), color('#fa5b2a', 1));
+  fillRoundedRect(img, sx(538), sx(807), sx(90), sx(82), sx(30), color('#fa5b2a', 1));
+
+  fillEllipse(img, sx(512), sx(690), sx(150), sx(108), (x, y) => mix(color('#a1ffd1'), color('#43d79a'), clamp((y - sx(585)) / sx(215))));
+  fillEllipse(img, sx(512), sx(690), sx(116), sx(76), color('#baffdd', 0.34));
+
+  fillEllipse(img, sx(420), sx(575), sx(42), sx(52), color('#140f0c', 0.96));
+  fillEllipse(img, sx(604), sx(575), sx(42), sx(52), color('#140f0c', 0.96));
+  fillEllipse(img, sx(433), sx(557), sx(12), sx(14), color('#ffffff', 0.96));
+  fillEllipse(img, sx(617), sx(557), sx(12), sx(14), color('#ffffff', 0.96));
+  drawLine(img, sx(486), sx(632), sx(507), sx(651), sx(12), color('#22130c', 0.95));
+  drawLine(img, sx(507), sx(651), sx(538), sx(651), sx(12), color('#22130c', 0.95));
+  drawLine(img, sx(538), sx(651), sx(559), sx(632), sx(12), color('#22130c', 0.95));
+
+  fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), color('#ffffff', 0.04));
+  drawLine(img, sx(190), sx(920), sx(834), sx(920), sx(10), color('#ffffff', 0.045));
+  return img;
+}
+
+function resizeImage(src, size) {
+  const out = image(size);
+  const scaleX = src.width / size;
+  const scaleY = src.height / size;
+  for (let y = 0; y < size; y++) {
+    const sy = (y + 0.5) * scaleY - 0.5;
+    const y0 = Math.max(0, Math.floor(sy));
+    const y1 = Math.min(src.height - 1, y0 + 1);
+    const ty = sy - y0;
+    for (let x = 0; x < size; x++) {
+      const sx = (x + 0.5) * scaleX - 0.5;
+      const x0 = Math.max(0, Math.floor(sx));
+      const x1 = Math.min(src.width - 1, x0 + 1);
+      const tx = sx - x0;
+      const dst = (y * size + x) * 4;
+      for (let c = 0; c < 4; c++) {
+        const p00 = src.pixels[(y0 * src.width + x0) * 4 + c];
+        const p10 = src.pixels[(y0 * src.width + x1) * 4 + c];
+        const p01 = src.pixels[(y1 * src.width + x0) * 4 + c];
+        const p11 = src.pixels[(y1 * src.width + x1) * 4 + c];
+        out.pixels[dst + c] = Math.round((p00 * (1 - tx) + p10 * tx) * (1 - ty) + (p01 * (1 - tx) + p11 * tx) * ty);
+      }
+    }
+  }
+  return out;
+}
 
 function makeCrcTable() {
   const table = new Uint32Array(256);
@@ -23,13 +211,11 @@ const crcTable = makeCrcTable();
 
 function crc32(buffers) {
   let c = 0xffffffff;
-  for (const buffer of buffers) {
-    for (const byte of buffer) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
-  }
+  for (const buffer of buffers) for (const byte of buffer) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
 
-function chunk(type, data = Buffer.alloc(0)) {
+function pngChunk(type, data = Buffer.alloc(0)) {
   const name = Buffer.from(type, 'ascii');
   const out = Buffer.alloc(12 + data.length);
   out.writeUInt32BE(data.length, 0);
@@ -39,135 +225,23 @@ function chunk(type, data = Buffer.alloc(0)) {
   return out;
 }
 
-function decodePng(file) {
-  const input = fs.readFileSync(file);
-  if (!input.subarray(0, 8).equals(signature)) throw new Error(`Not a PNG: ${file}`);
-
-  let offset = 8;
-  let width = 0;
-  let height = 0;
-  let bitDepth = 0;
-  let colorType = 0;
-  const idat = [];
-
-  while (offset < input.length) {
-    const length = input.readUInt32BE(offset);
-    const type = input.subarray(offset + 4, offset + 8).toString('ascii');
-    const data = input.subarray(offset + 8, offset + 8 + length);
-    offset += 12 + length;
-
-    if (type === 'IHDR') {
-      width = data.readUInt32BE(0);
-      height = data.readUInt32BE(4);
-      bitDepth = data.readUInt8(8);
-      colorType = data.readUInt8(9);
-      const interlace = data.readUInt8(12);
-      if (bitDepth !== 8 || interlace !== 0 || ![2, 6].includes(colorType)) {
-        throw new Error('Only non-interlaced 8-bit RGB/RGBA PNG files are supported');
-      }
-    } else if (type === 'IDAT') {
-      idat.push(data);
-    } else if (type === 'IEND') {
-      break;
-    }
-  }
-
-  const channels = colorType === 6 ? 4 : 3;
-  const stride = width * channels;
-  const raw = zlib.inflateSync(Buffer.concat(idat));
-  const pixels = Buffer.alloc(width * height * 4);
-  let rawOffset = 0;
-  let prev = Buffer.alloc(stride);
-
-  for (let y = 0; y < height; y++) {
-    const filter = raw[rawOffset++];
-    const row = Buffer.from(raw.subarray(rawOffset, rawOffset + stride));
-    rawOffset += stride;
-
-    for (let x = 0; x < stride; x++) {
-      const left = x >= channels ? row[x - channels] : 0;
-      const up = prev[x] || 0;
-      const upLeft = x >= channels ? prev[x - channels] || 0 : 0;
-      if (filter === 1) row[x] = (row[x] + left) & 0xff;
-      else if (filter === 2) row[x] = (row[x] + up) & 0xff;
-      else if (filter === 3) row[x] = (row[x] + Math.floor((left + up) / 2)) & 0xff;
-      else if (filter === 4) row[x] = (row[x] + paeth(left, up, upLeft)) & 0xff;
-      else if (filter !== 0) throw new Error(`Unsupported PNG filter: ${filter}`);
-    }
-
-    for (let x = 0; x < width; x++) {
-      const src = x * channels;
-      const dst = (y * width + x) * 4;
-      pixels[dst] = row[src];
-      pixels[dst + 1] = row[src + 1];
-      pixels[dst + 2] = row[src + 2];
-      pixels[dst + 3] = channels === 4 ? row[src + 3] : 255;
-    }
-    prev = row;
-  }
-
-  return { width, height, pixels };
-}
-
-function paeth(a, b, c) {
-  const p = a + b - c;
-  const pa = Math.abs(p - a);
-  const pb = Math.abs(p - b);
-  const pc = Math.abs(p - c);
-  if (pa <= pb && pa <= pc) return a;
-  if (pb <= pc) return b;
-  return c;
-}
-
-function resizeCropSquare(image, size) {
-  const sourceSize = Math.min(image.width, image.height);
-  const offsetX = Math.floor((image.width - sourceSize) / 2);
-  const offsetY = Math.floor((image.height - sourceSize) / 2);
-  const out = Buffer.alloc(size * size * 4);
-
-  for (let y = 0; y < size; y++) {
-    const sy = offsetY + Math.min(sourceSize - 1, Math.floor((y / size) * sourceSize));
-    for (let x = 0; x < size; x++) {
-      const sx = offsetX + Math.min(sourceSize - 1, Math.floor((x / size) * sourceSize));
-      const src = (sy * image.width + sx) * 4;
-      const dst = (y * size + x) * 4;
-      out[dst] = image.pixels[src];
-      out[dst + 1] = image.pixels[src + 1];
-      out[dst + 2] = image.pixels[src + 2];
-      out[dst + 3] = image.pixels[src + 3];
-    }
-  }
-
-  return { width: size, height: size, pixels: out };
-}
-
-function encodePng(image) {
+function encodePng(img) {
   const header = Buffer.alloc(13);
-  header.writeUInt32BE(image.width, 0);
-  header.writeUInt32BE(image.height, 4);
+  header.writeUInt32BE(img.width, 0);
+  header.writeUInt32BE(img.height, 4);
   header.writeUInt8(8, 8);
   header.writeUInt8(6, 9);
-  header.writeUInt8(0, 10);
-  header.writeUInt8(0, 11);
-  header.writeUInt8(0, 12);
-
-  const stride = image.width * 4;
-  const raw = Buffer.alloc((stride + 1) * image.height);
-  for (let y = 0; y < image.height; y++) {
+  const stride = img.width * 4;
+  const raw = Buffer.alloc((stride + 1) * img.height);
+  for (let y = 0; y < img.height; y++) {
     raw[y * (stride + 1)] = 0;
-    image.pixels.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
+    img.pixels.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
   }
-
-  return Buffer.concat([
-    signature,
-    chunk('IHDR', header),
-    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-    chunk('IEND'),
-  ]);
+  return Buffer.concat([signature, pngChunk('IHDR', header), pngChunk('IDAT', zlib.deflateSync(raw, { level: 9 })), pngChunk('IEND')]);
 }
 
-function writePng(file, image) {
-  fs.writeFileSync(file, encodePng(image));
+function writePng(file, img) {
+  fs.writeFileSync(file, encodePng(img));
 }
 
 function writeIco(file, images) {
@@ -176,13 +250,10 @@ function writeIco(file, images) {
   header.writeUInt16LE(0, 0);
   header.writeUInt16LE(1, 2);
   header.writeUInt16LE(images.length, 4);
-
   const entries = images.map(({ size, data }) => {
     const entry = Buffer.alloc(16);
     entry.writeUInt8(size === 256 ? 0 : size, 0);
     entry.writeUInt8(size === 256 ? 0 : size, 1);
-    entry.writeUInt8(0, 2);
-    entry.writeUInt8(0, 3);
     entry.writeUInt16LE(1, 4);
     entry.writeUInt16LE(32, 6);
     entry.writeUInt32LE(data.length, 8);
@@ -190,15 +261,13 @@ function writeIco(file, images) {
     offset += data.length;
     return entry;
   });
-
-  fs.writeFileSync(file, Buffer.concat([header, ...entries, ...images.map((image) => image.data)]));
+  fs.writeFileSync(file, Buffer.concat([header, ...entries, ...images.map((item) => item.data)]));
 }
 
 function writeIcns(file, images) {
   const chunks = images.map(({ type, data }) => {
-    const name = Buffer.from(type, 'ascii');
     const out = Buffer.alloc(8 + data.length);
-    name.copy(out, 0);
+    out.write(type, 0, 4, 'ascii');
     out.writeUInt32BE(out.length, 4);
     data.copy(out, 8);
     return out;
@@ -209,44 +278,26 @@ function writeIcns(file, images) {
   fs.writeFileSync(file, Buffer.concat([header, ...chunks]));
 }
 
-fs.rmSync(iconsetDir, { recursive: true, force: true });
-fs.mkdirSync(iconsetDir, { recursive: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-const source = decodePng(sourcePath);
-const icon1024 = resizeCropSquare(source, 1024);
-writePng(path.join(outDir, 'icon.png'), icon1024);
+const master = renderIcon(1024);
+writePng(path.join(outDir, 'icon.png'), master);
 
-const iconset = [
-  [16, 'icon_16x16.png'],
-  [32, 'icon_16x16@2x.png'],
-  [32, 'icon_32x32.png'],
-  [64, 'icon_32x32@2x.png'],
-  [128, 'icon_128x128.png'],
-  [256, 'icon_128x128@2x.png'],
-  [256, 'icon_256x256.png'],
-  [512, 'icon_256x256@2x.png'],
-  [512, 'icon_512x512.png'],
-  [1024, 'icon_512x512@2x.png'],
-];
-
-for (const [size, name] of iconset) writePng(path.join(iconsetDir, name), resizeCropSquare(source, size));
+const iconset = new Map(
+  [16, 32, 64, 128, 256, 512, 1024].map((size) => [size, encodePng(size === 1024 ? master : resizeImage(master, size))]),
+);
 
 writeIcns(path.join(outDir, 'icon.icns'), [
-  { type: 'icp4', data: fs.readFileSync(path.join(iconsetDir, 'icon_16x16.png')) },
-  { type: 'icp5', data: fs.readFileSync(path.join(iconsetDir, 'icon_32x32.png')) },
-  { type: 'icp6', data: fs.readFileSync(path.join(iconsetDir, 'icon_32x32@2x.png')) },
-  { type: 'ic07', data: fs.readFileSync(path.join(iconsetDir, 'icon_128x128.png')) },
-  { type: 'ic08', data: fs.readFileSync(path.join(iconsetDir, 'icon_256x256.png')) },
-  { type: 'ic09', data: fs.readFileSync(path.join(iconsetDir, 'icon_512x512.png')) },
-  { type: 'ic10', data: fs.readFileSync(path.join(iconsetDir, 'icon_512x512@2x.png')) },
+  { type: 'icp4', data: iconset.get(16) },
+  { type: 'icp5', data: iconset.get(32) },
+  { type: 'icp6', data: iconset.get(64) },
+  { type: 'ic07', data: iconset.get(128) },
+  { type: 'ic08', data: iconset.get(256) },
+  { type: 'ic09', data: iconset.get(512) },
+  { type: 'ic10', data: iconset.get(1024) },
 ]);
 
 const icoSizes = [16, 24, 32, 48, 64, 128, 256];
-writeIco(
-  path.join(outDir, 'icon.ico'),
-  icoSizes.map((size) => ({ size, data: encodePng(resizeCropSquare(source, size)) })),
-);
+writeIco(path.join(outDir, 'icon.ico'), icoSizes.map((size) => ({ size, data: encodePng(resizeImage(master, size)) })));
 
-fs.rmSync(iconsetDir, { recursive: true, force: true });
 console.log('Generated build/icon.png, build/icon.icns, and build/icon.ico');

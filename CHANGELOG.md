@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.6] - 2026-06-30
+
+### Fixed
+
+- Prevented packaged desktop launches from crashing when port `8080` is already in use.
+- Added a desktop single-instance lock so relaunching Aurio focuses the existing app instead of starting a second server.
+- Made server listen failures reject cleanly instead of surfacing as an uncaught main-process exception.
+- Rebuilt the macOS, Windows, Linux, and tray icons with a smoother native Aurio mascot mark.
+
 ## [0.2.5] - 2026-06-30
 
 ### Fixed
@@ -48,6 +57,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS voiceover not cast via UPnP (music casting only)
 - Packaged builds require building frontend into `pwa/` before `npm run dist`
 
+[0.2.6]: https://github.com/baogutang/aurio/releases/tag/v0.2.6
 [0.2.5]: https://github.com/baogutang/aurio/releases/tag/v0.2.5
 [0.2.4]: https://github.com/baogutang/aurio/releases/tag/v0.2.4
 [0.1.0]: https://github.com/baogutang/aurio/releases/tag/v0.1.0

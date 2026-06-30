@@ -2,6 +2,7 @@ import { app, BrowserWindow, Tray, Menu, shell, nativeImage, ipcMain } from 'ele
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import fs from 'node:fs';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
@@ -12,6 +13,12 @@ let win = null;
 let tray = null;
 let hasTray = false;
 let updateDownloaded = false;
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
 
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
@@ -48,6 +55,34 @@ function isLocalAppUrl(url, port) {
   } catch {
     return false;
   }
+}
+
+function canListen(port) {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once('error', () => resolve(false));
+    probe.once('listening', () => {
+      probe.close(() => resolve(true));
+    });
+    probe.listen(port);
+  });
+}
+
+async function findAvailablePort(startPort) {
+  const start = Number.isFinite(startPort) && startPort > 0 ? startPort : 8080;
+  for (let port = start; port < start + 100; port++) {
+    if (await canListen(port)) return port;
+  }
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.once('listening', () => {
+      const address = probe.address();
+      const port = typeof address === 'object' && address ? address.port : start;
+      probe.close(() => resolve(port));
+    });
+    probe.listen(0);
+  });
 }
 
 autoUpdater.on('download-progress', (progress) => emitUpdate('download-progress', { progress }));
@@ -131,8 +166,14 @@ function createWindow(port) {
 
 // Returns true if a usable (non-empty) tray icon was created.
 function createTray() {
-  const iconPath = path.join(__dirname, '..', 'pwa', 'aurio-logo.png');
-  let icon = nativeImage.createFromPath(iconPath);
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath, 'icon.png'), path.join(__dirname, '..', 'pwa', 'aurio-logo.png')]
+    : [path.join(__dirname, '..', 'build', 'icon.png'), path.join(__dirname, '..', 'pwa', 'aurio-logo.png')];
+  let icon = nativeImage.createEmpty();
+  for (const iconPath of candidates) {
+    icon = nativeImage.createFromPath(iconPath);
+    if (!icon.isEmpty()) break;
+  }
   if (icon.isEmpty()) return false; // no real icon → don't trap the window on close
   icon = icon.resize({ width: 16, height: 16 });
   try { tray = new Tray(icon); } catch { return false; }
@@ -157,13 +198,23 @@ function seedUserDir(dataRoot) {
   } catch (e) { console.error('seed user dir failed:', e.message); }
 }
 
-app.whenReady().then(async () => {
+app.on('second-instance', () => {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
   // 仅打包后把可写目录指向 userData（asar 内只读）；开发时保持项目根不变。
   // 必须在动态 import server 之前设置，config.js 在 import 时即读取它。
   if (app.isPackaged) {
     process.env.AURIO_DATA_DIR = app.getPath('userData');
     seedUserDir(process.env.AURIO_DATA_DIR);
   }
+
+  const desiredPort = Number(process.env.PORT || 8080);
+  process.env.PORT = String(await findAvailablePort(desiredPort));
 
   let port = 8080;
   try {

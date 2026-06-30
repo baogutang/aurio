@@ -604,8 +604,17 @@ bus.on('broadcast', (b) => sendAll({ type: 'broadcast', ...b }));
 bus.on('tts', (b) => sendAll({ type: 'tts', ...b }));
 
 export function startServer() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off('error', onError);
+      wss.off('error', onError);
+      reject(error);
+    };
+    server.once('error', onError);
+    wss.once('error', onError);
     server.listen(config.port, async () => {
+      server.off('error', onError);
+      wss.off('error', onError);
       console.log(`\n  Aurio server  →  http://localhost:${config.port}`);
       console.log('  features:', JSON.stringify(summarize()));
       startScheduler();
