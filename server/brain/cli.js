@@ -9,10 +9,12 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from '../config.js';
+import { DATA_ROOT } from '../config.js';
 import { toAction } from './parse.js';
 
 const MAC_CODEX_DESKTOP_BIN = '/Applications/Codex.app/Contents/Resources/codex';
+const ALLOW_CUSTOM_CLI = String(process.env.AI_CLI_ALLOW_CUSTOM || '').toLowerCase() === 'true';
+const BLOCKED_CUSTOM_BIN = new Set(['bash', 'sh', 'zsh', 'fish', 'cmd', 'powershell', 'pwsh', 'python', 'python3', 'node', 'ruby', 'perl']);
 
 function hasOnPath(bin) {
   const parts = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
@@ -39,11 +41,30 @@ const PRESETS = {
 
 function resolve(cfg) {
   const preset = PRESETS[cfg.preset] || PRESETS.claude;
-  let bin = cfg.bin || preset.bin || process.env.CLAUDE_BIN || 'claude';
+  let bin = preset.bin || 'claude';
+  if (cfg.preset === 'claude') bin = process.env.CLAUDE_BIN || bin;
+  if (cfg.preset === 'cli') {
+    if (!ALLOW_CUSTOM_CLI) throw new Error('自定义 AI_CLI_BIN 默认关闭；确认要运行本机自定义命令时，请设置 AI_CLI_ALLOW_CUSTOM=true');
+    bin = (cfg.bin || '').trim();
+    if (!bin) throw new Error('请填写自定义 CLI 命令');
+  }
   if (!cfg.bin && cfg.preset === 'codex' && process.platform === 'darwin' && !hasOnPath('codex') && fs.existsSync(MAC_CODEX_DESKTOP_BIN)) {
     bin = MAC_CODEX_DESKTOP_BIN;
   }
-  return { preset, bin, args: preset.args(cfg) };
+  validateBin(bin, cfg.preset);
+  const args = preset.args(cfg);
+  for (const arg of args) {
+    if (/[\0\r\n"]/u.test(String(arg))) throw new Error('AI CLI 参数包含不安全字符');
+  }
+  return { preset, bin, args };
+}
+
+function validateBin(bin, preset) {
+  if (!bin || /[\0\r\n"]/u.test(bin)) throw new Error('AI CLI 命令包含不安全字符');
+  if (preset === 'cli') {
+    const base = path.basename(bin).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
+    if (BLOCKED_CUSTOM_BIN.has(base)) throw new Error(`拒绝直接运行通用解释器：${base}`);
+  }
 }
 
 function childEnv(cfg) {
@@ -76,10 +97,10 @@ function runCli(prompt, cfg) {
     // DEP0190 warning that fires when an args array is combined with shell:true.
     let child;
     if (process.platform === 'win32') {
-      const cmd = `"${bin}" ${args.join(' ')}`;
-      child = spawn(cmd, { shell: true, windowsHide: true, env: childEnv(cfg) });
+      const cmd = [bin, ...args].map((x) => `"${String(x).replace(/"/g, '\\"')}"`).join(' ');
+      child = spawn(cmd, { shell: true, windowsHide: true, env: childEnv(cfg), cwd: DATA_ROOT });
     } else {
-      child = spawn(bin, args, { windowsHide: true, env: childEnv(cfg) });
+      child = spawn(bin, args, { windowsHide: true, env: childEnv(cfg), cwd: DATA_ROOT });
     }
 
     let stdout = '', stderr = '';

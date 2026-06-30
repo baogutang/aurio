@@ -6,6 +6,7 @@ import { runSegment } from './dj.js';
 
 const LOW_WATER = 2;   // refill once this few (or fewer) tracks remain after current
 const TICK_MS = 8000;  // fallback re-check, in case a heartbeat is missed
+const ACTIVE_TTL_MS = 90000;
 
 let session = null;    // { playingIndex, paused, queueLen, lastSeen }
 let composing = false;
@@ -30,6 +31,10 @@ export function onClientGone() {
 // DJ to place interjections relative to the now-playing track.
 export function currentIndex() {
   return session ? session.playingIndex : -1;
+}
+
+export function hasActiveSession(maxAgeMs = ACTIVE_TTL_MS) {
+  return !!(session && !session.paused && Date.now() - session.lastSeen <= maxAgeMs);
 }
 
 function remaining() {

@@ -39,17 +39,18 @@ export function saveSettings(partial = {}) {
     if (v === undefined || v === null) continue;
     next[k] = v;
   }
-  cache = next;
   try {
     ensureDir();
     // Atomic write (temp + rename): this file holds credentials/keys, so a
     // partial write on crash must never clobber the good copy.
     const tmp = `${FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(cache, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
     fs.renameSync(tmp, FILE);
   } catch (e) {
     console.error('[settings] save failed:', e.message);
+    throw new Error('settings save failed');
   }
+  cache = next;
   applyOverrides(cache);
   return cache;
 }

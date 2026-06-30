@@ -1,15 +1,17 @@
 // UPnP / DLNA cast to home speakers (Naim, Sonos-via-DLNA, WiiM, smart TVs…).
-// Discovery via SSDP (node-ssdp); control via upnp-mediarenderer-client, which
+// Discovery via SSDP; control via upnp-mediarenderer-client, which
 // does the two-stage SetAVTransportURI + Play and exposes play/pause/stop/volume.
 //
 // Scope (v1): cast the current *music* track + transport controls. The DJ voice
 // (TTS) stays on the local player — interleaving two URIs on one renderer is a
 // later enhancement.
-import ssdp from 'node-ssdp';
+import dgram from 'node:dgram';
 import MRC from 'upnp-mediarenderer-client';
 
-const SsdpClient = ssdp.Client ?? ssdp.default?.Client;
 const MediaRendererClient = MRC.default ?? MRC;
+const SSDP_HOST = '239.255.255.250';
+const SSDP_PORT = 1900;
+const DESCRIPTION_MAX_BYTES = 1024 * 1024;
 
 const devices = new Map(); // id -> { id, name, location }
 const clients = new Map(); // location -> MediaRendererClient
@@ -25,22 +27,84 @@ function clientFor(id) {
   return c;
 }
 
+function parseSsdpHeaders(buf) {
+  const headers = {};
+  for (const line of buf.toString('utf8').split(/\r?\n/)) {
+    const i = line.indexOf(':');
+    if (i <= 0) continue;
+    headers[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+  }
+  return headers;
+}
+
+function discoverLocations(timeoutMs) {
+  return new Promise((resolve) => {
+    const locations = new Set();
+    const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+    let done = false;
+    let timer = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      try { socket.close(); } catch { /* noop */ }
+      resolve(locations);
+    };
+    const msg = Buffer.from([
+      'M-SEARCH * HTTP/1.1',
+      `HOST: ${SSDP_HOST}:${SSDP_PORT}`,
+      'MAN: "ssdp:discover"',
+      'MX: 2',
+      'ST: urn:schemas-upnp-org:device:MediaRenderer:1',
+      '',
+      '',
+    ].join('\r\n'));
+    const sendSearch = () => socket.send(msg, 0, msg.length, SSDP_PORT, SSDP_HOST, () => {});
+
+    socket.on('message', (buf) => {
+      const headers = parseSsdpHeaders(buf);
+      const loc = headers.location;
+      if (/^https?:\/\//i.test(loc || '')) locations.add(loc);
+    });
+    socket.on('error', (e) => { console.error('[cast] ssdp:', e.message); finish(); });
+    socket.bind(0, () => {
+      try {
+        socket.setBroadcast(true);
+        socket.setMulticastTTL(2);
+        sendSearch();
+        setTimeout(sendSearch, 450).unref?.();
+      } catch (e) {
+        console.error('[cast] ssdp search:', e.message);
+        finish();
+      }
+    });
+    timer = setTimeout(finish, timeoutMs);
+    timer.unref?.();
+  });
+}
+
+async function fetchDescription(location) {
+  const u = new URL(location);
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('unsupported device URL');
+  const res = await fetch(u, { signal: AbortSignal.timeout(4000) });
+  if (!res.ok) throw new Error(`description HTTP ${res.status}`);
+  const len = Number(res.headers.get('content-length') || 0);
+  if (len > DESCRIPTION_MAX_BYTES) throw new Error('description too large');
+  const xml = await res.text();
+  if (Buffer.byteLength(xml) > DESCRIPTION_MAX_BYTES) throw new Error('description too large');
+  return xml;
+}
+
 export const cast = {
   // SSDP search for MediaRenderers, then read each device description for its
   // friendlyName + UDN. Returns [{ id, name, location }]; caches for later control.
   async discover(timeoutMs = 4000) {
-    const client = new SsdpClient();
-    const locations = new Set();
-    client.on('response', (headers) => { if (headers.LOCATION) locations.add(headers.LOCATION); });
-    try { client.search('urn:schemas-upnp-org:device:MediaRenderer:1'); }
-    catch (e) { console.error('[cast] ssdp search:', e.message); }
-    await new Promise((r) => setTimeout(r, timeoutMs));
-    try { client.stop(); } catch { /* noop */ }
+    const locations = await discoverLocations(timeoutMs);
 
     const out = [];
     for (const location of locations) {
       try {
-        const xml = await fetch(location, { signal: AbortSignal.timeout(4000) }).then((r) => r.text());
+        const xml = await fetchDescription(location);
         const name = (xml.match(/<friendlyName>([^<]+)<\/friendlyName>/i)?.[1] || '').trim() || location;
         const udn = (xml.match(/<UDN>([^<]+)<\/UDN>/i)?.[1] || location).trim();
         const id = udn.replace(/[^a-zA-Z0-9]/g, '').slice(-24) || Buffer.from(location).toString('hex').slice(0, 16);

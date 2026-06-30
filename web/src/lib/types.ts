@@ -71,8 +71,8 @@ export interface SettingsResp {
     system?: { enabled: boolean };
     ics: { urls: string; files?: string[]; enabled: boolean };
     feishu: { appId: string; hasSecret: boolean; calendarId: string; enabled: boolean };
-    dingtalk: { appKey: string; hasSecret: boolean; enabled: boolean };
-    wecom: { corpId: string; hasSecret: boolean; agentId: string; enabled: boolean };
+    dingtalk: { appKey: string; hasSecret: boolean; configured?: boolean; enabled: boolean };
+    wecom: { corpId: string; hasSecret: boolean; agentId: string; configured?: boolean; enabled: boolean };
   };
   onboarded: boolean;
 }

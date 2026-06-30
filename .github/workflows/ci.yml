@@ -13,7 +13,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
 
       - name: Install server deps
         run: npm ci
@@ -21,14 +25,23 @@ jobs:
           # No need to download the Electron binary just to lint/import the server.
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+
       - name: Smoke-import the server (catches import/syntax errors)
         run: node -e "import('./server/index.js').then(() => console.log('server import ok'))"
+
+      - name: Typecheck web frontend
+        working-directory: web
+        run: npm run typecheck
 
       - name: Run unit tests
         run: npm test
 
+      - name: Audit production dependencies
+        run: npm run audit:prod
+
       - name: Build the web frontend
         working-directory: web
-        run: |
-          npm ci
-          npm run build
+        run: npm run build

@@ -39,20 +39,93 @@ const app = express();
 
 // ---- Trust boundary ----
 // Control endpoints (settings, chat, trigger, integration tests, profile build…)
-// can spend money, rewrite stored secrets, or fetch arbitrary URLs/files
-// server-side, so they're restricted to localhost. Only the static player and the
-// read-only media proxies — which UPnP/DLNA speakers fetch over the LAN while
-// casting — stay reachable from other hosts. Set AURIO_ALLOW_LAN=true to open the
-// whole API (e.g. when you front it with your own auth / reverse proxy).
+// can spend money, rewrite stored secrets, or fetch arbitrary URLs/files. They
+// therefore need a stricter boundary than "remoteAddress is loopback": Host and
+// Origin must also be local, and the renderer must present the startup session
+// token. The read-only media proxies remain LAN-reachable for UPnP/DLNA speakers.
 const ALLOW_LAN = String(process.env.AURIO_ALLOW_LAN || '').toLowerCase() === 'true';
-const LAN_OPEN_API = /^\/api\/(stream|cover|ncm\/stream|qq\/stream)\//;
+const CONTROL_TOKEN = crypto.randomBytes(32).toString('base64url');
+const LAN_OPEN_API = /^\/api\/(?:stream|cover|ncm\/stream|qq\/stream)\//;
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 function isLoopback(req) {
   const ip = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
   return ip === '127.0.0.1' || ip === '::1';
 }
+
+function hostName(value = '') {
+  const raw = value.toString().trim();
+  if (!raw) return '';
+  try {
+    return new URL(`http://${raw}`).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  } catch {
+    return raw.split(':')[0].replace(/^\[|\]$/g, '').toLowerCase();
+  }
+}
+
+function isLocalHostName(name = '') {
+  return name === 'localhost' || name === '127.0.0.1' || name === '::1';
+}
+
+function hasTrustedHost(req) {
+  if (ALLOW_LAN) return true;
+  return isLocalHostName(hostName(req.headers.host || ''));
+}
+
+function hasTrustedOrigin(req) {
+  if (ALLOW_LAN) return true;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    return isLocalHostName(u.hostname.replace(/^\[|\]$/g, '').toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function tokenFrom(req) {
+  const header = req.headers['x-aurio-token'];
+  if (Array.isArray(header)) return header[0] || '';
+  if (header) return String(header);
+  try {
+    return new URL(req.url || '/', 'http://localhost').searchParams.get('token') || '';
+  } catch {
+    return '';
+  }
+}
+
+function hasValidToken(req) {
+  return tokenFrom(req) === CONTROL_TOKEN;
+}
+
+function rejectControl(res, status, error) {
+  return res.status(status).json({ ok: false, error });
+}
+
 app.use((req, res, next) => {
-  if (!ALLOW_LAN && req.path.startsWith('/api/') && !LAN_OPEN_API.test(req.path) && !isLoopback(req)) {
-    return res.status(403).json({ ok: false, error: 'forbidden: control API is restricted to localhost' });
+  if (!ALLOW_LAN && req.path.startsWith('/tts/') && !isLoopback(req)) {
+    return res.status(403).end();
+  }
+
+  if (!req.path.startsWith('/api/') || LAN_OPEN_API.test(req.path)) return next();
+
+  if (!ALLOW_LAN && !isLoopback(req)) {
+    return rejectControl(res, 403, 'forbidden: control API is restricted to localhost');
+  }
+  if (!hasTrustedHost(req)) {
+    return rejectControl(res, 403, 'forbidden: untrusted Host header');
+  }
+  if (!hasTrustedOrigin(req)) {
+    return rejectControl(res, 403, 'forbidden: untrusted Origin header');
+  }
+  if (req.path !== '/api/session' && !hasValidToken(req)) {
+    return rejectControl(res, 403, 'forbidden: missing session token');
+  }
+  if (!SAFE_METHODS.has(req.method)) {
+    const ct = (req.headers['content-type'] || '').toString().toLowerCase();
+    if (!ct.startsWith('application/json')) return rejectControl(res, 415, 'unsupported media type');
   }
   next();
 });
@@ -64,6 +137,10 @@ app.use('/', express.static(path.join(ROOT, 'pwa')));
 app.use('/tts', express.static(TTS_CACHE_DIR));
 
 // ---- Status / health ----
+app.get('/api/session', (req, res) => {
+  res.json({ ok: true, token: CONTROL_TOKEN });
+});
+
 app.get('/api/status', async (req, res) => {
   const q = music.dedupeTracks(db.getQueue());
   if (q.length !== db.getQueue().length) db.setQueue(q);
@@ -134,8 +211,8 @@ app.get('/api/settings', (req, res) => {
       system: { enabled: process.platform === 'darwin' },
       ics: { urls: (cal.ics?.urls || []).join('\n'), files: cal.ics?.files || [], enabled: !!cal.ics?.enabled },
       feishu: { appId: cal.feishu.appId, hasSecret: !!cal.feishu.appSecret, calendarId: cal.feishu.calendarId, enabled: cal.feishu.enabled },
-      dingtalk: { appKey: cal.dingtalk.appKey, hasSecret: !!cal.dingtalk.appSecret, enabled: cal.dingtalk.enabled },
-      wecom: { corpId: cal.wecom.corpId, hasSecret: !!cal.wecom.secret, agentId: cal.wecom.agentId, enabled: cal.wecom.enabled },
+      dingtalk: { appKey: cal.dingtalk.appKey, hasSecret: !!cal.dingtalk.appSecret, configured: cal.dingtalk.enabled, enabled: false },
+      wecom: { corpId: cal.wecom.corpId, hasSecret: !!cal.wecom.secret, agentId: cal.wecom.agentId, configured: cal.wecom.enabled, enabled: false },
     },
     onboarded: !!getSettings().ONBOARDED,
   });
@@ -210,7 +287,11 @@ app.post('/api/calendar/import', (req, res) => {
   fs.writeFileSync(file, content);
   const existing = config.calendars.ics.files || [];
   const files = Array.from(new Set([...existing, file]));
-  saveSettings({ CALENDAR_ICS_FILES: files.join('\n') });
+  try {
+    saveSettings({ CALENDAR_ICS_FILES: files.join('\n') });
+  } catch (e) {
+    return res.status(500).json({ ok: false, detail: e.message });
+  }
   res.json({ ok: true, detail: `已导入 ${name}`, files });
 });
 
@@ -241,8 +322,12 @@ app.post('/api/settings', (req, res) => {
   ];
   const partial = {};
   for (const k of allowed) if (k in body) partial[k] = body[k];
-  saveSettings(partial);
-  res.json({ ok: true, config: summarize() });
+  try {
+    saveSettings(partial);
+    res.json({ ok: true, config: summarize() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // ---- AI brain: list providers (+ detected local CLIs) and test one ----
@@ -354,6 +439,9 @@ app.post('/api/chat', async (req, res) => {
 // ---- Manually fire a scheduled-style beat (plan / morning / mood) ----
 app.post('/api/trigger', async (req, res) => {
   const kind = (req.body?.kind || 'mood').toString();
+  if (!['plan', 'morning', 'mood', 'station'].includes(kind)) {
+    return res.status(400).json({ ok: false, error: 'invalid trigger kind' });
+  }
   const result = await run({ kind });
   res.json(result);
 });
@@ -367,7 +455,8 @@ app.get('/api/queue', (req, res) => {
 
 // Replace the queue (reorder / remove / clear from the player UI).
 app.post('/api/queue', (req, res) => {
-  const q = music.dedupeTracks(Array.isArray(req.body?.queue) ? req.body.queue : []);
+  if (!Array.isArray(req.body?.queue)) return res.status(400).json({ ok: false, error: 'queue must be an array' });
+  const q = music.dedupeTracks(req.body.queue);
   db.setQueue(q);
   res.json({ ok: true, queue: q.length });
 });
@@ -382,20 +471,33 @@ app.post('/api/played', (req, res) => {
   res.json({ ok: true });
 });
 
+async function proxyAudio(upstreamUrl, req, res, fallbackType = 'audio/mpeg') {
+  const upstream = await fetch(upstreamUrl, {
+    headers: req.headers.range ? { Range: req.headers.range } : {},
+    signal: AbortSignal.timeout(15000),
+  });
+  const ct = upstream.headers.get('content-type') || fallbackType;
+  if (!upstream.ok) {
+    res.status(upstream.status);
+    return res.end();
+  }
+  if (ct && !/^(audio\/|video\/|application\/octet-stream)/i.test(ct)) {
+    return res.status(502).json({ error: 'upstream did not return media' });
+  }
+  res.status(upstream.status);
+  for (const h of ['content-type', 'content-length', 'accept-ranges', 'content-range']) {
+    const v = h === 'content-type' ? ct : upstream.headers.get(h);
+    if (v) res.setHeader(h, v);
+  }
+  if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
+  else res.end();
+}
+
 // ---- Stream proxy: hides Navidrome creds, supports Range for seeking ----
 app.get('/api/stream/:id', async (req, res) => {
   if (!navidrome.enabled()) return res.status(404).end();
   try {
-    const upstream = await fetch(navidrome.streamUrl(req.params.id), {
-      headers: req.headers.range ? { Range: req.headers.range } : {},
-    });
-    res.status(upstream.status);
-    for (const h of ['content-type', 'content-length', 'accept-ranges', 'content-range']) {
-      const v = upstream.headers.get(h);
-      if (v) res.setHeader(h, v);
-    }
-    if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
-    else res.end();
+    await proxyAudio(navidrome.streamUrl(req.params.id), req, res);
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
@@ -408,17 +510,7 @@ app.get('/api/ncm/stream/:id', async (req, res) => {
   try {
     const url = await netease.streamUrl(req.params.id);
     if (!url) return res.status(404).json({ error: '版权受限或无法解析播放地址' });
-    const upstream = await fetch(url, {
-      headers: req.headers.range ? { Range: req.headers.range } : {},
-    });
-    res.status(upstream.status);
-    for (const h of ['content-type', 'content-length', 'accept-ranges', 'content-range']) {
-      const v = upstream.headers.get(h);
-      if (v) res.setHeader(h, v);
-    }
-    if (!upstream.headers.get('content-type')) res.setHeader('content-type', 'audio/mpeg');
-    if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
-    else res.end();
+    await proxyAudio(url, req, res);
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
@@ -429,17 +521,7 @@ app.get('/api/qq/stream/:id', async (req, res) => {
   try {
     const url = await qqmusic.streamUrl(req.params.id);
     if (!url) return res.status(404).json({ error: '版权受限或无法解析播放地址' });
-    const upstream = await fetch(url, {
-      headers: req.headers.range ? { Range: req.headers.range } : {},
-    });
-    res.status(upstream.status);
-    for (const h of ['content-type', 'content-length', 'accept-ranges', 'content-range']) {
-      const v = upstream.headers.get(h);
-      if (v) res.setHeader(h, v);
-    }
-    if (!upstream.headers.get('content-type')) res.setHeader('content-type', 'audio/mpeg');
-    if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
-    else res.end();
+    await proxyAudio(url, req, res);
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
@@ -449,9 +531,10 @@ app.get('/api/qq/stream/:id', async (req, res) => {
 app.get('/api/cover/:id', async (req, res) => {
   if (!navidrome.enabled()) return res.status(404).end();
   try {
-    const upstream = await fetch(navidrome.coverUrl(req.params.id, 400));
+    const upstream = await fetch(navidrome.coverUrl(req.params.id, 400), { signal: AbortSignal.timeout(10000) });
     res.status(upstream.status);
     const ct = upstream.headers.get('content-type');
+    if (upstream.ok && ct && !ct.toLowerCase().startsWith('image/')) return res.status(502).end();
     if (ct) res.setHeader('content-type', ct);
     if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
     else res.end();
@@ -466,8 +549,16 @@ const wss = new WebSocketServer({ server, path: '/stream' });
 
 wss.on('connection', (ws, req) => {
   // Same trust boundary as the control API: the live channel carries the queue,
-  // chat patter, and the heartbeat that drives (paid) refills, so keep it local.
-  if (!ALLOW_LAN && !isLoopback(req)) { try { ws.close(1008, 'localhost only'); } catch { /* noop */ } return; }
+  // chat patter, and the heartbeat that drives (paid) refills.
+  if (
+    (!ALLOW_LAN && !isLoopback(req))
+    || !hasTrustedHost(req)
+    || !hasTrustedOrigin(req)
+    || !hasValidToken(req)
+  ) {
+    try { ws.close(1008, 'forbidden'); } catch { /* noop */ }
+    return;
+  }
 
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });

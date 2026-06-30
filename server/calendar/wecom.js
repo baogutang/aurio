@@ -5,9 +5,10 @@ import { config } from '../config.js';
 
 export const wecom = {
   name: 'wecom',
-  enabled: () => config.calendars.wecom.enabled,
+  configured: () => config.calendars.wecom.enabled,
+  enabled: () => false,
   async todayEvents() {
-    // TODO(phase 3): implement WeCom schedule fetch.
+    // Not enabled until the WeCom schedule fetch is implemented.
     return [];
   },
 };

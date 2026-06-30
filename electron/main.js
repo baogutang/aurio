@@ -1,4 +1,5 @@
-import { app, BrowserWindow, Tray, Menu, shell, nativeImage } from 'electron';
+import { app, BrowserWindow, Tray, Menu, shell, nativeImage, ipcMain } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +9,87 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let win = null;
 let tray = null;
 let hasTray = false;
+let updateDownloaded = false;
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+function versionParts(v = '') {
+  return v.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+}
+
+function newerThan(a = '', b = '') {
+  const av = versionParts(a);
+  const bv = versionParts(b);
+  for (let i = 0; i < Math.max(av.length, bv.length); i++) {
+    if ((av[i] || 0) > (bv[i] || 0)) return true;
+    if ((av[i] || 0) < (bv[i] || 0)) return false;
+  }
+  return false;
+}
+
+function emitUpdate(event, payload = {}) {
+  win?.webContents.send('aurio:update:event', { event, ...payload });
+}
+
+function safeOpenExternal(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'http:' || u.protocol === 'https:') shell.openExternal(u.href);
+  } catch { /* ignore invalid urls */ }
+}
+
+function isLocalAppUrl(url, port) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' && u.hostname === 'localhost' && u.port === String(port);
+  } catch {
+    return false;
+  }
+}
+
+autoUpdater.on('download-progress', (progress) => emitUpdate('download-progress', { progress }));
+autoUpdater.on('update-downloaded', (info) => {
+  updateDownloaded = true;
+  emitUpdate('update-downloaded', { version: info?.version || '' });
+});
+autoUpdater.on('error', (e) => emitUpdate('error', { message: e.message }));
+
+ipcMain.handle('aurio:update:check', async () => {
+  if (!app.isPackaged) {
+    return { ok: false, status: 'dev', version: app.getVersion(), detail: 'updates are only available in packaged builds' };
+  }
+  try {
+    updateDownloaded = false;
+    const result = await autoUpdater.checkForUpdates();
+    const latest = result?.updateInfo?.version || app.getVersion();
+    return {
+      ok: true,
+      version: app.getVersion(),
+      latestVersion: latest,
+      updateAvailable: newerThan(latest, app.getVersion()),
+      info: result?.updateInfo || null,
+    };
+  } catch (e) {
+    return { ok: false, status: 'error', version: app.getVersion(), detail: e.message };
+  }
+});
+
+ipcMain.handle('aurio:update:download', async () => {
+  if (!app.isPackaged) return { ok: false, status: 'dev', detail: 'updates are only available in packaged builds' };
+  try {
+    await autoUpdater.downloadUpdate();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, status: 'error', detail: e.message };
+  }
+});
+
+ipcMain.handle('aurio:update:install', async () => {
+  if (!updateDownloaded) return { ok: false, status: 'not-downloaded' };
+  setImmediate(() => autoUpdater.quitAndInstall(false, true));
+  return { ok: true };
+});
 
 function createWindow(port) {
   win = new BrowserWindow({
@@ -29,8 +111,13 @@ function createWindow(port) {
 
   // Open external links in the system browser, not inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    safeOpenExternal(url);
     return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isLocalAppUrl(url, port)) return;
+    event.preventDefault();
+    safeOpenExternal(url);
   });
 
   win.on('close', (e) => {

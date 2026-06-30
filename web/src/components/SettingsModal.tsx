@@ -9,7 +9,7 @@ import type { SettingsResp, AiProvidersResp, CastDevice, Track } from '../lib/ty
 import { IconClose } from './icons';
 
 type T = (key: MessageKey) => string;
-type Group = 'appearance' | 'ai' | 'ncm' | 'nas' | 'qq' | 'fish' | 'calendar' | 'weather' | 'cast';
+type Group = 'appearance' | 'ai' | 'ncm' | 'nas' | 'qq' | 'fish' | 'calendar' | 'weather' | 'cast' | 'updates';
 type Res = { ok: boolean; msg: string } | null;
 
 // ---- tiny inline icons (chevrons) ----
@@ -656,6 +656,114 @@ function CastPanel({ t, currentTrack }: { t: T; currentTrack: Track | null }) {
   );
 }
 
+function UpdatesPanel({ t }: { t: T }) {
+  const updates = window.aurio?.updates;
+  const [res, setRes] = useState<Res>(null);
+  const [busy, setBusy] = useState(false);
+  const [available, setAvailable] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentVersion, setCurrentVersion] = useState('');
+  const [latestVersion, setLatestVersion] = useState('');
+
+  useEffect(() => {
+    if (!updates?.onEvent) return;
+    return updates.onEvent((payload) => {
+      if (payload.event === 'download-progress') {
+        setProgress(Math.round(payload.progress?.percent || 0));
+        setRes({ ok: true, msg: `${t('updatesDownloading')} ${Math.round(payload.progress?.percent || 0)}%` });
+      }
+      if (payload.event === 'update-downloaded') {
+        setDownloaded(true);
+        setBusy(false);
+        setRes({ ok: true, msg: t('updatesDownloaded') });
+      }
+      if (payload.event === 'error') {
+        setBusy(false);
+        setRes({ ok: false, msg: `${t('updatesError')}: ${payload.message || ''}` });
+      }
+    });
+  }, [updates, t]);
+
+  if (!updates) {
+    return <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('updatesUnsupported')}</p>;
+  }
+
+  const check = async () => {
+    setBusy(true);
+    setDownloaded(false);
+    setProgress(0);
+    setRes({ ok: true, msg: t('updatesChecking') });
+    try {
+      const r = await updates.check();
+      setCurrentVersion(r.version || '');
+      setLatestVersion(r.latestVersion || r.version || '');
+      if (!r.ok) {
+        setAvailable(false);
+        setRes({ ok: false, msg: r.status === 'dev' ? t('updatesDev') : `${t('updatesError')}: ${r.detail || r.status || ''}` });
+        return;
+      }
+      setAvailable(!!r.updateAvailable);
+      setRes({
+        ok: true,
+        msg: r.updateAvailable
+          ? t('updatesAvailable').replace('{version}', r.latestVersion || '')
+          : t('updatesNoUpdate'),
+      });
+    } catch (e) {
+      setRes({ ok: false, msg: t('updatesError') });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const download = async () => {
+    setBusy(true);
+    setProgress(0);
+    setRes({ ok: true, msg: t('updatesDownloading') });
+    try {
+      const r = await updates.download();
+      if (r.ok) return;
+      setBusy(false);
+      setRes({ ok: false, msg: `${t('updatesError')}: ${r.detail || r.status || ''}` });
+    } catch {
+      setBusy(false);
+      setRes({ ok: false, msg: t('updatesError') });
+    }
+  };
+
+  const install = async () => {
+    try {
+      const r = await updates.install();
+      if (!r.ok) setRes({ ok: false, msg: `${t('updatesError')}: ${r.detail || r.status || ''}` });
+    } catch {
+      setRes({ ok: false, msg: t('updatesError') });
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('updatesHint')}</p>
+      {(currentVersion || latestVersion) && (
+        <p className="text-[11px] text-[var(--text-muted)] font-mono">
+          {currentVersion || '-'} → {latestVersion || '-'}
+        </p>
+      )}
+      {progress > 0 && progress < 100 && (
+        <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--inset-bg)' }}>
+          <div className="h-full rounded-full" style={{ width: `${progress}%`, background: 'rgb(var(--hi-rgb))' }} />
+        </div>
+      )}
+      <ResultLine r={res} />
+      <Buttons>
+        <button disabled={busy} onClick={check} className="pill-btn flex-1 disabled:opacity-40">{t('updatesCheck')}</button>
+        <button disabled={busy || !available || downloaded} onClick={download} className="pill-btn flex-1 disabled:opacity-40">{t('updatesDownload')}</button>
+      </Buttons>
+      <button disabled={!downloaded} onClick={install} className="pill-btn pill-btn-active w-full disabled:opacity-40">{t('updatesInstall')}</button>
+    </div>
+  );
+}
+
 // =====================================================================
 //  Shell: list → detail
 // =====================================================================
@@ -683,6 +791,7 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
     { id: 'calendar', label: t('groupCalendar'), badge: settings ? ((settings.calendars.system?.enabled || settings.calendars.ics.enabled) ? t('badgeOn') : t('badgeOff')) : undefined, on: !!(settings?.calendars.system?.enabled || settings?.calendars.ics.enabled) },
     { id: 'weather', label: t('groupWeather'), badge: settings ? (settings.weather.hasKey ? t('badgeOn') : t('badgeOff')) : undefined, on: !!settings?.weather.hasKey },
     { id: 'cast', label: t('groupCast') },
+    { id: 'updates', label: t('groupUpdates'), badge: window.aurio?.isElectron ? t('badgeOn') : t('badgeOff'), on: !!window.aurio?.isElectron },
   ];
 
   const panel = (g: Group) => {
@@ -696,6 +805,7 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
       case 'calendar': return <CalendarPanel t={t} settings={settings} onChanged={reload} />;
       case 'weather': return <WeatherPanel t={t} settings={settings} onChanged={reload} />;
       case 'cast': return <CastPanel t={t} currentTrack={currentTrack} />;
+      case 'updates': return <UpdatesPanel t={t} />;
     }
   };
 

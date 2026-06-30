@@ -3,6 +3,11 @@
 // （CALENDAR_ICS_URLS，逗号或换行分隔）即可，无需 OAuth、跨平台。
 import { config } from '../config.js';
 import ical from 'node-ical';
+import fs from 'node:fs';
+import { Readable } from 'node:stream';
+
+const MAX_REMOTE_ICS_BYTES = 2 * 1024 * 1024;
+const MAX_LOCAL_ICS_BYTES = 4 * 1024 * 1024;
 
 function collectToday(data, start, end) {
   const out = [];
@@ -27,6 +32,40 @@ function collectToday(data, start, end) {
   return { events: out, total };
 }
 
+function checkedUrl(raw) {
+  const u = new URL(raw);
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('只支持 http/https 订阅地址');
+  return u.href;
+}
+
+async function readBoundedText(res, maxBytes) {
+  const len = Number(res.headers.get('content-length') || 0);
+  if (len > maxBytes) throw new Error('ICS 订阅文件过大');
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of Readable.fromWeb(res.body)) {
+    total += chunk.length;
+    if (total > maxBytes) throw new Error('ICS 订阅文件过大');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function parseUrl(url) {
+  const res = await fetch(checkedUrl(url), { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await readBoundedText(res, MAX_REMOTE_ICS_BYTES);
+  return ical.async.parseICS(text);
+}
+
+async function parseLocalFile(file) {
+  if (!/\.ics$/i.test(file)) throw new Error('只支持 .ics 文件');
+  const st = fs.statSync(file);
+  if (!st.isFile()) throw new Error('不是有效文件');
+  if (st.size > MAX_LOCAL_ICS_BYTES) throw new Error('ICS 文件过大');
+  return ical.async.parseFile(file);
+}
+
 export const ics = {
   name: 'ics',
   enabled: () => (config.calendars.ics?.urls || []).length > 0 || (config.calendars.ics?.files || []).length > 0,
@@ -42,13 +81,13 @@ export const ics = {
 
     for (const url of urls) {
       try {
-        const data = await ical.async.fromURL(url);
+        const data = await parseUrl(url);
         out.push(...collectToday(data, start, end).events);
       } catch (e) { console.error('[ics]', url, e.message); }
     }
     for (const file of files) {
       try {
-        const data = await ical.async.parseFile(file);
+        const data = await parseLocalFile(file);
         out.push(...collectToday(data, start, end).events);
       } catch (e) { console.error('[ics file]', file, e.message); }
     }
@@ -69,7 +108,7 @@ export async function testIcs(urls = [], files = []) {
   let total = 0, today = 0;
   for (const url of list) {
     try {
-      const data = await ical.async.fromURL(url);
+      const data = await parseUrl(url);
       const picked = collectToday(data, start, end);
       total += picked.total;
       today += picked.events.length;
@@ -79,7 +118,7 @@ export async function testIcs(urls = [], files = []) {
   }
   for (const file of fileList) {
     try {
-      const data = await ical.async.parseFile(file);
+      const data = await parseLocalFile(file);
       const picked = collectToday(data, start, end);
       total += picked.total;
       today += picked.events.length;

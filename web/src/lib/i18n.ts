@@ -65,6 +65,8 @@ const zh = {
   sayError: '出了点问题',
   sayConnFail: '连不上服务器',
   sayTapPlay: '已排好，点播放就开始。',
+  sayTrackFail: '这首暂时播不了，可能是版权或网络波动。',
+  sayTrackFailNext: '这首暂时播不了，我先跳到下一首。',
 
   // ChatSheet
   chatTitle: '和 Aurio 对话',
@@ -143,6 +145,7 @@ const zh = {
   groupCalendar: '日历',
   groupWeather: '天气',
   groupCast: '投放 · 音响',
+  groupUpdates: '版本更新',
   badgeOn: '已配置',
   badgeOff: '未配置',
   badgeLoggedIn: '已登录',
@@ -227,6 +230,20 @@ const zh = {
   castCtlPause: '暂停',
   castCtlStop: '停止',
   castVolume: '音量',
+
+  // Updates
+  updatesHint: '检查 GitHub 上的最新桌面版；发现新版后可以下载并安装。',
+  updatesUnsupported: '版本更新只在桌面版 Aurio 中可用。',
+  updatesCheck: '检查更新',
+  updatesDownload: '下载',
+  updatesInstall: '安装并重启',
+  updatesChecking: '正在检查更新…',
+  updatesDownloading: '正在下载…',
+  updatesDownloaded: '✓ 已下载，准备安装',
+  updatesNoUpdate: '当前已是最新版本',
+  updatesAvailable: '发现新版本 {version}',
+  updatesDev: '开发模式不支持在线更新',
+  updatesError: '更新失败',
 
   // First-run onboarding
   obWelcome: '欢迎来到 Aurio',
@@ -326,6 +343,8 @@ const en: Record<MessageKey, string> = {
   sayError: 'Something went wrong',
   sayConnFail: 'Cannot reach server',
   sayTapPlay: 'Queued up. Tap play to start.',
+  sayTrackFail: 'This track is not playable right now. It may be a license or network issue.',
+  sayTrackFailNext: 'This track is not playable right now, so I am skipping ahead.',
 
   chatTitle: 'Chat with Aurio',
   chatSubtitle: 'Your mood is my prompt',
@@ -400,6 +419,7 @@ const en: Record<MessageKey, string> = {
   groupCalendar: 'Calendar',
   groupWeather: 'Weather',
   groupCast: 'Cast · Speakers',
+  groupUpdates: 'Updates',
   badgeOn: 'Configured',
   badgeOff: 'Not set',
   badgeLoggedIn: 'Signed in',
@@ -484,6 +504,20 @@ const en: Record<MessageKey, string> = {
   castCtlPause: 'Pause',
   castCtlStop: 'Stop',
   castVolume: 'Volume',
+
+  // Updates
+  updatesHint: 'Check the latest desktop release on GitHub, then download and install it locally.',
+  updatesUnsupported: 'Updates are available only in the Aurio desktop app.',
+  updatesCheck: 'Check',
+  updatesDownload: 'Download',
+  updatesInstall: 'Install and restart',
+  updatesChecking: 'Checking for updates…',
+  updatesDownloading: 'Downloading…',
+  updatesDownloaded: '✓ Downloaded and ready to install',
+  updatesNoUpdate: 'You are on the latest version',
+  updatesAvailable: 'New version available: {version}',
+  updatesDev: 'Online updates are not available in development mode',
+  updatesError: 'Update failed',
 
   // First-run onboarding
   obWelcome: 'Welcome to Aurio',

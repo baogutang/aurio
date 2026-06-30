@@ -1,6 +1,6 @@
 {
   "name": "aurio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Aurio - your personal AI radio. Cross-platform (macOS + Windows).",
   "type": "module",
   "main": "electron/main.js",
@@ -17,31 +17,50 @@
     "server": "node server/index.js",
     "start": "electron .",
     "dev": "electron .",
+    "postinstall": "node scripts/patch-netease-cloud.js",
     "test": "vitest run",
+    "build:web": "npm --prefix web run build",
+    "typecheck:web": "npm --prefix web run typecheck",
+    "audit:prod": "npm audit --omit=dev && npm --prefix web audit --omit=dev",
+    "ci": "npm run typecheck:web && npm test && npm run build:web",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win"
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
   },
   "license": "MIT",
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "NeteaseCloudMusicApi": "^4.32.0",
-    "node-cron": "^3.0.3",
+    "node-cron": "^4.5.0",
     "node-ical": "^0.26.1",
-    "node-ssdp": "^4.0.1",
+    "electron-updater": "^6.8.9",
     "upnp-mediarenderer-client": "^1.4.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8",
-    "vitest": "^2.1.8"
+    "electron": "41.7.1",
+    "electron-builder": "^26.15.3",
+    "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "NeteaseCloudMusicApi": {
+      "music-metadata": "^11.12.2"
+    }
   },
   "build": {
     "appId": "studio.niko.aurio",
     "productName": "Aurio",
+    "artifactName": "${productName}-${version}-${os}-${arch}-${target}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "baogutang",
+        "repo": "aurio"
+      }
+    ],
     "files": [
       "electron/**/*",
       "server/**/*",
@@ -70,6 +89,13 @@
       "target": [
         "nsis",
         "portable"
+      ]
+    },
+    "linux": {
+      "category": "Audio",
+      "target": [
+        "AppImage",
+        "deb"
       ]
     },
     "directories": {

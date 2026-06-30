@@ -1,3 +1,5 @@
+import { authHeaders } from './api';
+
 export type MusicSourceMode = 'combined' | 'netease' | 'navidrome' | 'qqmusic';
 export type MusicServices = { netease: boolean; navidrome: boolean; qqmusic?: boolean };
 type SourceLabelKey = 'sourceCombined' | 'sourceNetease' | 'sourceNas' | 'sourceQQ' | 'sourceNone';
@@ -28,7 +30,7 @@ export function nextMusicSource(
 export async function postMusicSource(source: MusicSourceMode): Promise<{ ok: boolean; musicSource?: MusicSourceMode }> {
   const r = await fetch('/api/music-source', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ source }),
   });
   return r.json();

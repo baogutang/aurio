@@ -6,9 +6,10 @@ import { config } from '../config.js';
 
 export const dingtalk = {
   name: 'dingtalk',
-  enabled: () => config.calendars.dingtalk.enabled,
+  configured: () => config.calendars.dingtalk.enabled,
+  enabled: () => false,
   async todayEvents() {
-    // TODO(phase 3): implement DingTalk calendar fetch.
+    // Not enabled until the DingTalk calendar fetch is implemented.
     return [];
   },
 };

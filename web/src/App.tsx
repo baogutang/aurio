@@ -321,6 +321,19 @@ export default function App() {
     }
   };
 
+  const onAudioError = () => {
+    setPlaying(false);
+    const q = queueRef.current;
+    if (idxRef.current >= 0 && idxRef.current < q.length - 1) {
+      const ni = idxRef.current + 1;
+      setSay(t('sayTrackFailNext'));
+      window.setTimeout(() => playTrack(q[ni], ni), 250);
+      return;
+    }
+    setSay(t('sayTrackFail'));
+    reportState();
+  };
+
   const prev = () => {
     const q = queueRef.current;
     if (idxRef.current > 0) {
@@ -341,11 +354,19 @@ export default function App() {
   };
 
   useEffect(() => {
-    let ws: WebSocket;
+    let ws: WebSocket | undefined;
     let stop = false;
 
-    const connect = () => {
-      ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/stream');
+    const connect = async () => {
+      try {
+        const token = encodeURIComponent(await api.session());
+        if (stop) return;
+        ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/stream?token=' + token);
+      } catch {
+        setConn('');
+        if (!stop) window.setTimeout(connect, 2000);
+        return;
+      }
       wsRef.current = ws;
       ws.onopen = () => { setConn('on'); reportState(); };
       ws.onclose = () => { wsRef.current = null; setConn(''); if (!stop) setTimeout(connect, 2000); };
@@ -414,8 +435,7 @@ export default function App() {
   // First-run onboarding: only for a fresh, unconfigured install.
   useEffect(() => {
     api.settings().then((s) => {
-      const hasMusic = s.navidrome.enabled || s.netease.loggedIn || s.qq?.enabled;
-      if (!s.onboarded && !hasMusic) setOnboard(true);
+      if (!s.onboarded) setOnboard(true);
     }).catch(() => {});
   }, []);
 
@@ -613,6 +633,7 @@ export default function App() {
         ref={audioRef}
         onTimeUpdate={onTime}
         onEnded={next}
+        onError={onAudioError}
         onPlay={() => { setPlaying(true); reportState(); }}
         onPause={() => { setPlaying(false); reportState(); }}
       />

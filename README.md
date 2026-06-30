@@ -299,7 +299,7 @@ Each beat returns `{ say, play[], reason, segue, intent, placement, mood }`.
 | Brain | Claude / Codex CLI · OpenAI-compatible API |
 | Music | Navidrome (Subsonic) · NetEase API · QQ Music |
 | Voice | macOS `say` · Tencent Cloud · Fish Audio |
-| Cast | UPnP / DLNA via `node-ssdp` |
+| Cast | UPnP / DLNA via native SSDP discovery |
 
 </details>
 
