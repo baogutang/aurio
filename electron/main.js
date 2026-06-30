@@ -1,9 +1,11 @@
 import { app, BrowserWindow, Tray, Menu, shell, nativeImage, ipcMain } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+const require = createRequire(import.meta.url);
+const { autoUpdater } = require('electron-updater');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let win = null;

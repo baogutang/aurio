@@ -1,7 +1,7 @@
 {
   "name": "aurio",
-  "version": "0.2.4",
-  "description": "Aurio - your personal AI radio. Cross-platform (macOS + Windows).",
+  "version": "0.2.5",
+  "description": "Aurio - your personal AI radio. Cross-platform desktop and PWA.",
   "type": "module",
   "main": "electron/main.js",
   "author": "niko <niko@users.noreply.github.com>",
@@ -18,6 +18,7 @@
     "start": "electron .",
     "dev": "electron .",
     "postinstall": "node scripts/patch-netease-cloud.js",
+    "icons": "node scripts/generate-desktop-icons.js",
     "test": "vitest run",
     "build:web": "npm --prefix web run build",
     "typecheck:web": "npm --prefix web run typecheck",
@@ -80,13 +81,37 @@
       }
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.music",
       "target": [
         "dmg",
         "zip"
       ]
     },
+    "dmg": {
+      "icon": "build/icon.icns",
+      "backgroundColor": "#f4f4f1",
+      "iconSize": 112,
+      "iconTextSize": 13,
+      "window": {
+        "width": 620,
+        "height": 360
+      },
+      "contents": [
+        {
+          "x": 180,
+          "y": 185
+        },
+        {
+          "x": 440,
+          "y": 185,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "portable"
@@ -99,6 +124,7 @@
       "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}"
     },
     "linux": {
+      "icon": "build/icon.png",
       "category": "Audio",
       "maintainer": "niko <niko@users.noreply.github.com>",
       "target": [

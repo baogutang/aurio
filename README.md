@@ -12,10 +12,10 @@
 
 <br />
 
-[![Version](https://img.shields.io/badge/version-0.1.0-ff6a3d?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.5-ff6a3d?style=flat-square)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-5ad19a?style=flat-square)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/Node-20%2B-339933?style=flat-square&logo=node.js&logoColor=white)](package.json)
-[![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white)](package.json)
+[![Electron](https://img.shields.io/badge/Electron-41-47848F?style=flat-square&logo=electron&logoColor=white)](package.json)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](web/package.json)
 [![CI](https://img.shields.io/github/actions/workflow/status/baogutang/aurio/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/baogutang/aurio/actions)
 
@@ -27,6 +27,7 @@
 
 <a href="https://github.com/baogutang/aurio/releases/latest"><img src="https://img.shields.io/badge/Download-macOS_DMG-ff6a3d?style=for-the-badge&logo=apple&logoColor=white" alt="Download Aurio for macOS" /></a>
 <a href="https://github.com/baogutang/aurio/releases/latest"><img src="https://img.shields.io/badge/Download-Windows_EXE-47848F?style=for-the-badge&logo=windows&logoColor=white" alt="Download Aurio for Windows" /></a>
+<a href="https://github.com/baogutang/aurio/releases/latest"><img src="https://img.shields.io/badge/Download-Linux_AppImage-5ad19a?style=for-the-badge&logo=linux&logoColor=white" alt="Download Aurio for Linux" /></a>
 
 </div>
 
@@ -227,9 +228,9 @@ CLI mode (Claude / Codex) still works with zero API key — the relay is optiona
 
 ## Quick start
 
-**Requires Node.js 20+ · macOS or Windows**
+**Requires Node.js 20+ · macOS, Windows, or Linux**
 
-Prefer packaged builds? Grab the latest **macOS** or **Windows** installer from [Releases](https://github.com/baogutang/aurio/releases/latest).
+Prefer packaged builds? Grab the latest **macOS**, **Windows**, or **Linux** installer from [Releases](https://github.com/baogutang/aurio/releases/latest).
 
 | Step | Command |
 |:--:|:--|

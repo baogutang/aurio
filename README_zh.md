@@ -12,10 +12,10 @@
 
 <br />
 
-[![Version](https://img.shields.io/badge/version-0.1.0-ff6a3d?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.5-ff6a3d?style=flat-square)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-5ad19a?style=flat-square)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/Node-20%2B-339933?style=flat-square&logo=node.js&logoColor=white)](package.json)
-[![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white)](package.json)
+[![Electron](https://img.shields.io/badge/Electron-41-47848F?style=flat-square&logo=electron&logoColor=white)](package.json)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](web/package.json)
 [![CI](https://img.shields.io/github/actions/workflow/status/baogutang/aurio/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/baogutang/aurio/actions)
 
@@ -27,6 +27,7 @@
 
 <a href="https://github.com/baogutang/aurio/releases/latest"><img src="https://img.shields.io/badge/下载-macOS_DMG-ff6a3d?style=for-the-badge&logo=apple&logoColor=white" alt="下载 Aurio macOS 版" /></a>
 <a href="https://github.com/baogutang/aurio/releases/latest"><img src="https://img.shields.io/badge/下载-Windows_EXE-47848F?style=for-the-badge&logo=windows&logoColor=white" alt="下载 Aurio Windows 版" /></a>
+<a href="https://github.com/baogutang/aurio/releases/latest"><img src="https://img.shields.io/badge/下载-Linux_AppImage-5ad19a?style=for-the-badge&logo=linux&logoColor=white" alt="下载 Aurio Linux 版" /></a>
 
 </div>
 
@@ -227,9 +228,9 @@ AI_API_KEY=your-key-from-portal
 
 ## 快速开始
 
-**需要 Node.js 20+ · macOS 或 Windows**
+**需要 Node.js 20+ · macOS、Windows 或 Linux**
 
-想直接安装？前往 [Releases](https://github.com/baogutang/aurio/releases/latest) 下载最新 **macOS** 或 **Windows** 安装包。
+想直接安装？前往 [Releases](https://github.com/baogutang/aurio/releases/latest) 下载最新 **macOS**、**Windows** 或 **Linux** 安装包。
 
 | 步骤 | 命令 |
 |:--:|:--|
