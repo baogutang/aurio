@@ -60,8 +60,8 @@ const zh = {
   sayNoSource: '还没连接音乐源 —— 点右上角设置，扫码登录网易云，或填入 NAS。',
   sayReady: '准备好了。跟我说想听什么，或点播放让我开台。',
   sayServerDown: '后端未连接 —— 请先在 Aurio 目录运行 npm run server',
-  sayThinking: '（思考中…）',
-  sayArranging: '（编排中…）',
+  sayThinking: '我在听你刚才那句，给下一段找个顺一点的接法…',
+  sayArranging: '我在给你排下一小段，先别急着收尾。',
   sayError: '出了点问题',
   sayConnFail: '连不上服务器',
   sayTapPlay: '已排好，点播放就开始。',
@@ -72,6 +72,7 @@ const zh = {
   chatTitle: '和 Aurio 对话',
   chatSubtitle: '你的心情就是我的提示词',
   chatEmpty: '告诉我你想听什么、今天心情如何，Aurio 会为你编排电台。',
+  chatThinking: 'Aurio 正在接歌',
   chatPlaceholder: '想听点什么？',
   ariaClose: '关闭',
   ariaSend: '发送',
@@ -263,6 +264,7 @@ const zh = {
   guideConsole: '控制台',
   guideDocs: '文档',
   aiApiGuide: `选好上面的服务商，点下面链接注册并创建 API Key。
+也可以用作者维护的「宝谷堂中转站」，把它当 OpenAI 兼容接口来填。
 新手推荐「GLM·智谱」的 glm-4-flash：免费、国内直连，地址和模型已自动填好。
 接口地址与模型一般无需改动，把 API Key 粘进去即可。`,
   nasGuide: `Navidrome 是你自己搭在 NAS / 家庭服务器上的音乐库。
@@ -338,8 +340,8 @@ const en: Record<MessageKey, string> = {
   sayNoSource: 'No music source yet — open Settings to log in to Netease or add your NAS.',
   sayReady: 'Ready. Tell me what you want, or hit play to go live.',
   sayServerDown: 'Backend offline — run npm run server in the Aurio folder.',
-  sayThinking: '(Thinking…)',
-  sayArranging: '(Arranging…)',
+  sayThinking: 'I am reading that and finding a smoother way into the next stretch…',
+  sayArranging: 'I am lining up the next short run. Give me a moment.',
   sayError: 'Something went wrong',
   sayConnFail: 'Cannot reach server',
   sayTapPlay: 'Queued up. Tap play to start.',
@@ -349,6 +351,7 @@ const en: Record<MessageKey, string> = {
   chatTitle: 'Chat with Aurio',
   chatSubtitle: 'Your mood is my prompt',
   chatEmpty: 'Tell me what you want to hear or how you feel — Aurio will curate your radio.',
+  chatThinking: 'Aurio is cueing the next beat',
   chatPlaceholder: 'What do you want to hear?',
   ariaClose: 'Close',
   ariaSend: 'Send',
@@ -537,6 +540,7 @@ const en: Record<MessageKey, string> = {
   guideConsole: 'Console',
   guideDocs: 'Docs',
   aiApiGuide: `Pick a provider above, then use a link below to sign up and create an API key.
+You can also use the Baogutang relay as an OpenAI-compatible endpoint.
 For beginners, GLM (Zhipu) glm-4-flash is free and reachable in China — its URL and model are pre-filled.
 The base URL and model are usually fine as-is; just paste your API key.`,
   nasGuide: `Navidrome is your own music server (on a NAS / home server).

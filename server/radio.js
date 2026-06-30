@@ -4,7 +4,7 @@
 // (node can't know playback position on its own).
 import { runSegment } from './dj.js';
 
-const LOW_WATER = 2;   // refill once this few (or fewer) tracks remain after current
+const LOW_WATER = 3;   // refill early so next-segment TTS can prewarm before playback
 const TICK_MS = 8000;  // fallback re-check, in case a heartbeat is missed
 const ACTIVE_TTL_MS = 90000;
 

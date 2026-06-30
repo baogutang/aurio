@@ -482,10 +482,18 @@ app.post('/api/played', (req, res) => {
 });
 
 async function proxyAudio(upstreamUrl, req, res, fallbackType = 'audio/mpeg') {
-  const upstream = await fetch(upstreamUrl, {
-    headers: req.headers.range ? { Range: req.headers.range } : {},
-    signal: AbortSignal.timeout(15000),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  let upstream;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      headers: req.headers.range ? { Range: req.headers.range } : {},
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
   const ct = upstream.headers.get('content-type') || fallbackType;
   if (!upstream.ok) {
     res.status(upstream.status);
@@ -499,8 +507,17 @@ async function proxyAudio(upstreamUrl, req, res, fallbackType = 'audio/mpeg') {
     const v = h === 'content-type' ? ct : upstream.headers.get(h);
     if (v) res.setHeader(h, v);
   }
-  if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
-  else res.end();
+  req.on('close', () => controller.abort());
+  res.on('close', () => controller.abort());
+  if (upstream.body) {
+    const stream = Readable.fromWeb(upstream.body);
+    stream.on('error', (e) => {
+      if (!res.destroyed) res.destroy(e);
+    });
+    stream.pipe(res);
+  } else {
+    res.end();
+  }
 }
 
 // ---- Stream proxy: hides Navidrome creds, supports Range for seeking ----

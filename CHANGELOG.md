@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.8] - 2026-06-30
+
+### Added
+
+- Added the Baogutang relay (`https://token.baogutang.top`) to the AI API setup guide as an OpenAI-compatible option.
+- Added a visible "Aurio is cueing" state in the chat sheet so users get immediate feedback while the AI brain is responding.
+- Added stronger background TTS prewarming for automatic patter, including persisting generated segue audio back into the queue for reuse after reloads.
+- Release notes now come from the matching `CHANGELOG.md` section instead of a generic automated-release sentence.
+
+### Fixed
+
+- Fixed a real playback stop root cause: proxied audio streams were using a 15-second abort signal for the whole stream, so long-running playback could be cut off after the browser buffer drained. The proxy now only times out connection setup and keeps established streams alive.
+- Kept the chat sheet open while AI responses are pending and after the response lands, making the interaction feel continuous instead of submitting and disappearing.
+
 ## [0.2.7] - 2026-06-30
 
 ### Fixed
@@ -70,6 +84,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS voiceover not cast via UPnP (music casting only)
 - Packaged builds require building frontend into `pwa/` before `npm run dist`
 
+[0.2.8]: https://github.com/baogutang/aurio/releases/tag/v0.2.8
 [0.2.7]: https://github.com/baogutang/aurio/releases/tag/v0.2.7
 [0.2.6]: https://github.com/baogutang/aurio/releases/tag/v0.2.6
 [0.2.5]: https://github.com/baogutang/aurio/releases/tag/v0.2.5

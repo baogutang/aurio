@@ -62,15 +62,38 @@ function trackRef(track) {
   };
 }
 
+function sameTrack(a, b) {
+  if (!a || !b) return false;
+  if (a.source && b.source && a.source !== b.source) return false;
+  if (a.id && b.id) return a.id === b.id;
+  return !!(a.title && b.title && a.artist && b.artist && a.title === b.title && a.artist === b.artist);
+}
+
+function persistQueuedTts(track, ttsUrl) {
+  if (!track || !ttsUrl) return;
+  const q = db.getQueue();
+  let changed = false;
+  const next = q.map((item) => {
+    if (!changed && sameTrack(item, track)) {
+      changed = true;
+      return { ...item, segueTtsUrl: ttsUrl };
+    }
+    return item;
+  });
+  if (changed) db.setQueue(next);
+}
+
 function queueTtsPatch(seg, broadcast) {
   if (!seg.say || seg.ttsUrl) return;
+  const firstTrack = broadcast.mode === 'append' ? trackRef(broadcast.queue?.[0]) : null;
   synthesizeBackground(seg.say, (tts) => {
+    if (firstTrack) persistQueuedTts(firstTrack, tts.url);
     bus.emit('tts', {
       ts: broadcast.ts,
       kind: broadcast.kind,
       mode: broadcast.mode,
       ttsUrl: tts.url,
-      track: broadcast.mode === 'append' ? trackRef(broadcast.queue?.[0]) : null,
+      track: firstTrack,
     });
   });
 }

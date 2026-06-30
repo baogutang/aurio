@@ -223,6 +223,7 @@ function AiPanel({ t, onChanged }: { t: T; onChanged: () => void }) {
             </div>
           </div>
           <Guide t={t} body={t('aiApiGuide')} links={[
+            { label: '宝谷堂中转站', url: 'https://token.baogutang.top' },
             { label: 'GLM·智谱', url: 'https://open.bigmodel.cn/usercenter/apikeys' },
             { label: 'DeepSeek', url: 'https://platform.deepseek.com/api_keys' },
             { label: 'Kimi', url: 'https://platform.moonshot.cn/console/api-keys' },

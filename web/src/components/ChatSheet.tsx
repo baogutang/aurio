@@ -13,9 +13,10 @@ interface Props {
   messages: ChatMsg[];
   onSend: (text: string) => void;
   onTrigger: (kind: string) => void;
+  busy?: boolean;
 }
 
-export default function ChatSheet({ open, onClose, messages, onSend, onTrigger }: Props) {
+export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, busy = false }: Props) {
   const { t } = useI18n();
   const [text, setText] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -31,7 +32,7 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger }
     const el = scrollRef.current;
     if (!open || !el || !stickToBottom.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [open, messages]);
+  }, [open, messages, busy]);
 
   useEffect(() => {
     if (!open) return;
@@ -90,7 +91,7 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger }
             </div>
 
             <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto overscroll-contain scroll-panel px-5 py-2 space-y-3 min-h-[240px]">
-              {messages.length === 0 ? (
+              {messages.length === 0 && !busy ? (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -102,7 +103,8 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger }
                   </p>
                 </motion.div>
               ) : (
-                messages.map((m, i) => (
+                <>
+                {messages.map((m, i) => (
                   <motion.div
                     key={i}
                     initial={{ opacity: 0, y: 12, scale: 0.96 }}
@@ -116,14 +118,30 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger }
                   >
                     {m.role === 'dj' ? renderSay(m.text, 'dark') : m.text}
                   </motion.div>
-                ))
+                ))}
+                {busy && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={spring.gentle}
+                    className="chat-bubble-dj self-start max-w-[88%] px-4 py-2.5 text-sm leading-relaxed"
+                  >
+                    <span>{t('chatThinking')}</span>
+                    <span className="typing-dots ml-2" aria-hidden>
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </motion.div>
+                )}
+                </>
               )}
             </div>
 
             <div className="p-4 border-t space-y-3" style={{ borderColor: 'var(--glass-border)', background: 'var(--inset-bg)' }}>
               <div className="flex gap-2 flex-wrap">
                 {quick.map((q) => (
-                  <PressButton key={q.kind} onClick={() => onTrigger(q.kind)} className="pill-btn !py-1.5 !text-[12px]">
+                  <PressButton key={q.kind} onClick={() => onTrigger(q.kind)} disabled={busy} className="pill-btn !py-1.5 !text-[12px] disabled:opacity-40">
                     {q.label}
                   </PressButton>
                 ))}
@@ -141,7 +159,7 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger }
                   variant="play"
                   ariaLabel={t('ariaSend')}
                   onClick={send}
-                  disabled={!text.trim()}
+                  disabled={busy || !text.trim()}
                   className="!w-11 !h-11 !min-w-[44px] disabled:opacity-35"
                 >
                   <IconSend size={16} />

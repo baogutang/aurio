@@ -75,10 +75,30 @@ jobs:
     needs: build
 
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Build release notes
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const version = process.env.GITHUB_REF_NAME.replace(/^v/, '');
+          const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          const heading = `## [${version}]`;
+          const start = changelog.indexOf(heading);
+          let notes = '';
+          if (start >= 0) {
+            const next = changelog.indexOf('\n## [', start + heading.length);
+            notes = changelog.slice(start, next >= 0 ? next : undefined).trim();
+            notes = notes.replace(/^## \[[^\]]+\][^\n]*\n?/, '').trim();
+          }
+          if (!notes) notes = 'See CHANGELOG.md for details.';
+          fs.writeFileSync('RELEASE_NOTES.md', notes + '\n');
+          NODE
 
       - name: Create release
         run: |
@@ -87,6 +107,6 @@ jobs:
             --verify-tag \
             --latest \
             --title "${GITHUB_REF_NAME#v}" \
-            --notes "Automated Aurio desktop release."
+            --notes-file RELEASE_NOTES.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

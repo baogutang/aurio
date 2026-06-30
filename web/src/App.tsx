@@ -213,7 +213,6 @@ export default function App() {
     if (b.ts) lastBroadcastTs.current = b.ts;
 
     setConn('on');
-    setChatOpen(false);
     if (b.error) {
       setSay(b.say || t('sayError'));
       return;
@@ -492,7 +491,6 @@ export default function App() {
   const send = async (text: string) => {
     primeAudio();
     setMessages((m) => [...m, { role: 'user', text }]);
-    setChatOpen(false);
     setConn('busy');
     setSay(t('sayThinking'));
     try {
@@ -506,7 +504,6 @@ export default function App() {
 
   const trig = async (kind: string) => {
     primeAudio();
-    setChatOpen(false);
     setConn('busy');
     setSay(t('sayArranging'));
     try {
@@ -675,7 +672,7 @@ export default function App() {
       <audio ref={ttsRef} />
     </WidgetShell>
 
-    <ChatSheet open={chatOpen} onClose={() => setChatOpen(false)} messages={messages} onSend={send} onTrigger={trig} />
+    <ChatSheet open={chatOpen} onClose={() => setChatOpen(false)} messages={messages} onSend={send} onTrigger={trig} busy={conn === 'busy'} />
     <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} currentTrack={current} initialGroup={settingsGroup} />
     <Onboarding
       open={onboard}
