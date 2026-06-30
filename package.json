@@ -1,6 +1,6 @@
 {
   "name": "aurio",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Aurio - your personal AI radio. Cross-platform (macOS + Windows).",
   "type": "module",
   "main": "electron/main.js",
@@ -100,8 +100,6 @@
     "linux": {
       "category": "Audio",
       "maintainer": "niko <niko@users.noreply.github.com>",
-      "desktopName": "Aurio",
-      "syncDesktopName": true,
       "target": [
         "AppImage",
         "deb"
