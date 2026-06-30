@@ -1,6 +1,6 @@
 {
   "name": "aurio",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Aurio - your personal AI radio. Cross-platform (macOS + Windows).",
   "type": "module",
   "main": "electron/main.js",
@@ -53,7 +53,7 @@
   "build": {
     "appId": "studio.niko.aurio",
     "productName": "Aurio",
-    "artifactName": "${productName}-${version}-${os}-${arch}-${target}.${ext}",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "publish": [
       {
         "provider": "github",
@@ -90,6 +90,12 @@
         "nsis",
         "portable"
       ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}"
     },
     "linux": {
       "category": "Audio",
