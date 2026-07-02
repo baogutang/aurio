@@ -10,32 +10,58 @@ import {
 import { cachedSynthesis, synthesizeBackground } from './tts/index.js';
 import { db } from './store.js';
 import { queueController } from './runtime/queue-controller.js';
+import { clientSessionManager } from './runtime/client-session-manager.js';
 import { eventBus } from './runtime/event-bus.js';
 
-let running = false;
-export function isBusy() { return running; }
+const PRIORITY = { refill: 0, system: 1, feedback: 1, user: 2 };
+
+let processing = false;
+let pendingHighPriority = 0;
+const jobQueue = [];
+
+function segmentPriority(trigger = {}, mode = 'replace') {
+  if (trigger.kind === 'refill') return PRIORITY.refill;
+  if (trigger.kind === 'chat') return PRIORITY.user;
+  if (['morning', 'plan', 'mood'].includes(trigger.kind)) return PRIORITY.user;
+  if (trigger.kind === 'station' && mode === 'insert') return PRIORITY.feedback;
+  return PRIORITY.system;
+}
+
+function pumpQueue() {
+  if (processing || !jobQueue.length) return;
+  jobQueue.sort((a, b) => b.priority - a.priority);
+  const job = jobQueue.shift();
+  if (!job) return;
+  processing = true;
+  job.run()
+    .then(job.resolve)
+    .catch(job.reject)
+    .finally(() => {
+      processing = false;
+      pumpQueue();
+    });
+}
+
+function enqueueSegment(fn, priority) {
+  return new Promise((resolve, reject) => {
+    jobQueue.push({ run: fn, priority, resolve, reject });
+    pumpQueue();
+  });
+}
+
+function freshPlayIndex(fallback = -1) {
+  const fresh = clientSessionManager.currentIndex(15000);
+  if (fresh >= 0) return fresh;
+  return fallback >= 0 ? fallback : -1;
+}
+
+export function isBusy() { return processing; }
 
 export async function drainDj(timeoutMs = 5000) {
   const start = Date.now();
-  while (running && Date.now() - start < timeoutMs) {
+  while (processing && Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 50));
   }
-}
-
-function recordSegmentMemory(trigger, seg, broadcast) {
-  const buf = db.getPref('segmentMemory', []);
-  const tracks = (broadcast?.queue?.length ? broadcast.queue : seg.tracks || [])
-    .slice(0, 6)
-    .map((t) => `${t.artist} — ${t.title}`);
-  buf.push({
-    ts: Date.now(),
-    kind: trigger.kind || 'chat',
-    say: (seg.say || '').slice(0, 120),
-    reason: seg.reason || '',
-    tracks,
-  });
-  if (buf.length > 10) buf.splice(0, buf.length - 10);
-  db.setPref('segmentMemory', buf);
 }
 
 async function fillTracks(seg, trigger, candidateTracks) {
@@ -119,11 +145,14 @@ function trackRef(track) {
   return { source: track.source, id: track.id, title: track.title, artist: track.artist };
 }
 
-function queueTtsPatch(seg, broadcast) {
+function queueTtsPatch(seg, broadcast, playIdx) {
   if (!seg.say || seg.ttsUrl) return;
-  const firstTrack = trackRef(broadcast.queue?.[0]);
+  const upcoming = playIdx >= 0
+    ? broadcast.queue?.[playIdx + 1]
+    : broadcast.queue?.[0];
+  const firstTrack = trackRef(upcoming);
   synthesizeBackground(seg.say, (tts) => {
-    const ref = firstTrack || trackRef(broadcast.queue?.[0]);
+    const ref = firstTrack || trackRef(broadcast.queue?.[playIdx + 1] || broadcast.queue?.[0]);
     if (ref) queueController.patchSegueTts(ref, tts.url);
     eventBus.emit('tts', {
       ts: broadcast.ts,
@@ -139,13 +168,14 @@ function revisionNow() {
   return queueController.peekSnapshot().revision;
 }
 
-export async function runSegment(trigger = {}, { mode = 'replace', currentIndex: playIdx = -1 } = {}) {
-  if (running) return { error: 'busy', say: '稍等，我还在编排上一段…', revision: revisionNow() };
-  running = true;
+async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: playIdx = -1 } = {}, priority = PRIORITY.system) {
   try {
     if (trigger.text) db.addMessage('user', trigger.text, { kind: trigger.kind || 'chat' });
 
     const seg = await composeSegment(trigger);
+    if (priority < PRIORITY.user && pendingHighPriority > 0) {
+      return { error: 'superseded', revision: revisionNow() };
+    }
 
     let eff = mode;
     let placement = 'next';
@@ -173,6 +203,7 @@ export async function runSegment(trigger = {}, { mode = 'replace', currentIndex:
         : '我的大脑这会儿连不上（去设置里看看 AI 配置），先陪你安静待一会儿。';
     }
 
+    const idxNow = freshPlayIndex(playIdx);
     const base = {
       ts: Date.now(),
       kind: trigger.kind || 'chat',
@@ -188,24 +219,22 @@ export async function runSegment(trigger = {}, { mode = 'replace', currentIndex:
       broadcast = { ...base, mode: 'append', ttsUrl: null, queue: added, revision: revisionNow() };
     } else if (eff === 'insert') {
       const snap = queueController.peekSnapshot();
-      const at = placement === 'next' ? Math.max(0, playIdx + 1) : snap.queue.length;
+      const at = placement === 'next' ? Math.max(0, idxNow + 1) : snap.queue.length;
       const { added } = queueController.insert(seg.tracks, { at, dedupeAgainst: snap.queue });
       broadcast = { ...base, mode: 'insert', placement, ttsUrl: seg.ttsUrl, queue: added, revision: revisionNow() };
     } else if (eff === 'steer') {
       db.setStation({ mood: seg.mood || '', lastSteer: trigger.text || '' });
-      if (playIdx >= 0) queueController.steer(playIdx);
-      let steerQueue = [];
-      try {
-        const rec = await recommend(4, { mood: seg.mood });
-        for (const t of rec) t.url = await playbackUrl(t);
-        if (rec.length) {
-          const { added } = queueController.append(rec);
-          steerQueue = added;
-        }
-      } catch (e) { console.error('[dj] steer refill:', e.message); }
+      let steerTracks = seg.tracks;
+      if (!steerTracks.length) {
+        try {
+          steerTracks = await recommend(4, { mood: seg.mood });
+          for (const t of steerTracks) t.url = await playbackUrl(t);
+        } catch (e) { console.error('[dj] steer refill:', e.message); }
+      }
+      const { snapshot } = queueController.steerAndAppend(idxNow, steerTracks);
       broadcast = {
         ...base, mode: 'steer', mood: seg.mood || '', ttsUrl: seg.ttsUrl,
-        queue: steerQueue, revision: revisionNow(),
+        queue: snapshot.queue, revision: snapshot.revision,
       };
     } else if (eff === 'chat') {
       broadcast = { ...base, mode: 'chat', ttsUrl: seg.ttsUrl, queue: [], revision: revisionNow() };
@@ -220,7 +249,7 @@ export async function runSegment(trigger = {}, { mode = 'replace', currentIndex:
     }
     recordSegmentMemory(trigger, seg, broadcast);
     eventBus.emit('broadcast', broadcast);
-    queueTtsPatch(seg, broadcast);
+    queueTtsPatch(seg, broadcast, idxNow);
     return broadcast;
   } catch (e) {
     console.error('[dj] run failed:', e.message);
@@ -231,8 +260,35 @@ export async function runSegment(trigger = {}, { mode = 'replace', currentIndex:
     };
     eventBus.emit('broadcast', fail);
     return fail;
+  }
+}
+
+function recordSegmentMemory(trigger, seg, broadcast) {
+  const buf = db.getPref('segmentMemory', []);
+  const tracks = (broadcast?.queue?.length ? broadcast.queue : seg.tracks || [])
+    .slice(0, 6)
+    .map((t) => `${t.artist} — ${t.title}`);
+  buf.push({
+    ts: Date.now(),
+    kind: trigger.kind || 'chat',
+    say: (seg.say || '').slice(0, 120),
+    reason: seg.reason || '',
+    tracks,
+  });
+  if (buf.length > 10) buf.splice(0, buf.length - 10);
+  db.setPref('segmentMemory', buf);
+}
+
+export async function runSegment(trigger = {}, opts = {}) {
+  const priority = segmentPriority(trigger, opts.mode);
+  if (priority >= PRIORITY.user) pendingHighPriority++;
+  try {
+    return await enqueueSegment(
+      () => runSegmentInner(trigger, opts, priority),
+      priority,
+    );
   } finally {
-    running = false;
+    if (priority >= PRIORITY.user) pendingHighPriority--;
   }
 }
 

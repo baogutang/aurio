@@ -13,7 +13,7 @@ let graceTimer = null;
 function pickController() {
   let best = null;
   for (const [id, c] of clients) {
-    if (c.paused || c.playingIndex < 0) continue;
+    if (c.playingIndex < 0) continue;
     if (!best) {
       best = { id, ...c };
       continue;
@@ -125,15 +125,24 @@ export const clientSessionManager = {
     return !!clientId && controllerId === clientId;
   },
 
-  currentIndex() {
+  currentIndex(maxAgeMs) {
     const c = this.getController();
-    return c ? c.playingIndex : -1;
+    if (!c) return -1;
+    if (maxAgeMs != null && Date.now() - c.lastSeen > maxAgeMs) return -1;
+    return c.playingIndex;
+  },
+
+  indexFresh(maxAgeMs = 15000) {
+    const c = this.getController();
+    if (!c) return false;
+    return Date.now() - c.lastSeen <= maxAgeMs;
   },
 
   hasActiveSession(maxAgeMs = ACTIVE_TTL_MS) {
     const c = this.getController();
-    if (!c || c.paused || c.playingIndex < 0) return false;
-    return Date.now() - c.lastSeen <= maxAgeMs;
+    if (!c) return false;
+    if (Date.now() - c.lastSeen > maxAgeMs) return false;
+    return c.playingIndex >= 0 || c.queueLen > 0;
   },
 
   remaining(queueLen) {

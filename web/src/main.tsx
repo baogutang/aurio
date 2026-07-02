@@ -12,6 +12,11 @@ const locale = resolveLocale(prefs.locale);
 document.documentElement.setAttribute('data-theme', resolved);
 document.documentElement.style.colorScheme = resolved;
 document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
+if (typeof window !== 'undefined' && (window as Window & { aurio?: { isElectron?: boolean; platform?: string } }).aurio?.isElectron) {
+  document.documentElement.setAttribute('data-electron', '');
+  const platform = (window as Window & { aurio?: { platform?: string } }).aurio?.platform;
+  if (platform) document.documentElement.setAttribute('data-platform', platform);
+}
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

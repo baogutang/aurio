@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import ClockDisplay from './ClockDisplay';
 import BootLog from './BootLog';
+import ContextGlance from './ContextGlance';
 import Spectrum from './Spectrum';
 import Lyrics from './Lyrics';
 import UpNext from './UpNext';
@@ -43,7 +44,8 @@ export default function MainCard({
   onSteer, onTrigger, isObserver = false, controlsDisabled = false,
   tasteLine = '', planNote = '',
 }: Props) {
-  const { clock, tr: t } = usePreferences();
+  const { clock, tr: t, resolved } = usePreferences();
+  const sayTheme = resolved === 'light' ? 'card' : 'dark';
   const live = conn === 'on' || conn === 'busy';
   const airLabel = conn === 'on' ? t('onAir') : conn === 'busy' ? t('busy') : t('standby');
   const upNext = queue.slice(queueIndex + 1);
@@ -88,11 +90,15 @@ export default function MainCard({
             )}
             <Spectrum audioRef={audioRef} height={108} />
 
+            <div className="mt-2">
+              <ContextGlance compact />
+            </div>
+
             <motion.h1
               key={track.title}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-3 text-[1.18rem] font-semibold leading-snug line-clamp-2 text-[var(--text-primary)]"
+              className="mt-3 font-matrix text-[1.28rem] font-bold leading-snug line-clamp-2 text-[var(--text-primary)] tracking-[0.02em]"
             >
               {track.title}
             </motion.h1>
@@ -123,7 +129,7 @@ export default function MainCard({
             <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
               <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)] mb-1.5">{t('djSay')}</p>
               <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]" aria-live="polite">
-                {renderSay(say, 'dark')}
+                {renderSay(say, sayTheme)}
                 {conn === 'busy' && (
                   <motion.span
                     className="inline-block w-1 h-3.5 ml-1 rounded-sm align-middle"
@@ -190,6 +196,10 @@ export default function MainCard({
             style={clock}
           />
 
+          <div className="mt-2.5">
+            <ContextGlance />
+          </div>
+
           <div className="panel-dot p-3.5 mt-2.5 max-h-[156px] min-h-[84px] scroll-panel">
             <BootLog
               netease={services?.netease}
@@ -208,7 +218,7 @@ export default function MainCard({
             )}
             <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)] mb-1.5">{t('djSay')}</p>
             <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]" aria-live="polite">
-              {renderSay(say, 'dark')}
+              {renderSay(say, sayTheme)}
             </p>
             {onSteer && !isObserver && (
               <div className="mt-3 flex flex-wrap gap-1.5">

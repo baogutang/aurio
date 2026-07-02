@@ -39,7 +39,9 @@
   --accent-rgb: 255, 106, 61;
   --hi: #5ad19a;
   --hi-rgb: 90, 209, 154;
-  --sci-cyan-rgb: 90, 209, 154;
+  --sci-cyan-rgb: 43, 245, 255;
+  --particle-a-rgb: 90, 209, 154;
+  --particle-b-rgb: 43, 245, 255;
   --play-panel-bg: #080808;
   --light-panel-bg: rgba(255, 255, 255, 0.03);
   --modal-overlay: rgba(0, 0, 0, 0.72);
@@ -68,7 +70,9 @@
   --accent-rgb: 255, 106, 61;
   --hi: #149a64;
   --hi-rgb: 20, 154, 100;
-  --sci-cyan-rgb: 20, 154, 100;
+  --sci-cyan-rgb: 0, 140, 120;
+  --particle-a-rgb: 20, 154, 100;
+  --particle-b-rgb: 0, 160, 140;
   --play-panel-bg: #111111;
   --light-panel-bg: rgba(0, 0, 0, 0.04);
   --modal-overlay: rgba(0, 0, 0, 0.35);
@@ -122,9 +126,48 @@ body {
   background-size: 5px 5px;
 }
 
-.app-card-particles,
+.app-card-particles {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.72;
+}
+
 .app-card-edge {
-  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 100px rgba(var(--particle-b-rgb), 0.06),
+    inset 0 1px 0 rgba(var(--particle-a-rgb), 0.12);
+}
+
+.app-card.is-on-air .app-card-particles {
+  opacity: 0.95;
+}
+
+.app-card.is-on-air .app-card-edge {
+  box-shadow:
+    inset 0 0 140px rgba(var(--accent-rgb), 0.1),
+    inset 0 0 60px rgba(var(--particle-b-rgb), 0.08);
+}
+
+/* Electron: edge-to-edge immersive shell (no outer gutter / card float) */
+html[data-electron] .app-frame {
+  padding: 0;
+  background: var(--card-bg);
+}
+
+html[data-electron] .app-card {
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+html[data-electron][data-platform="darwin"] .widget-drag {
+  padding-top: 2rem;
 }
 
 .app-card-body {
@@ -567,7 +610,55 @@ body {
 }
 
 .lyrics-panel {
-  max-height: clamp(96px, 19vh, 146px);
+  max-height: clamp(120px, 28vh, 220px);
+}
+
+.context-glance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  background: var(--inset-bg);
+  border: 1px solid var(--glass-border);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.context-glance.is-compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.context-glance--empty {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.context-glance-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.4rem;
+}
+
+.context-glance-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: rgb(var(--hi-rgb));
+  box-shadow: 0 0 8px rgba(var(--hi-rgb), 0.65);
+}
+
+.context-glance-dot--cal {
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.55);
 }
 
 .lyrics-empty {

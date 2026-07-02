@@ -22,6 +22,15 @@ describe('queueController', () => {
     expect(snapshot.revision).toBeGreaterThan(rev0);
   });
 
+  it('steerAndAppend trims then appends in one revision', () => {
+    queueController.replace([track(1), track(2), track(3)]);
+    const rev0 = queueController.peekSnapshot().revision;
+    const { snapshot, added } = queueController.steerAndAppend(0, [track(4, 'Four'), track(5, 'Five')]);
+    expect(snapshot.queue.map((t) => t.id)).toEqual(['1', '4', '5']);
+    expect(added).toHaveLength(2);
+    expect(snapshot.revision).toBeGreaterThan(rev0);
+  });
+
   it('steer keeps through index', () => {
     queueController.replace([track(1), track(2), track(3)]);
     const { snapshot } = queueController.steer(0);

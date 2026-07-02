@@ -100,8 +100,13 @@ export async function executeSearchLoop(query, searchFn, maxRounds = 2) {
       out.push(t);
     }
     if (out.length >= 6) break;
+    const narrowed = q.replace(/来(?:点|首|一首)?|放|听|歌|音乐/g, ' ').replace(/\s+/g, ' ').trim();
+    if (round === 0 && out.length < 6 && narrowed && narrowed !== q) {
+      q = narrowed;
+      continue;
+    }
     if (!batch.length && round === 0) {
-      q = q.replace(/来(?:点|首|一首)?|放|听|歌|音乐/g, ' ').replace(/\s+/g, ' ').trim() || q;
+      q = narrowed || q;
       continue;
     }
     break;

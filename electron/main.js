@@ -161,6 +161,7 @@ ipcMain.handle('aurio:update:install', async () => {
 });
 
 function createWindow(port) {
+  const isMac = process.platform === 'darwin';
   win = new BrowserWindow({
     width: 520,
     height: 820,
@@ -168,6 +169,11 @@ function createWindow(port) {
     minHeight: 680,
     useContentSize: true,
     title: 'Aurio',
+    frame: !isMac,
+    ...(isMac ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 16, y: 18 },
+    } : {}),
     backgroundColor: '#030303',
     autoHideMenuBar: true,
     webPreferences: {

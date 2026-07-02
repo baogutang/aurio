@@ -53,6 +53,27 @@ async function environment() {
   return lines.join('\n');
 }
 
+/** Structured snapshot for the UI (weather + today's calendar). */
+export async function environmentSnapshot() {
+  const now = new Date();
+  const w = await weather.current();
+  let events = [];
+  try {
+    events = await todayEvents();
+  } catch { /* ignore */ }
+  return {
+    now: now.toISOString(),
+    weather: w
+      ? { city: w.city, desc: w.desc, temp: w.temp, feels: w.feels }
+      : null,
+    events: events.slice(0, 4).map((e) => ({
+      start: e.start,
+      title: e.title,
+      source: e.source,
+    })),
+  };
+}
+
 function feedbackMemory() {
   const taste = tasteSummary();
   const lines = [];

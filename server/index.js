@@ -31,6 +31,7 @@ import { eventBus } from './runtime/event-bus.js';
 import { recordFeedback, tasteSummary } from './agent/preferences.js';
 import { onPlaybackFeedback } from './agent/feedback-reaction.js';
 import { registerServer, installSignalHandlers, stopServer } from './shutdown.js';
+import { environmentSnapshot } from './context.js';
 
 load();
 loadSettings();
@@ -181,6 +182,15 @@ app.get('/api/status', async (req, res) => {
     wsClients: clientSessionManager.clientCount(),
     hasActiveSession: hasActiveSession(),
   });
+});
+
+app.get('/api/context', async (req, res) => {
+  try {
+    const snapshot = await environmentSnapshot();
+    res.json({ ok: true, ...snapshot });
+  } catch (e) {
+    res.status(500).json({ ok: false, detail: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 app.get('/api/health', async (req, res) => {

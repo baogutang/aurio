@@ -50,14 +50,17 @@ export function remainingTracks() {
 export async function maybeRefill() {
   if (composing || sessionSuspended) return;
   if (!hasActiveSession()) return;
-  if (clientSessionManager.currentIndex() < 0) return;
+
+  const snap = queueController.peekSnapshot();
+  const idx = currentIndex();
+  if (idx < 0 && snap.queue.length === 0) return;
   if (remainingTracks() > LOW_WATER) return;
 
   composing = true;
   let holdComposing = false;
   try {
     const b = await runSegment({ kind: 'refill', text: '' }, { mode: 'append' });
-    if (b?.error === 'busy') {
+    if (b?.error === 'busy' || b?.error === 'superseded') {
       holdComposing = true;
       setTimeout(() => {
         composing = false;

@@ -82,6 +82,21 @@ export const queueController = {
     return commit(next, { op: 'steer', removedAfterIndex: keep - 1 });
   },
 
+  steerAndAppend(keepThroughIndex, tracks) {
+    const q = this.peekSnapshot().queue;
+    if (keepThroughIndex < 0) {
+      return this.append(tracks, { dedupeAgainst: q });
+    }
+    const keep = Math.max(0, Math.min(keepThroughIndex + 1, q.length));
+    const head = q.slice(0, keep);
+    const incoming = dedupeTracks(tracks, head);
+    const next = [...head, ...incoming];
+    return {
+      ...commit(next, { op: 'steer-append', tracks: incoming, removedAfterIndex: keep - 1 }),
+      added: incoming,
+    };
+  },
+
   replace(tracks) {
     const next = dedupeTracks(tracks);
     return commit(next, { op: 'replace', tracks: next });

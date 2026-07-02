@@ -401,9 +401,12 @@ export default function App() {
         return;
       }
       case 'steer': {
-        const keep = idxRef.current + 1;
-        const q = queueRef.current.slice(0, keep);
-        syncQueueState(q, idxRef.current);
+        if (Array.isArray(b.queue) && b.queue.length && typeof b.revision === 'number') {
+          syncFromServer(stampReason(b.queue, b.reason), b.revision, idxRef.current);
+        } else {
+          const keep = idxRef.current + 1;
+          syncQueueState(queueRef.current.slice(0, keep), idxRef.current);
+        }
         reportState();
         playTts();
         return;
@@ -658,9 +661,15 @@ export default function App() {
 
   useEffect(() => {
     if (conn !== 'on') return;
-    const timer = window.setInterval(() => reportState(), 30000);
+    const timer = window.setInterval(() => reportState(), 8000);
     return () => window.clearInterval(timer);
   }, [conn, reportState]);
+
+  useEffect(() => {
+    if (!playing) return;
+    const timer = window.setInterval(() => reportState(), 8000);
+    return () => window.clearInterval(timer);
+  }, [playing, reportState]);
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -877,7 +886,7 @@ export default function App() {
 
   return (
     <>
-    <WidgetShell>
+    <WidgetShell playing={playing || segueActive}>
       <motion.header {...stagger(0)} className="app-header shrink-0">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <div className={`header-avatar ${petState !== 'idle' ? 'is-live' : ''}`} aria-hidden>

@@ -81,6 +81,10 @@ const zh = {
   serviceNavidrome: 'NAS · Navidrome',
   serviceQQ: 'QQ 音乐',
   serviceWeather: '天气服务',
+  contextEmpty: '在设置中配置天气或日历，Aurio 会据此调节节目',
+  lyricsLoading: '歌词加载中…',
+  lyricsEmpty: '暂无歌词',
+  lyricsSynced: '同步歌词',
   bootConnected: '● 已连接 · 可以开台了',
   bootConnecting: '○ 正在连接服务器…',
 
@@ -396,6 +400,10 @@ const en: Record<MessageKey, string> = {
   serviceNavidrome: 'NAS · Navidrome',
   serviceQQ: 'QQ Music',
   serviceWeather: 'Weather service',
+  contextEmpty: 'Configure weather or calendar in Settings — Aurio uses them for programming',
+  lyricsLoading: 'Loading lyrics…',
+  lyricsEmpty: 'No lyrics',
+  lyricsSynced: 'Synced lyrics',
   bootConnected: '● Connected · Ready to go live',
   bootConnecting: '○ Connecting to server…',
 

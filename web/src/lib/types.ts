@@ -41,6 +41,13 @@ export interface TtsPatch {
   track?: Pick<Track, 'source' | 'id' | 'title' | 'artist'> | null;
 }
 
+export interface ContextResp {
+  ok: boolean;
+  now?: string;
+  weather: { city: string; desc: string; temp: number; feels: number } | null;
+  events: { start: string | number; title: string; source?: string }[];
+}
+
 export interface StatusResp {
   ok: boolean;
   config: { port: number; ai?: string; navidrome: boolean; netease: boolean; qqmusic: boolean; fish: boolean; weather: boolean; calendars: Record<string, boolean> };

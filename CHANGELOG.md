@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.2] - 2026-07-02
+
+### Added
+
+- Pixel-mascot desktop icon regenerated from the in-app PixelPet sprite (orange body, green belly, broadcast arcs).
+- `GET /api/context` and `ContextGlance` UI for live weather and calendar on the main screen.
+- Immersive edge-to-edge Electron shell with sci-fi particle backdrop.
+
+### Fixed
+
+- DJ segment priority queue: user chat/triggers preempt background refill; stale refill compose is dropped when user is waiting.
+- Fresh playback index (15s TTL) used for insert/steer instead of stale snapshots from long AI compose.
+- Steer applies trim + mood refill atomically via `steerAndAppend`; client applies full server queue on steer broadcast.
+- Heartbeat interval tightened to 8s; paused clients remain controller-eligible and can receive queue refill.
+- Search loop broadens queries when first pass returns thin results.
+- Lyrics scroll/sync: clear on track change, seeked listener, jump scroll for large line skips.
+
 ## [0.3.1] - 2026-07-02
 
 ### Fixed

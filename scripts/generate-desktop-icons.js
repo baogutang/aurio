@@ -121,52 +121,84 @@ function radialGlow(img, cx, cy, radius, base) {
   }
 }
 
+// 12×13 pixel sprite — matches web/src/components/PixelPet.tsx
+const SPRITE = [
+  '......T.....',
+  '...SSSSSS...',
+  '..SBBBBBBS..',
+  '.SBBBBBBBBS.',
+  '.SBEEBBEEBS.',
+  '.SBGEBBGEBS.',
+  '.SBBBBBBBBS.',
+  '.SBLLLLLLBS.',
+  '.SBLLLLLLBS.',
+  '.SBBBBBBBBS.',
+  '..SBBBBBBS..',
+  '...FF..FF...',
+];
+
+const SPRITE_COLORS = {
+  B: color('#ff6a3d'),
+  S: color('#ff6a3d', 0.42),
+  L: color('#5ad19a'),
+  E: color('#120c08', 0.82),
+  G: color('#ffffff'),
+  A: color('#5ad19a', 0.85),
+  T: color('#eafff2'),
+  F: color('#ff6a3d', 0.42),
+};
+
+function drawPixel(img, x, y, cell, c) {
+  fillRoundedRect(img, x, y, cell, cell, Math.max(1, cell * 0.08), c);
+}
+
 function renderIcon(size) {
   const img = image(size);
   const s = size / 1024;
   const sx = (v) => v * s;
-  const top = color('#1d2124');
-  const bottom = color('#070909');
-  const green = color('#76f3ad');
-  const orange1 = color('#ff9a35');
-  const orange2 = color('#ff642f');
+  const top = color('#0a0b0d');
+  const bottom = color('#040405');
 
   fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), (x, y) => mix(top, bottom, y / size));
-  fillRoundedRect(img, sx(76), sx(76), sx(872), sx(872), sx(184), color('#ffffff', 0.035));
-  radialGlow(img, sx(512), sx(315), sx(345), color('#65f0a0', 0.34));
-  radialGlow(img, sx(512), sx(650), sx(360), color('#ff6a3d', 0.13));
+  fillRoundedRect(img, sx(76), sx(76), sx(872), sx(872), sx(184), color('#ffffff', 0.03));
+  radialGlow(img, sx(512), sx(360), sx(360), color('#2bf5ff', 0.14));
+  radialGlow(img, sx(512), sx(620), sx(320), color('#ff6a3d', 0.12));
 
-  for (let y = 128; y < 900; y += 54) {
-    for (let x = 128; x < 900; x += 54) fillEllipse(img, sx(x), sx(y), sx(4), sx(4), color('#ffffff', 0.055));
+  for (let y = 120; y < 900; y += 48) {
+    for (let x = 120; x < 900; x += 48) fillEllipse(img, sx(x), sx(y), sx(2.2), sx(2.2), color('#ffffff', 0.05));
   }
 
-  drawArc(img, sx(512), sx(313), sx(138), sx(100), Math.PI * 1.05, Math.PI * 1.95, sx(15), color('#9cffc5', 0.86));
-  drawArc(img, sx(512), sx(310), sx(210), sx(154), Math.PI * 1.07, Math.PI * 1.93, sx(13), color('#6df0a4', 0.50));
-  drawArc(img, sx(512), sx(306), sx(280), sx(205), Math.PI * 1.1, Math.PI * 1.9, sx(10), color('#5ad19a', 0.28));
+  const cell = sx(58);
+  const cols = 12;
+  const rows = SPRITE.length;
+  const ox = sx(512) - (cols * cell) / 2;
+  const oy = sx(560) - (rows * cell) / 2;
 
-  drawLine(img, sx(512), sx(430), sx(512), sx(330), sx(21), color('#7df5ae', 0.92));
-  fillEllipse(img, sx(512), sx(303), sx(39), sx(39), color('#eafff2', 1));
-  fillEllipse(img, sx(512), sx(303), sx(22), sx(22), color('#5dff9e', 0.9));
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < SPRITE[row].length; col++) {
+      const ch = SPRITE[row][col];
+      if (ch === '.') continue;
+      drawPixel(img, ox + col * cell, oy + row * cell, cell, SPRITE_COLORS[ch]);
+    }
+  }
 
-  fillEllipse(img, sx(512), sx(642), sx(248), sx(250), (x, y) => mix(orange1, orange2, clamp((y - sx(440)) / sx(430))));
-  fillEllipse(img, sx(333), sx(657), sx(82), sx(118), color('#ff6937', 0.98));
-  fillEllipse(img, sx(691), sx(657), sx(82), sx(118), color('#ff6937', 0.98));
-  fillRoundedRect(img, sx(396), sx(807), sx(90), sx(82), sx(30), color('#fa5b2a', 1));
-  fillRoundedRect(img, sx(538), sx(807), sx(90), sx(82), sx(30), color('#fa5b2a', 1));
+  // Broadcast arcs (pixel dots)
+  for (const [ring, radius] of [[0, 7.4], [1, 8.6], [2, 9.8]]) {
+    const r = cell * radius;
+    const steps = 24 + ring * 6;
+    for (let i = 0; i < steps; i++) {
+      const ang = Math.PI * (0.18 + 0.64 * i / (steps - 1));
+      const px = sx(512) + Math.cos(ang) * r;
+      const py = oy - cell * 1.2 - Math.sin(ang) * r * 0.55;
+      fillEllipse(img, px, py, cell * 0.22, cell * 0.22, color('#5ad19a', 0.9 - ring * 0.18));
+    }
+  }
 
-  fillEllipse(img, sx(512), sx(690), sx(150), sx(108), (x, y) => mix(color('#a1ffd1'), color('#43d79a'), clamp((y - sx(585)) / sx(215))));
-  fillEllipse(img, sx(512), sx(690), sx(116), sx(76), color('#baffdd', 0.34));
+  // Antenna glow
+  radialGlow(img, sx(512), oy - cell * 0.8, cell * 2.2, color('#eafff2', 0.55));
+  fillEllipse(img, sx(512), oy - cell * 0.8, cell * 0.55, cell * 0.55, color('#ffffff', 0.95));
 
-  fillEllipse(img, sx(420), sx(575), sx(42), sx(52), color('#140f0c', 0.96));
-  fillEllipse(img, sx(604), sx(575), sx(42), sx(52), color('#140f0c', 0.96));
-  fillEllipse(img, sx(433), sx(557), sx(12), sx(14), color('#ffffff', 0.96));
-  fillEllipse(img, sx(617), sx(557), sx(12), sx(14), color('#ffffff', 0.96));
-  drawLine(img, sx(486), sx(632), sx(507), sx(651), sx(12), color('#22130c', 0.95));
-  drawLine(img, sx(507), sx(651), sx(538), sx(651), sx(12), color('#22130c', 0.95));
-  drawLine(img, sx(538), sx(651), sx(559), sx(632), sx(12), color('#22130c', 0.95));
-
-  fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), color('#ffffff', 0.04));
-  drawLine(img, sx(190), sx(920), sx(834), sx(920), sx(10), color('#ffffff', 0.045));
+  fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), color('#ffffff', 0.035));
   return img;
 }
 

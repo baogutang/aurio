@@ -1,4 +1,4 @@
-import type { StatusResp, SettingsResp, AiProvidersResp, CastDevice, TestResult, Broadcast, LyricsResp, ChatMsg, ProfileResp, TasteResp, Track } from './types';
+import type { StatusResp, SettingsResp, AiProvidersResp, CastDevice, TestResult, Broadcast, LyricsResp, ChatMsg, ProfileResp, TasteResp, Track, ContextResp } from './types';
 
 const json = async (r: Response) => {
   if (!r.ok) {
@@ -81,6 +81,7 @@ export const api = {
   session,
   resetSession,
   status: (): Promise<StatusResp> => get('/api/status'),
+  context: (): Promise<ContextResp> => get('/api/context'),
   messages: (limit = 80): Promise<{ messages: ChatMsg[] }> =>
     get('/api/messages?limit=' + encodeURIComponent(limit)),
   settings: (): Promise<SettingsResp> => get('/api/settings'),
