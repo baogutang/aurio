@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.1] - 2026-07-02
+
+### Fixed
+
+- macOS in-app update install no longer fails on unsigned CI builds: skip ShipIt code-signature verification when distributing without Apple Developer ID signing.
+- Settings update panel shows a manual `.dmg` download link when signature validation errors occur.
+
 ## [0.3.0] - 2026-07-02
 
 ### Added

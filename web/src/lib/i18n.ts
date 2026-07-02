@@ -277,6 +277,8 @@ const zh = {
   updatesAvailable: '发现新版本 {version}',
   updatesDev: '开发模式不支持在线更新',
   updatesError: '更新失败',
+  updatesSignatureHint: '自动安装校验失败时，请从 GitHub Releases 手动下载 .dmg 安装。',
+  updatesOpenReleases: '打开下载页',
 
   // First-run onboarding
   obWelcome: '欢迎来到 Aurio',
@@ -585,6 +587,8 @@ const en: Record<MessageKey, string> = {
   updatesAvailable: 'New version available: {version}',
   updatesDev: 'Online updates are not available in development mode',
   updatesError: 'Update failed',
+  updatesSignatureHint: 'If auto-install fails signature checks, download the .dmg from GitHub Releases and install manually.',
+  updatesOpenReleases: 'Open releases',
 
   // First-run onboarding
   obWelcome: 'Welcome to Aurio',

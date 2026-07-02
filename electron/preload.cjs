@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('aurio', {
   isElectron: true,
   platform: process.platform,
+  releasesUrl: 'https://github.com/baogutang/aurio/releases/latest',
   updates: {
     check: () => ipcRenderer.invoke('aurio:update:check'),
     download: () => ipcRenderer.invoke('aurio:update:download'),

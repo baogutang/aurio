@@ -49,6 +49,11 @@ if (!hasSingleInstanceLock) {
 
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
+// GitHub Actions builds are unsigned (no Apple Developer ID). ShipIt rejects
+// in-app installs unless we skip signature verification on macOS.
+if (process.platform === 'darwin') {
+  autoUpdater.verifyUpdateCodeSignature = false;
+}
 
 function versionParts(v = '') {
   return v.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);

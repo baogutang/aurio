@@ -659,6 +659,7 @@ function CastPanel({ t, currentTrack }: { t: T; currentTrack: Track | null }) {
 
 function UpdatesPanel({ t }: { t: T }) {
   const updates = window.aurio?.updates;
+  const releasesUrl = window.aurio?.releasesUrl;
   const [res, setRes] = useState<Res>(null);
   const [busy, setBusy] = useState(false);
   const [available, setAvailable] = useState(false);
@@ -742,6 +743,8 @@ function UpdatesPanel({ t }: { t: T }) {
     }
   };
 
+  const showManualInstall = res && !res.ok && /signature|codesign|shipit|签名/i.test(res.msg || '');
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('updatesHint')}</p>
@@ -756,6 +759,19 @@ function UpdatesPanel({ t }: { t: T }) {
         </div>
       )}
       <ResultLine r={res} />
+      {showManualInstall && releasesUrl && (
+        <div className="space-y-2">
+          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">{t('updatesSignatureHint')}</p>
+          <a
+            href={releasesUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="pill-btn w-full inline-flex items-center justify-center text-center no-underline"
+          >
+            {t('updatesOpenReleases')}
+          </a>
+        </div>
+      )}
       <Buttons>
         <button disabled={busy} onClick={check} className="pill-btn flex-1 disabled:opacity-40">{t('updatesCheck')}</button>
         <button disabled={busy || !available || downloaded} onClick={download} className="pill-btn flex-1 disabled:opacity-40">{t('updatesDownload')}</button>
