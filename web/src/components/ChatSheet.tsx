@@ -14,9 +14,11 @@ interface Props {
   onSend: (text: string) => void;
   onTrigger: (kind: string) => void;
   busy?: boolean;
+  onGoAir?: () => void;
+  isObserver?: boolean;
 }
 
-export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, busy = false }: Props) {
+export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, busy = false, onGoAir, isObserver = false }: Props) {
   const { t } = useI18n();
   const [text, setText] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -26,6 +28,7 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, 
     { kind: 'morning', label: t('quickMorning') },
     { kind: 'plan', label: t('quickPlan') },
     { kind: 'mood', label: t('quickMood') },
+    { kind: 'station', label: t('quickStation') },
   ];
 
   useEffect(() => {
@@ -101,6 +104,16 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, 
                   <p className="text-sm text-[var(--text-muted)] max-w-[240px] mx-auto leading-relaxed">
                     {t('chatEmpty')}
                   </p>
+                  {onGoAir && (
+                    <button
+                      type="button"
+                      className="mt-4 px-5 py-2 rounded-2xl text-[12px] font-medium"
+                      style={{ background: 'rgb(var(--accent-rgb) / 0.12)', color: 'rgb(var(--accent-rgb))' }}
+                      onClick={onGoAir}
+                    >
+                      {t('goOnAir')}
+                    </button>
+                  )}
                 </motion.div>
               ) : (
                 <>
@@ -139,6 +152,10 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, 
             </div>
 
             <div className="p-4 border-t space-y-3" style={{ borderColor: 'var(--glass-border)', background: 'var(--inset-bg)' }}>
+              {isObserver ? (
+                <p className="text-[12px] text-[var(--text-muted)] text-center py-2">{t('chatObserver')}</p>
+              ) : (
+              <>
               <div className="flex gap-2 flex-wrap">
                 {quick.map((q) => (
                   <PressButton key={q.kind} onClick={() => onTrigger(q.kind)} disabled={busy} className="pill-btn !py-1.5 !text-[12px] disabled:opacity-40">
@@ -165,6 +182,8 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, 
                   <IconSend size={16} />
                 </PressButton>
               </div>
+              </>
+              )}
             </div>
           </motion.section>
         </>

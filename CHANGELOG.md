@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-07-02
+
+### Added
+
+- Radio runtime with authoritative queue controller, client session election, and event-bus fan-out.
+- AI agent loop: live observation in prompts, taste-weighted track ranking, multi-round library search, and debounced skip/dislike reactions.
+- Hands-free UX: auto-play after user requests, TTS ducking, Media Session controls, Wake Lock, queue-end server refill, and visible taste/plan context on the play card.
+- Observer mode with server-side controller enforcement, queue revision sync, and playing-tail merge while audio is active.
+- Regression coverage for queue controller, radio refill, feedback reactions, agent loop, preferences, and queue sync.
+
+### Fixed
+
+- Playback signals now distinguish natural completion from skip; scrobble no longer mis-records early listens as complete.
+- Queue `steer(-1)` and idle mood scheduler can no longer wipe the entire queue.
+- Removed client-side queue-end `station` replace that raced with server append refills.
+- Pure read-only queue snapshots stop phantom revision bumps; TTS pending-idle playback has timeout fallbacks.
+
+### Changed
+
+- `/api/trigger` and scheduler beats choose append/steer/replace based on active playback instead of always replacing the queue.
+- Steer trims upcoming tracks then auto-appends taste-ranked replacements; refill segments use a dedicated quiet `refill` kind.
+
 ## [0.2.10] - 2026-06-30
 
 ### Fixed
@@ -105,6 +127,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS voiceover not cast via UPnP (music casting only)
 - Packaged builds require building frontend into `pwa/` before `npm run dist`
 
+[0.3.0]: https://github.com/baogutang/aurio/releases/tag/v0.3.0
 [0.2.10]: https://github.com/baogutang/aurio/releases/tag/v0.2.10
 [0.2.9]: https://github.com/baogutang/aurio/releases/tag/v0.2.9
 [0.2.8]: https://github.com/baogutang/aurio/releases/tag/v0.2.8

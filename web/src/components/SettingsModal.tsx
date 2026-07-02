@@ -5,11 +5,11 @@ import { spring } from '../lib/motion';
 import { usePreferences } from '../context/PreferencesContext';
 import type { ThemeMode, ClockStyle, LocaleMode } from '../lib/preferences';
 import type { MessageKey } from '../lib/i18n';
-import type { SettingsResp, AiProvidersResp, CastDevice, Track } from '../lib/types';
+import type { SettingsResp, AiProvidersResp, CastDevice, Track, ProfileResp, TasteResp } from '../lib/types';
 import { IconClose } from './icons';
 
 type T = (key: MessageKey) => string;
-type Group = 'appearance' | 'ai' | 'ncm' | 'nas' | 'qq' | 'fish' | 'calendar' | 'weather' | 'cast' | 'updates';
+type Group = 'appearance' | 'ai' | 'ncm' | 'nas' | 'qq' | 'fish' | 'calendar' | 'weather' | 'cast' | 'taste' | 'updates';
 type Res = { ok: boolean; msg: string } | null;
 
 // ---- tiny inline icons (chevrons) ----
@@ -766,6 +766,91 @@ function UpdatesPanel({ t }: { t: T }) {
 }
 
 // =====================================================================
+//  Taste profile panel
+// =====================================================================
+
+function TastePanel({ t }: { t: T }) {
+  const [profile, setProfile] = useState<ProfileResp | null>(null);
+  const [taste, setTaste] = useState<TasteResp | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState('');
+  const [pct, setPct] = useState(0);
+
+  const reload = () => {
+    api.profile().then(setProfile).catch(() => {});
+    api.taste().then(setTaste).catch(() => {});
+  };
+
+  useEffect(() => {
+    reload();
+    const onProgress = (e: Event) => {
+      const d = (e as CustomEvent).detail || {};
+      if (d.stage) setStage(d.stage);
+      if (typeof d.pct === 'number') setPct(d.pct);
+      if (d.done || d.error) {
+        setBusy(false);
+        reload();
+      }
+    };
+    window.addEventListener('aurio:profile-progress', onProgress);
+    return () => window.removeEventListener('aurio:profile-progress', onProgress);
+  }, []);
+
+  const build = async () => {
+    setBusy(true);
+    setStage(t('tasteBuilding'));
+    setPct(5);
+    try {
+      const r = await api.buildProfile();
+      if (r.busy) {
+        setBusy(false);
+        setStage('');
+      }
+    } catch {
+      setBusy(false);
+      setStage('');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-[12px] leading-relaxed text-[var(--text-muted)]">{t('tasteHint')}</p>
+      {profile?.exists && profile.profile ? (
+        <div className="rounded-2xl p-3.5 text-[12px] leading-relaxed whitespace-pre-wrap text-[var(--text-secondary)]"
+          style={{ background: 'var(--inset-bg)', border: '1px solid var(--glass-border)' }}>
+          {profile.profile}
+          {profile.generatedAt && (
+            <p className="mt-2 text-[10px] font-mono text-[var(--text-muted)]">{t('tasteGenerated')}: {profile.generatedAt}</p>
+          )}
+        </div>
+      ) : (
+        <p className="text-[12px] text-[var(--text-muted)]">{t('tasteEmpty')}</p>
+      )}
+      {busy && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-mono text-[var(--text-muted)]">{stage}</p>
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--inset-bg)' }}>
+            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'rgb(var(--hi-rgb))' }} />
+          </div>
+        </div>
+      )}
+      {taste && (taste.liked.length > 0 || taste.disliked.length > 0 || taste.avoidArtists.length > 0) && (
+        <div className="space-y-2 text-[11px] text-[var(--text-muted)]">
+          {taste.liked.length > 0 && <p><span className="font-mono uppercase tracking-wider">{t('tasteLiked')}</span> · {taste.liked.map((x) => x.name).join('、')}</p>}
+          {taste.disliked.length > 0 && <p><span className="font-mono uppercase tracking-wider">{t('tasteDisliked')}</span> · {taste.disliked.map((x) => x.name).join('、')}</p>}
+          {taste.avoidArtists.length > 0 && <p><span className="font-mono uppercase tracking-wider">{t('tasteAvoid')}</span> · {taste.avoidArtists.map((x) => x.artist).join('、')}</p>}
+        </div>
+      )}
+      <Buttons>
+        <button disabled={busy} onClick={build} className="pill-btn pill-btn-active flex-1 disabled:opacity-40">
+          {busy ? t('tasteBuilding') : t('tasteBuild')}
+        </button>
+      </Buttons>
+    </div>
+  );
+}
+
+// =====================================================================
 //  Shell: list → detail
 // =====================================================================
 
@@ -773,6 +858,7 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
   const { tr: t } = usePreferences();
   const [view, setView] = useState<Group | 'root'>('root');
   const [settings, setSettings] = useState<SettingsResp | null>(null);
+  const [hasProfile, setHasProfile] = useState(false);
 
   const reload = () => api.settings().then(setSettings).catch(() => {});
   const reloadAfterChange = () => reload().finally(() => {
@@ -782,7 +868,11 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
   useEffect(() => {
     if (!open) return;
     reload();
+    api.profile().then((p) => setHasProfile(!!p.exists)).catch(() => {});
     setView(initialGroup ?? 'root');
+    const onProfile = () => api.profile().then((p) => setHasProfile(!!p.exists)).catch(() => {});
+    window.addEventListener('aurio:profile-progress', onProfile);
+    return () => window.removeEventListener('aurio:profile-progress', onProfile);
   }, [open, initialGroup]);
 
   const groups: { id: Group; label: string; badge?: string; on?: boolean }[] = [
@@ -795,6 +885,7 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
     { id: 'calendar', label: t('groupCalendar'), badge: settings ? ((settings.calendars.system?.enabled || settings.calendars.ics.enabled) ? t('badgeOn') : t('badgeOff')) : undefined, on: !!(settings?.calendars.system?.enabled || settings?.calendars.ics.enabled) },
     { id: 'weather', label: t('groupWeather'), badge: settings ? (settings.weather.hasKey ? t('badgeOn') : t('badgeOff')) : undefined, on: !!settings?.weather.hasKey },
     { id: 'cast', label: t('groupCast') },
+    { id: 'taste', label: t('groupTaste'), badge: hasProfile ? t('badgeOn') : t('badgeOff'), on: hasProfile },
     { id: 'updates', label: t('groupUpdates'), badge: window.aurio?.isElectron ? t('badgeOn') : t('badgeOff'), on: !!window.aurio?.isElectron },
   ];
 
@@ -809,6 +900,7 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
       case 'calendar': return <CalendarPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
       case 'weather': return <WeatherPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
       case 'cast': return <CastPanel t={t} currentTrack={currentTrack} />;
+      case 'taste': return <TastePanel t={t} />;
       case 'updates': return <UpdatesPanel t={t} />;
     }
   };

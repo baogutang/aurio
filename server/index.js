@@ -10,7 +10,7 @@ import { WebSocketServer } from 'ws';
 import { config, summarize, ROOT, DATA_ROOT } from './config.js';
 import { db, load } from './store.js';
 import { loadSettings, saveSettings, getSettings } from './settings.js';
-import { bus, run, runSegment } from './dj.js';
+import { run, runSegment, isBusy } from './dj.js';
 import * as music from './music/index.js';
 import { navidrome } from './music/navidrome.js';
 import { ncmLogin, netease } from './music/netease.js';
@@ -24,15 +24,19 @@ import { openCalendarPrivacy, testSystemCalendar } from './calendar/system.js';
 import { startScheduler } from './scheduler.js';
 import { enabledProviders } from './calendar/index.js';
 import { cast } from './cast/upnp.js';
-import { onHeartbeat, onClientGone, startRadio, currentIndex } from './radio.js';
+import { onHeartbeat, startRadio, currentIndex, hasActiveSession } from './radio.js';
+import { clientSessionManager } from './runtime/client-session-manager.js';
+import { queueController, ConflictError } from './runtime/queue-controller.js';
+import { eventBus } from './runtime/event-bus.js';
+import { recordFeedback, tasteSummary } from './agent/preferences.js';
+import { onPlaybackFeedback } from './agent/feedback-reaction.js';
+import { registerServer, installSignalHandlers, stopServer } from './shutdown.js';
 
 load();
 loadSettings();
 
 {
-  const q = db.getQueue();
-  const clean = music.dedupeTracks(q);
-  if (clean.length !== q.length) db.setQueue(clean);
+  queueController.repairIfNeeded();
 }
 
 const app = express();
@@ -100,6 +104,27 @@ function hasValidToken(req) {
   return tokenFrom(req) === CONTROL_TOKEN;
 }
 
+function clientIdFrom(req) {
+  return (req.headers['x-aurio-client-id'] || '').toString();
+}
+
+function requireController(req, res, next) {
+  if (clientSessionManager.clientCount() === 0) return next();
+  const id = clientIdFrom(req);
+  if (!id || !clientSessionManager.isController(id)) {
+    return rejectControl(res, 403, 'forbidden: controller role required');
+  }
+  next();
+}
+
+function triggerMode(kind) {
+  const active = hasActiveSession();
+  const idx = currentIndex();
+  if (kind === 'station') return active && idx >= 0 ? 'append' : 'replace';
+  if (kind === 'mood') return active && idx >= 0 ? 'steer' : (active ? 'append' : 'replace');
+  return active ? 'append' : 'replace';
+}
+
 function rejectControl(res, status, error) {
   return res.status(status).json({ ok: false, error });
 }
@@ -142,16 +167,49 @@ app.get('/api/session', (req, res) => {
 });
 
 app.get('/api/status', async (req, res) => {
-  const q = music.dedupeTracks(db.getQueue());
-  if (q.length !== db.getQueue().length) db.setQueue(q);
+  const { queue, revision } = queueController.getSnapshot();
   res.json({
     ok: true,
     config: summarize(),
     calendars: enabledProviders(),
-    queue: q.length,
+    queue: queue.length,
+    queueRevision: revision,
     musicSource: music.getMusicSource(),
     sourceModes: music.availableSourceModes(),
     sources: music.sourceServices(),
+    playback: clientSessionManager.getPlaybackState(),
+    wsClients: clientSessionManager.clientCount(),
+    hasActiveSession: hasActiveSession(),
+  });
+});
+
+app.get('/api/health', async (req, res) => {
+  const { queue, revision } = queueController.getSnapshot();
+  let brain = { ok: false };
+  try { brain = await brainAvailable(); } catch { /* noop */ }
+  res.json({
+    ok: true,
+    uptime: process.uptime(),
+    wsClients: clientSessionManager.clientCount(),
+    hasActiveSession: hasActiveSession(),
+    queueLen: queue.length,
+    queueRevision: revision,
+    composing: isBusy(),
+    brain,
+  });
+});
+
+app.get('/api/ready', async (req, res) => {
+  const { queue, revision } = queueController.getSnapshot();
+  let brain = { ok: false };
+  try { brain = await brainAvailable(); } catch { /* noop */ }
+  const ready = !isBusy();
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
+    queueLen: queue.length,
+    queueRevision: revision,
+    composing: isBusy(),
+    brain,
   });
 });
 
@@ -404,6 +462,7 @@ app.post('/api/profile/build', (req, res) => {
     .finally(() => { profileBuilding = false; });
 });
 app.get('/api/profile', (req, res) => res.json(getProfile()));
+app.get('/api/taste', (req, res) => res.json({ ok: true, ...tasteSummary() }));
 
 // ---- Music search ----
 app.get('/api/search', async (req, res) => {
@@ -429,7 +488,7 @@ app.get('/api/lyrics', async (req, res) => {
 });
 
 // ---- Talk to the DJ ----
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', requireController, async (req, res) => {
   const text = (req.body?.text || '').toString().trim();
   if (!text) return res.status(400).json({ error: 'empty' });
   try {
@@ -442,13 +501,14 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // ---- Manually fire a scheduled-style beat (plan / morning / mood) ----
-app.post('/api/trigger', async (req, res) => {
+app.post('/api/trigger', requireController, async (req, res) => {
   const kind = (req.body?.kind || 'mood').toString();
   if (!['plan', 'morning', 'mood', 'station'].includes(kind)) {
     return res.status(400).json({ ok: false, error: 'invalid trigger kind' });
   }
   try {
-    const result = await run({ kind });
+    const mode = triggerMode(kind);
+    const result = await runSegment({ kind }, { mode, currentIndex: currentIndex() });
     res.json(result);
   } catch (e) {
     console.error('[trigger] segment failed:', e);
@@ -458,17 +518,24 @@ app.post('/api/trigger', async (req, res) => {
 
 // ---- Current queue / plan ----
 app.get('/api/queue', (req, res) => {
-  const q = music.dedupeTracks(db.getQueue());
-  if (q.length !== db.getQueue().length) db.setQueue(q);
-  res.json({ queue: q });
+  const snap = queueController.getSnapshot();
+  res.json({ queue: snap.queue, revision: snap.revision });
 });
 
-// Replace the queue (reorder / remove / clear from the player UI).
-app.post('/api/queue', (req, res) => {
+app.post('/api/queue', requireController, (req, res) => {
   if (!Array.isArray(req.body?.queue)) return res.status(400).json({ ok: false, error: 'queue must be an array' });
-  const q = music.dedupeTracks(req.body.queue);
-  db.setQueue(q);
-  res.json({ ok: true, queue: q.length });
+  try {
+    const expected = req.body.baseRevision;
+    const { snapshot } = queueController.replaceFromClient(req.body.queue, {
+      expectedRevision: Number.isFinite(expected) ? expected : undefined,
+    });
+    res.json({ ok: true, queue: snapshot.queue.length, revision: snapshot.revision });
+  } catch (e) {
+    if (e instanceof ConflictError) {
+      return res.status(409).json({ ok: false, code: e.code, revision: queueController.getSnapshot().revision });
+    }
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 app.get('/api/plan/today', (req, res) => res.json({ plan: db.getPlan() }));
 
@@ -481,6 +548,18 @@ app.post('/api/played', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/playback-event', (req, res) => {
+  const { event, track, position_sec, queue_index } = req.body || {};
+  const allowed = new Set(['started', 'completed', 'skipped', 'replayed', 'like', 'dislike']);
+  if (!allowed.has(event) || !track?.id) {
+    return res.status(400).json({ ok: false, error: 'invalid playback event' });
+  }
+  const signal = event === 'like' ? 'like' : event === 'dislike' ? 'dislike' : event;
+  recordFeedback({ signal, track, position_sec, queue_index });
+  onPlaybackFeedback({ signal, track, position_sec });
+  res.json({ ok: true });
+});
+
 async function proxyAudio(upstreamUrl, req, res, fallbackType = 'audio/mpeg') {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
@@ -490,10 +569,14 @@ async function proxyAudio(upstreamUrl, req, res, fallbackType = 'audio/mpeg') {
       headers: req.headers.range ? { Range: req.headers.range } : {},
       signal: controller.signal,
     });
+  } catch (e) {
+    clearTimeout(timeout);
+    return res.status(502).json({ error: e.message || 'upstream fetch failed' });
   } finally {
     clearTimeout(timeout);
   }
 
+  if (!upstream) return res.status(502).json({ error: 'upstream unavailable' });
   const ct = upstream.headers.get('content-type') || fallbackType;
   if (!upstream.ok) {
     res.status(upstream.status);
@@ -574,8 +657,6 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/stream' });
 
 wss.on('connection', (ws, req) => {
-  // Same trust boundary as the control API: the live channel carries the queue,
-  // chat patter, and the heartbeat that drives (paid) refills.
   if (
     (!ALLOW_LAN && !isLoopback(req))
     || !hasTrustedHost(req)
@@ -589,19 +670,47 @@ wss.on('connection', (ws, req) => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
-  const q = music.dedupeTracks(db.getQueue());
-  if (q.length !== db.getQueue().length) db.setQueue(q);
-  ws.send(JSON.stringify({ type: 'hello', queue: q }));
-  // Player → server heartbeat: drives the radio refill engine.
+  const { clientId, role: initialRole } = clientSessionManager.register(ws, { userAgent: req.headers['user-agent'] });
+  ws.clientId = clientId;
+
+  const snap = queueController.getSnapshot();
+  ws.send(JSON.stringify({
+    type: 'hello',
+    clientId,
+    role: initialRole,
+    queue: snap.queue,
+    queueRevision: snap.revision,
+  }));
+  clientSessionManager.broadcastRoles();
+
   ws.on('message', (data) => {
     try {
       const m = JSON.parse(data.toString());
       if (m.type === 'state') {
-        onHeartbeat({ playingIndex: m.playingIndex, paused: m.paused, queueLen: m.queueLen });
+        const session = clientSessionManager.onHeartbeat(clientId, {
+          playingIndex: m.playingIndex,
+          paused: m.paused,
+          queueLen: m.queueLen,
+          queueRevision: m.queueRevision,
+          currentTrack: m.currentTrack,
+        });
+        const snap = queueController.peekSnapshot();
+        if (session?.role === 'controller') {
+          const drift = m.queueRevision !== snap.revision
+            || (Number.isFinite(m.queueLen) && m.queueLen !== snap.queue.length);
+          if (drift) {
+            clientSessionManager.sendTo(clientId, {
+              type: 'queue', queue: snap.queue, revision: snap.revision,
+            });
+          }
+          onHeartbeat();
+        }
       }
     } catch { /* ignore malformed */ }
   });
-  ws.on('close', () => { if (wss.clients.size === 0) onClientGone(); });
+  ws.on('close', () => {
+    clientSessionManager.unregister(clientId);
+  });
 });
 
 // Reap dead sockets (laptop sleep, network drop, killed tab) so the radio engine
@@ -626,8 +735,13 @@ function sendAll(obj) {
   }
 }
 
-bus.on('broadcast', (b) => sendAll({ type: 'broadcast', ...b }));
-bus.on('tts', (b) => sendAll({ type: 'tts', ...b }));
+eventBus.on('broadcast', (b) => sendAll({ type: 'broadcast', ...b }));
+eventBus.on('tts', (b) => sendAll({ type: 'tts', ...b }));
+
+eventBus.on('queue:changed', ({ snapshot }) => {
+  if (!snapshot) return;
+  sendAll({ type: 'queue', queue: snapshot.queue, revision: snapshot.revision });
+});
 
 export function startServer() {
   return new Promise((resolve, reject) => {
@@ -641,6 +755,8 @@ export function startServer() {
     server.listen(config.port, async () => {
       server.off('error', onError);
       wss.off('error', onError);
+      registerServer(server, wss);
+      installSignalHandlers();
       console.log(`\n  Aurio server  →  http://localhost:${config.port}`);
       console.log('  features:', JSON.stringify(summarize()));
       startScheduler();
@@ -654,9 +770,9 @@ export function startServer() {
   });
 }
 
-// Run directly (npm run server) vs. imported by Electron. Compare proper file://
-// URLs so the check is correct on Windows (backslashes, drive letters) and never
-// false-fires for an unrelated entry script that happens to be named index.js.
+export { stopServer };
+
+// Run directly (npm run server) vs. imported by Electron.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startServer();
 }

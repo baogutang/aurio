@@ -1,67 +1,88 @@
-// Radio stream engine — the "导播台". Keeps the show flowing: watches the active
-// player's heartbeat and refills the queue before it runs dry, so the stream
-// never stops. Server-driven, but decides off the player's reported state
-// (node can't know playback position on its own).
+// Radio stream engine — watches the active controller heartbeat and refills the queue.
 import { runSegment } from './dj.js';
+import { clientSessionManager } from './runtime/client-session-manager.js';
+import { eventBus } from './runtime/event-bus.js';
+import { queueController } from './runtime/queue-controller.js';
 
-const LOW_WATER = 3;   // refill early so next-segment TTS can prewarm before playback
-const TICK_MS = 8000;  // fallback re-check, in case a heartbeat is missed
+const LOW_WATER = 5;
+const TICK_MS = 8000;
 const ACTIVE_TTL_MS = 90000;
 
-let session = null;    // { playingIndex, paused, queueLen, lastSeen }
 let composing = false;
 let timer = null;
+let sessionSuspended = false;
 
-export function onHeartbeat(state = {}) {
-  session = {
-    playingIndex: Number.isFinite(state.playingIndex) ? state.playingIndex : -1,
-    paused: !!state.paused,
-    queueLen: Number.isFinite(state.queueLen) ? state.queueLen : 0,
-    lastSeen: Date.now(),
-  };
+export function onHeartbeat() {
+  sessionSuspended = false;
   maybeRefill();
 }
 
-// Client disconnected → suspend the stream (stop composing, save resources).
 export function onClientGone() {
-  session = null;
+  sessionSuspended = true;
 }
 
-// Current playing index from the latest heartbeat (-1 if unknown). Used by the
-// DJ to place interjections relative to the now-playing track.
+eventBus.on('session:all-gone', () => onClientGone());
+eventBus.on('session:connected', () => { sessionSuspended = false; });
+eventBus.on('queue:changed', () => {
+  if (!sessionSuspended && hasActiveSession()) maybeRefill();
+});
+
 export function currentIndex() {
-  return session ? session.playingIndex : -1;
+  return clientSessionManager.currentIndex();
 }
 
 export function hasActiveSession(maxAgeMs = ACTIVE_TTL_MS) {
-  return !!(session && !session.paused && Date.now() - session.lastSeen <= maxAgeMs);
+  if (sessionSuspended) return false;
+  return clientSessionManager.hasActiveSession(maxAgeMs);
 }
 
-function remaining() {
-  if (!session) return Infinity;
-  return session.queueLen - session.playingIndex - 1;
+export function remainingTracks() {
+  const snap = queueController.peekSnapshot();
+  const serverRem = clientSessionManager.remaining(snap.queue.length);
+  const c = clientSessionManager.getController();
+  if (c && c.playingIndex >= 0 && c.queueLen > 0) {
+    const clientRem = Math.max(0, c.queueLen - c.playingIndex - 1);
+    return Math.min(serverRem, clientRem);
+  }
+  return serverRem;
 }
 
-async function maybeRefill() {
-  if (composing || !session || session.paused) return;
-  if (session.playingIndex < 0) return;        // nothing playing yet → don't auto-start
-  if (remaining() > LOW_WATER) return;
+export async function maybeRefill() {
+  if (composing || sessionSuspended) return;
+  if (!hasActiveSession()) return;
+  if (clientSessionManager.currentIndex() < 0) return;
+  if (remainingTracks() > LOW_WATER) return;
+
   composing = true;
+  let holdComposing = false;
   try {
-    const b = await runSegment({ kind: 'station' }, { mode: 'append' });
-    if (b && Array.isArray(b.queue) && session) {
-      session.queueLen += b.queue.length;       // optimistic; next heartbeat corrects
+    const b = await runSegment({ kind: 'refill', text: '' }, { mode: 'append' });
+    if (b?.error === 'busy') {
+      holdComposing = true;
+      setTimeout(() => {
+        composing = false;
+        maybeRefill();
+      }, 2500);
+      return;
+    }
+    if (!b?.error && remainingTracks() <= LOW_WATER) {
+      holdComposing = true;
+      composing = false;
+      setImmediate(() => maybeRefill());
+      return;
     }
   } catch (e) {
     console.error('[radio] refill failed:', e.message);
   } finally {
-    composing = false;
+    if (!holdComposing) composing = false;
   }
 }
 
 export function startRadio() {
   if (timer) return;
-  timer = setInterval(() => { if (session && !session.paused) maybeRefill(); }, TICK_MS);
+  timer = setInterval(() => {
+    if (!sessionSuspended && hasActiveSession()) maybeRefill();
+  }, TICK_MS);
   console.log('[radio] stream engine started');
 }
 

@@ -29,11 +29,19 @@ interface Props {
   onReorder?: (next: Track[]) => void;
   onRemove?: (index: number) => void;
   onClear?: () => void;
+  onSteer?: (text: string) => void;
+  onTrigger?: (kind: string) => void;
+  isObserver?: boolean;
+  controlsDisabled?: boolean;
+  tasteLine?: string;
+  planNote?: string;
 }
 
 export default function MainCard({
   track, progress, cur, dur, say, now, playing, conn, onSeek, audioRef, services,
   queue = [], queueIndex = -1, onPick, onReorder, onRemove, onClear,
+  onSteer, onTrigger, isObserver = false, controlsDisabled = false,
+  tasteLine = '', planNote = '',
 }: Props) {
   const { clock, tr: t } = usePreferences();
   const live = conn === 'on' || conn === 'busy';
@@ -66,6 +74,18 @@ export default function MainCard({
           </div>
 
           <div className="play-card-scroll scroll-panel">
+            {tasteLine && (
+              <p className="mb-2 text-[10px] font-mono text-[rgb(var(--hi-rgb))] px-2 py-1 rounded-lg"
+                style={{ background: 'var(--inset-bg)', border: '1px solid var(--glass-border)' }}>
+                {t('tasteLearning')}: {tasteLine}
+              </p>
+            )}
+            {isObserver && (
+              <p className="mb-2 text-[11px] font-mono text-[var(--text-muted)] px-2 py-1.5 rounded-xl"
+                style={{ background: 'var(--inset-bg)', border: '1px solid var(--glass-border)' }}>
+                {t('observerBanner')}
+              </p>
+            )}
             <Spectrum audioRef={audioRef} height={108} />
 
             <motion.h1
@@ -79,6 +99,12 @@ export default function MainCard({
             <p className="mt-0.5 text-xs text-[var(--text-muted)] truncate">
               {[track.artist, track.album].filter(Boolean).join(' · ')}
             </p>
+
+            <div className="mt-2.5 rounded-xl px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]"
+              style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+              <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--text-muted)] block mb-1">{t('whyThis')}</span>
+              {track.reason || t('reasonFallback')}
+            </div>
 
             <div className="mt-3">
               <div className="progress-track" onClick={onSeek} role="slider" aria-valuenow={progress}>
@@ -96,7 +122,7 @@ export default function MainCard({
 
             <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
               <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)] mb-1.5">{t('djSay')}</p>
-              <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
+              <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]" aria-live="polite">
                 {renderSay(say, 'dark')}
                 {conn === 'busy' && (
                   <motion.span
@@ -107,7 +133,31 @@ export default function MainCard({
                   />
                 )}
               </p>
+              {conn === 'busy' && (
+                <p className="mt-1.5 text-[10px] text-[var(--text-muted)] font-mono">{t('busyStages')}</p>
+              )}
             </div>
+
+            {onSteer && !isObserver && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[
+                  { label: t('steerCalm'), text: t('steerPayloadCalm') },
+                  { label: t('steerEnergy'), text: t('steerPayloadEnergy') },
+                  { label: t('steerSimilar'), text: t('steerPayloadSimilar') },
+                  { label: t('steerBan'), text: t('steerPayloadBan') },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    className="header-pill text-[10px] disabled:opacity-40"
+                    disabled={controlsDisabled}
+                    onClick={() => onSteer(chip.text)}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {onPick && onReorder && onRemove && onClear && (
               <UpNext
@@ -117,6 +167,7 @@ export default function MainCard({
                 onReorder={onReorder}
                 onRemove={onRemove}
                 onClear={onClear}
+                disabled={isObserver || controlsDisabled}
               />
             )}
           </div>
@@ -150,10 +201,44 @@ export default function MainCard({
           </div>
 
           <div className="panel-dot p-3.5 mt-2.5">
+            {planNote && (
+              <p className="mb-2 text-[10px] font-mono text-[var(--text-muted)]">
+                {t('planToday')}: {planNote}
+              </p>
+            )}
             <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)] mb-1.5">{t('djSay')}</p>
-            <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
+            <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]" aria-live="polite">
               {renderSay(say, 'dark')}
             </p>
+            {onSteer && !isObserver && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[
+                  { label: t('steerCalm'), text: t('steerPayloadCalm') },
+                  { label: t('steerEnergy'), text: t('steerPayloadEnergy') },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    className="header-pill text-[10px] disabled:opacity-40"
+                    disabled={controlsDisabled}
+                    onClick={() => onSteer(chip.text)}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {onTrigger && !isObserver && (
+              <button
+                type="button"
+                className="mt-3 w-full rounded-2xl py-2.5 text-[12px] font-medium disabled:opacity-40"
+                style={{ background: 'rgb(var(--accent-rgb) / 0.12)', color: 'rgb(var(--accent-rgb))' }}
+                disabled={controlsDisabled}
+                onClick={() => onTrigger('station')}
+              >
+                {t('goOnAir')}
+              </button>
+            )}
           </div>
         </motion.div>
       )}

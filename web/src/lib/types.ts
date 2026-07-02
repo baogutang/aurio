@@ -29,6 +29,7 @@ export interface Broadcast {
   ttsUrl?: string | null;
   queue?: Track[];
   error?: string;
+  revision?: number;
 }
 
 export interface TtsPatch {
@@ -92,3 +93,17 @@ export type ChatMsg = { role: 'user' | 'dj'; text: string; ts?: number };
 
 export interface LyricLine { time: number | null; text: string; tr?: string }
 export interface LyricsResp { ok: boolean; source: string; synced: boolean; lines: LyricLine[] }
+
+export interface ProfileResp {
+  exists: boolean;
+  profile?: string;
+  generatedAt?: string;
+}
+
+export interface TasteResp {
+  ok?: boolean;
+  liked: { name: string; likes: number }[];
+  disliked: { name: string; dislikes: number }[];
+  avoidArtists: { artist: string; skipRate: number; skips: number; plays: number }[];
+  recent: { signal: string; track: { title: string; artist: string }; ts: number }[];
+}

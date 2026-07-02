@@ -58,16 +58,26 @@ export default function PixelPet({ state, cell = 3 }: Props) {
   // Occasional blink (paused while talking).
   useEffect(() => {
     if (state === 'talking') { setEyesClosed(false); return; }
-    let t: number;
+    let cancelled = false;
+    let outer: number | undefined;
+    let inner: number | undefined;
     const loop = () => {
-      t = window.setTimeout(() => {
+      if (cancelled) return;
+      outer = window.setTimeout(() => {
+        if (cancelled) return;
         setEyesClosed(true);
-        window.setTimeout(() => setEyesClosed(false), 130);
-        loop();
+        inner = window.setTimeout(() => {
+          if (!cancelled) setEyesClosed(false);
+          loop();
+        }, 130);
       }, 2400 + Math.random() * 2600);
     };
     loop();
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      if (outer) window.clearTimeout(outer);
+      if (inner) window.clearTimeout(inner);
+    };
   }, [state]);
 
   // Mouth chatter while talking.

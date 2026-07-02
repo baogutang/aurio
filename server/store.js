@@ -14,6 +14,7 @@ const DEFAULT = {
   plan: null,   // { date, segments: [...] }
   prefs: {},    // arbitrary
   queue: [],    // resolved tracks
+  queueRevision: 0,
 };
 
 let state = structuredClone(DEFAULT);
@@ -40,22 +41,35 @@ export function load() {
   return state;
 }
 
+function writeStateSync() {
+  ensureDir();
+  const tmp = `${FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+  fs.renameSync(tmp, FILE);
+}
+
 function scheduleSave() {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
     try {
-      ensureDir();
-      // Atomic write: a crash/power-loss mid-write would otherwise truncate
-      // state.json and lose the queue + play history. Write a temp file, then
-      // rename (atomic on the same volume) so the real file is never partial.
-      const tmp = `${FILE}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-      fs.renameSync(tmp, FILE);
+      writeStateSync();
     } catch (e) {
       console.error('[store] save failed:', e.message);
     }
   }, 300);
+}
+
+export function flushSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  try {
+    writeStateSync();
+  } catch (e) {
+    console.error('[store] flush failed:', e.message);
+  }
 }
 
 export const db = {
@@ -104,7 +118,14 @@ export const db = {
   getPlan() { return state.plan; },
 
   setQueue(q) { state.queue = q; scheduleSave(); },
+  setQueueImmediate(q) { state.queue = q; scheduleSave(); },
   getQueue() { return state.queue; },
+  getQueueRevision() { return Number(state.queueRevision) || 0; },
+  bumpQueueRevision() {
+    state.queueRevision = (Number(state.queueRevision) || 0) + 1;
+    scheduleSave();
+    return state.queueRevision;
+  },
 
   setPref(k, v) { state.prefs[k] = v; scheduleSave(); },
   getPref(k, d = null) { return k in state.prefs ? state.prefs[k] : d; },

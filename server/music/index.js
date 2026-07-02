@@ -4,6 +4,7 @@ import { navidrome } from './navidrome.js';
 import { netease } from './netease.js';
 import { qqmusic } from './qqmusic.js';
 import { parseLrc, plainLines, mergeTranslation } from './lrc.js';
+import { scoreTrack, tasteSummary } from '../agent/preferences.js';
 
 export const MUSIC_SOURCES = ['combined', 'netease', 'navidrome', 'qqmusic'];
 
@@ -275,7 +276,15 @@ export async function requestCandidates(text, limit = 20) {
     }
     if (out.length >= limit) break;
   }
-  return out;
+  return rankTracks(out);
+}
+
+export function rankTracks(tracks = []) {
+  const taste = tasteSummary();
+  return dedupeTracks(tracks)
+    .map((track) => ({ track, score: scoreTrack(track, taste) }))
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.track);
 }
 
 export function candidatesToText(tracks = []) {
@@ -292,7 +301,7 @@ export async function resolveQueue(requests = [], constraints = {}) {
     const track = await resolve(q, constraints);
     if (track) out.push({ ...track, reason: req.reason || '' });
   }
-  return dedupeTracks(out);
+  return rankTracks(dedupeTracks(out));
 }
 
 export async function playbackUrl(track) {
@@ -383,7 +392,12 @@ export async function recommend(count = 20, constraints = {}) {
       if (p[i]) mixed.push(p[i]);
     }
   }
-  return dedupeTracks(mixed.filter((track) => trackMatchesConstraints(track, constraints))).slice(0, count);
+  const taste = tasteSummary();
+  const ranked = dedupeTracks(mixed.filter((track) => trackMatchesConstraints(track, constraints)))
+    .map((track) => ({ track, score: scoreTrack(track, taste) }))
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.track);
+  return ranked.slice(0, count);
 }
 
 export { navidrome, netease, qqmusic };

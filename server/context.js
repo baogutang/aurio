@@ -7,6 +7,7 @@ import { db } from './store.js';
 import { weather } from './weather/openweather.js';
 import { todayEvents } from './calendar/index.js';
 import { profileText } from './taste-profile.js';
+import { tasteSummary } from './agent/preferences.js';
 
 function readIfExists(p) {
   try { return fs.readFileSync(p, 'utf8'); } catch { return ''; }
@@ -49,6 +50,26 @@ async function environment() {
       lines.push('今日日程: 暂无');
     }
   } catch { /* ignore */ }
+  return lines.join('\n');
+}
+
+function feedbackMemory() {
+  const taste = tasteSummary();
+  const lines = [];
+  if (taste.liked.length) {
+    lines.push('用户明确喜欢: ' + taste.liked.map((t) => t.name).join('、'));
+  }
+  if (taste.disliked.length) {
+    lines.push('用户明确不喜欢: ' + taste.disliked.map((t) => t.name).join('、'));
+  }
+  if (taste.avoidArtists.length) {
+    lines.push('高跳过率艺人（尽量避开）: ' + taste.avoidArtists.map((a) => a.artist).join('、'));
+  }
+  if (taste.recent?.length) {
+    lines.push('最近反馈: ' + taste.recent.slice(0, 5).map((e) =>
+      `${e.signal} ${e.track?.artist || ''}—${e.track?.title || ''}@${e.position_sec || 0}s`
+    ).join('；'));
+  }
   return lines.join('\n');
 }
 
@@ -119,6 +140,46 @@ export async function assemble(trigger = {}) {
 
   blocks.push(untrusted('当前环境', env));
   blocks.push(untrusted('听歌记忆', memory()));
+  const fb = feedbackMemory();
+  if (fb) blocks.push(untrusted('实时口味反馈（like/dislike/skip）', fb));
+
+  if (trigger.observation) {
+    const o = trigger.observation;
+    const lines = [
+      `播放索引: ${o.playback?.playingIndex ?? -1}`,
+      `暂停: ${o.playback?.paused ? '是' : '否'}`,
+      `队列长度: ${o.playback?.queueLen ?? 0}`,
+      `剩余待播: ${o.playback?.remaining ?? 0}`,
+      `revision: ${o.playback?.revision ?? 0}`,
+    ];
+    if (o.playback?.nowPlaying) {
+      const n = o.playback.nowPlaying;
+      lines.push(`正在播放: ${n.artist} — ${n.title} [${n.source || ''}]`);
+    }
+    if (o.playback?.upNext?.length) {
+      lines.push(`即将播放: ${o.playback.upNext.join('；')}`);
+    }
+    if (o.recentFeedback?.length) {
+      lines.push('最近操作: ' + o.recentFeedback.map((e) => `${e.signal} ${e.track}`).join('；'));
+    }
+    if (o.plan?.mood) {
+      lines.push(`今日节目基调: ${o.plan.mood}${o.plan.note ? `（${o.plan.note}）` : ''}`);
+    }
+    blocks.push(untrusted('当前观测（实时播放状态）', lines.join('\n')));
+  }
+
+  const plan = db.getPlan();
+  if (plan?.date === new Date().toISOString().slice(0, 10) && plan.mood && !trigger.observation?.plan) {
+    blocks.push(untrusted('今日节目计划', `基调: ${plan.mood}\n${plan.note || ''}`.trim()));
+  }
+
+  const segMem = db.getPref('segmentMemory', []);
+  if (segMem.length) {
+    const recent = segMem.slice(-5).map((s) =>
+      `- [${s.kind}] ${s.say || ''}${s.tracks?.length ? ` → ${s.tracks.join('、')}` : ''}`
+    ).join('\n');
+    blocks.push(untrusted('最近节目段落', recent));
+  }
 
   // Continuity: this is an ongoing stream, not a one-shot request. Keep segments
   // flowing into each other instead of re-introducing every time.
@@ -145,6 +206,7 @@ export async function assemble(trigger = {}) {
     morning: '早间时段，做一段早安开场',
     mood: '整点情绪检查，根据时间/天气/日程微调',
     station: '现在开台：编一段电台节目（一句开场白 + 挑 3–5 首歌）',
+    refill: '队列快见底了：无缝续播，保持当前电台情绪，追加 3–5 首，口播尽量短或留空',
   }[trigger.kind] || '触发';
 
   blocks.push(`## 本次触发\n[${triggerLabel}]`);

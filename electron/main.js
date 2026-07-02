@@ -233,9 +233,13 @@ app.on('second-instance', () => {
   win.focus();
 });
 
-app.on('before-quit', () => {
-  app.isQuitting = true;
+app.on('before-quit', (e) => {
+  // Handled in whenReady after server starts.
+  if (!stopServerFn) app.isQuitting = true;
 });
+
+let stopServerFn = null;
+let shutdownInProgress = false;
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
   // 仅打包后把可写目录指向 userData（asar 内只读）；开发时保持项目根不变。
@@ -249,13 +253,29 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   process.env.PORT = String(await findAvailablePort(desiredPort));
 
   let port = 8080;
+  let serverStarted = false;
+  let startupError = null;
   try {
     const { config } = await import('../server/config.js');
-    const { startServer } = await import('../server/index.js');
+    const { startServer, stopServer } = await import('../server/index.js');
+    stopServerFn = stopServer;
     port = config.port;
     await startServer();
+    serverStarted = true;
   } catch (e) {
+    startupError = e;
     console.error('Failed to start Aurio server:', e);
+  }
+
+  if (!serverStarted) {
+    const { dialog } = await import('electron');
+    const detail = startupError instanceof Error ? startupError.message : String(startupError || 'unknown error');
+    dialog.showErrorBox(
+      'Aurio 无法启动',
+      `后端服务启动失败。请检查端口占用或查看终端日志。\n\n${detail}`,
+    );
+    app.quit();
+    return;
   }
 
   createWindow(port);
@@ -264,6 +284,19 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(port);
     else win?.show();
+  });
+
+  app.on('before-quit', (e) => {
+    if (shutdownInProgress || !stopServerFn) {
+      app.isQuitting = true;
+      return;
+    }
+    e.preventDefault();
+    shutdownInProgress = true;
+    app.isQuitting = true;
+    stopServerFn().catch((err) => console.error('[Aurio] shutdown error:', err)).finally(() => {
+      app.exit(0);
+    });
   });
 });
 

@@ -9,7 +9,8 @@ import StatusStrip from './components/StatusStrip';
 import PressButton from './components/PressButton';
 import PixelPet, { type PetState } from './components/PixelPet';
 import { IconChat, IconSettings, IconPrev, IconNext, IconPlay, IconPause } from './components/icons';
-import { api, fmt } from './lib/api';
+import { api, fmt, setWsClientId } from './lib/api';
+import { mergeQueueWhilePlaying } from './lib/queueSync';
 import { formatNow, type NowDisplay } from './lib/dateFormat';
 import { nextMusicSource, postMusicSource, servicesFromModes, type MusicSourceMode, type MusicServices } from './lib/musicSource';
 import { spring, stagger } from './lib/motion';
@@ -32,9 +33,25 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const audioPrimed = useRef(false);
   const playbackRecoveryTimer = useRef<number | undefined>(undefined);
+  const skipTimerRef = useRef<number | undefined>(undefined);
+  const queueRevisionRef = useRef(0);
+  const errorTrackUrlRef = useRef<string | null>(null);
+  const clientIdRef = useRef('');
+  const reconnectDelayRef = useRef(1000);
+  const autoPlayUserInitRef = useRef(false);
+  const segueActiveRef = useRef(false);
+  const pendingIdleStartRef = useRef<{ q: Track[]; idx: number } | null>(null);
+
+  const pendingIdleTimerRef = useRef<number | undefined>(undefined);
 
   const [current, setCurrent] = useState<Track | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [segueActive, setSegueActive] = useState(false);
+  const [clientRole, setClientRole] = useState<'unknown' | 'controller' | 'observer'>('unknown');
+  const [feedbackHint, setFeedbackHint] = useState('');
+  const [tasteLine, setTasteLine] = useState('');
+  const [planNote, setPlanNote] = useState('');
+  const [likedKey, setLikedKey] = useState('');
   const [progress, setProgress] = useState(0);
   const [cur, setCur] = useState('0:00');
   const [dur, setDur] = useState('0:00');
@@ -52,9 +69,10 @@ export default function App() {
   const [queueIndex, setQueueIndex] = useState(-1);
   const [queue, setQueue] = useState<Track[]>([]);
 
+  const isController = clientRole === 'controller';
+
   const syncQueueState = useCallback((q: Track[], idx: number) => {
     const clean = dedupeQueue(q, idx);
-    // Stamp a stable uid on each track so reorder/remove have stable React keys.
     const withUid = clean.queue.map((tk) =>
       tk.uid ? tk : { ...tk, uid: `${tk.source}:${tk.id}:${Math.random().toString(36).slice(2, 8)}` }
     );
@@ -65,21 +83,52 @@ export default function App() {
     setQueueIndex(clean.index);
   }, []);
 
+  const syncFromServer = useCallback((serverQ: Track[], rev: number, playingIdx = idxRef.current) => {
+    if (typeof rev === 'number') queueRevisionRef.current = rev;
+    const playingNow = playingIdx >= 0 && !audioRef.current?.paused;
+    if (!playingNow) {
+      syncQueueState(serverQ, playingIdx >= 0 && playingIdx < serverQ.length ? playingIdx : -1);
+      return;
+    }
+    const merged = mergeQueueWhilePlaying(queueRef.current, serverQ, playingIdx);
+    syncQueueState(merged, playingIdx);
+  }, [syncQueueState]);
+
   const queueRemaining = queueIndex >= 0
     ? Math.max(0, queueTotal - queueIndex - 1)
     : queueTotal;
 
   // Queue edits from the player UI (reorder / remove / clear). Update the live
   // refs + state, then persist so a reload keeps the user's edits.
+  const reconcileQueue = useCallback(async () => {
+    try {
+      const snap = await api.getQueue();
+      if (typeof snap.revision === 'number') queueRevisionRef.current = snap.revision;
+      if (Array.isArray(snap.queue)) {
+        const idx = Math.min(Math.max(idxRef.current, -1), snap.queue.length - 1);
+        syncQueueState(snap.queue, idx);
+      }
+    } catch { /* noop */ }
+  }, [syncQueueState]);
+
   const applyQueueEdit = useCallback((q: Track[], idx: number) => {
+    if (!isController) return;
     const clean = dedupeQueue(q, idx);
     queueRef.current = clean.queue;
     idxRef.current = clean.index;
     setQueue(clean.queue);
     setQueueTotal(clean.queue.length);
     setQueueIndex(clean.index);
-    api.setQueue(clean.queue).catch(() => {});
-  }, []);
+    api.setQueue(clean.queue, queueRevisionRef.current).then(async (r) => {
+      if (typeof r?.revision === 'number') queueRevisionRef.current = r.revision;
+    }).catch(async (err: Error & { status?: number }) => {
+      if (err?.status === 403) return;
+      await reconcileQueue();
+      api.setQueue(queueRef.current, queueRevisionRef.current).then((r) => {
+        if (typeof r?.revision === 'number') queueRevisionRef.current = r.revision;
+      }).catch(() => {});
+    });
+  }, [reconcileQueue, isController]);
 
   const reorderUpNext = useCallback((nextUpcoming: Track[]) => {
     const idx = idxRef.current;
@@ -100,11 +149,14 @@ export default function App() {
   const reportState = useCallback(() => {
     const ws = wsRef.current;
     if (ws?.readyState === 1) {
+      const tr = queueRef.current[idxRef.current];
       ws.send(JSON.stringify({
         type: 'state',
         playingIndex: idxRef.current,
         paused: audioRef.current?.paused ?? true,
         queueLen: queueRef.current.length,
+        queueRevision: queueRevisionRef.current,
+        currentTrack: tr ? { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source } : null,
       }));
     }
   }, []);
@@ -156,21 +208,45 @@ export default function App() {
 
     const a = audioRef.current!;
     const startSong = () => {
+      segueActiveRef.current = false;
+      setSegueActive(false);
       a.src = tr.url!;
       a.volume = 1;
+      api.playbackEvent({
+        event: 'started',
+        track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
+        queue_index: idx,
+      }).catch(() => {});
       a.play()
         .then(() => reportState())
         .catch(() => {
           setPlaying(false);
-          setSay(t('sayTapPlay'));
+          if (autoPlayUserInitRef.current) setSay(t('sayTapPlay'));
           reportState();
         });
     };
 
     if (tr.segueTtsUrl && ttsRef.current) {
-      ttsRef.current.src = tr.segueTtsUrl;
-      ttsRef.current.onended = startSong;
-      ttsRef.current.play().catch(startSong);
+      const tts = ttsRef.current;
+      const dimMusic = !!(a.src && !a.paused);
+      segueActiveRef.current = true;
+      setSegueActive(true);
+      if (dimMusic) a.volume = 0.12;
+      let done = false;
+      let guard: number | undefined;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        if (guard) window.clearTimeout(guard);
+        tts.onended = null;
+        tts.onerror = null;
+        startSong();
+      };
+      tts.onended = finish;
+      tts.onerror = finish;
+      guard = window.setTimeout(finish, 15000);
+      tts.src = tr.segueTtsUrl;
+      tts.play().catch(finish);
     } else {
       startSong();
     }
@@ -180,11 +256,13 @@ export default function App() {
     if (!q.length) return;
     const idx = Math.max(0, Math.min(startAt, q.length - 1));
     syncQueueState(q, idx);
-    playTrack(q[idx], idx);
+    const tr = queueRef.current[idx];
+    if (tr) playTrack(tr, idx);
     reportState();
   }, [syncQueueState, playTrack, reportState]);
 
   const playQueueIndex = useCallback((index: number, prunePlayed = false) => {
+    if (!isController) return;
     const q = queueRef.current;
     if (index < 0 || index >= q.length) return;
     if (prunePlayed && index > 0) {
@@ -194,7 +272,28 @@ export default function App() {
       return;
     }
     playTrack(q[index], index);
-  }, [applyQueueEdit, playTrack]);
+  }, [applyQueueEdit, playTrack, isController]);
+
+  const clearPendingIdleStart = () => {
+    if (pendingIdleTimerRef.current) {
+      window.clearTimeout(pendingIdleTimerRef.current);
+      pendingIdleTimerRef.current = undefined;
+    }
+    pendingIdleStartRef.current = null;
+  };
+
+  const schedulePendingIdleStart = useCallback((q: Track[], idx: number) => {
+    clearPendingIdleStart();
+    pendingIdleStartRef.current = { q, idx };
+    pendingIdleTimerRef.current = window.setTimeout(() => {
+      pendingIdleTimerRef.current = undefined;
+      const pending = pendingIdleStartRef.current;
+      if (pending) {
+        pendingIdleStartRef.current = null;
+        startQueue(pending.q, pending.idx);
+      }
+    }, 10000);
+  }, [startQueue]);
 
   const playTtsUrl = useCallback((url?: string | null, after?: () => void) => {
     if (!url || !ttsRef.current) {
@@ -206,23 +305,31 @@ export default function App() {
     const dimMusic = !!(a && !a.paused);
     if (dimMusic && a) a.volume = 0.12;
     let done = false;
+    let guard: number | undefined;
     const finish = () => {
       if (done) return;
       done = true;
+      if (guard) window.clearTimeout(guard);
       if (a) a.volume = 1;
       tts.onended = null;
       tts.onerror = null;
       after?.();
     };
+    guard = window.setTimeout(finish, 15000);
     tts.src = url;
     tts.onended = finish;
     tts.onerror = finish;
     tts.play().catch(finish);
   }, []);
 
+  const stampReason = (tracks: Track[], reason?: string) => (
+    reason ? tracks.map((tr) => ({ ...tr, reason: tr.reason || reason })) : tracks
+  );
+
   const applyBroadcast = useCallback((b: Broadcast) => {
     if (b.ts && b.ts <= lastBroadcastTs.current) return;
     if (b.ts) lastBroadcastTs.current = b.ts;
+    if (typeof b.revision === 'number') queueRevisionRef.current = b.revision;
 
     setConn('on');
     if (b.error) {
@@ -243,30 +350,47 @@ export default function App() {
         : prev);
     }
 
-    const playTts = (after?: () => void) => playTtsUrl(b.ttsUrl, after);
+    const shouldAutoPlay = autoPlayUserInitRef.current && isController;
+    const playTts = (after?: () => void) => {
+      if (!b.ttsUrl && b.say && after) {
+        pendingIdleStartRef.current = null;
+        after();
+        return;
+      }
+      playTtsUrl(b.ttsUrl, after);
+    };
 
+    try {
     switch (b.mode) {
       case 'append': {
         if (b.queue?.length) {
-          const merged = [...queueRef.current, ...b.queue];
+          const incoming = stampReason(b.queue, b.reason);
+          const merged = [...queueRef.current, ...incoming];
           const wasIdle = idxRef.current < 0;
-          const startAt = merged.length - b.queue.length;
+          const startAt = merged.length - incoming.length;
           syncQueueState(merged, wasIdle ? startAt : idxRef.current);
-          if (wasIdle) startQueue(merged, startAt);
-          reportState();
+          if (wasIdle && shouldAutoPlay) startQueue(merged, startAt);
+          else reportState();
         }
         return;
       }
       case 'insert': {
         if (b.queue?.length) {
+          const incoming = stampReason(b.queue, b.reason);
           const wasIdle = idxRef.current < 0;
           const q = [...queueRef.current];
           const at = b.placement === 'append' ? q.length : idxRef.current + 1;
-          q.splice(at, 0, ...b.queue);
+          q.splice(at, 0, ...incoming);
           if (wasIdle) {
             const startAt = Math.max(0, Math.min(at, q.length - 1));
             syncQueueState(q, startAt);
-            playTts(() => startQueue(q, startAt));
+            if (shouldAutoPlay) {
+              if (b.ttsUrl) playTts(() => startQueue(q, startAt));
+              else if (b.say) {
+                schedulePendingIdleStart(q, startAt);
+                playTts();
+              } else startQueue(q, startAt);
+            }
             reportState();
             return;
           }
@@ -288,12 +412,19 @@ export default function App() {
         playTts();
         return;
       default: {
-        const q = b.queue?.length ? b.queue : null;
-        if (q) playTts(() => startQueue(q));
-        else playTts();
+        const q = b.queue?.length ? stampReason(b.queue, b.reason) : null;
+        if (q) {
+          const wasIdle = idxRef.current < 0;
+          syncQueueState(q, wasIdle ? 0 : idxRef.current);
+          if (shouldAutoPlay) playTts(() => startQueue(q, wasIdle ? 0 : idxRef.current));
+          else playTts();
+        } else playTts();
       }
     }
-  }, [t, startQueue, syncQueueState, reportState, playTtsUrl]);
+    } finally {
+      autoPlayUserInitRef.current = false;
+    }
+  }, [t, startQueue, syncQueueState, reportState, playTtsUrl, isController, schedulePendingIdleStart]);
 
   const applyBroadcastRef = useRef(applyBroadcast);
   applyBroadcastRef.current = applyBroadcast;
@@ -318,8 +449,15 @@ export default function App() {
 
     if (p.ts && p.ts < lastBroadcastTs.current) return;
     if (p.ts && Date.now() - p.ts > 45000) return;
-    playTtsUrl(p.ttsUrl);
-  }, [playTtsUrl, syncQueueState]);
+    playTtsUrl(p.ttsUrl, () => {
+      clearPendingIdleStart();
+      const pending = pendingIdleStartRef.current;
+      if (pending) {
+        pendingIdleStartRef.current = null;
+        startQueue(pending.q, pending.idx);
+      }
+    });
+  }, [playTtsUrl, syncQueueState, startQueue]);
 
   const applyTtsPatchRef = useRef(applyTtsPatch);
   applyTtsPatchRef.current = applyTtsPatch;
@@ -329,10 +467,43 @@ export default function App() {
       window.clearTimeout(playbackRecoveryTimer.current);
       playbackRecoveryTimer.current = undefined;
     }
+    if (skipTimerRef.current) {
+      window.clearTimeout(skipTimerRef.current);
+      skipTimerRef.current = undefined;
+    }
   };
 
-  const next = () => {
+  const emitPlaybackEvent = useCallback((event: 'started' | 'completed' | 'skipped' | 'replayed' | 'like' | 'dislike', track?: Track | null) => {
+    const tr = track || queueRef.current[idxRef.current];
+    if (!tr?.id) return;
+    const a = audioRef.current;
+    api.playbackEvent({
+      event,
+      track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
+      position_sec: a?.currentTime || 0,
+      queue_index: idxRef.current,
+    }).catch(() => {});
+    if (event === 'like') {
+      setLikedKey(`${tr.source}:${tr.id}`);
+      setFeedbackHint(t('feedbackLike'));
+      window.setTimeout(() => setFeedbackHint(''), 3000);
+    }
+    if (event === 'dislike') {
+      setFeedbackHint(t('feedbackDislike'));
+      window.setTimeout(() => setFeedbackHint(''), 3000);
+    }
+  }, [t]);
+
+  const next = (opts?: { reason?: 'skip' | 'end' }) => {
+    clearPlaybackRecovery();
     const q = queueRef.current;
+    const reason = opts?.reason || 'skip';
+    if (reason === 'skip' && idxRef.current >= 0 && idxRef.current < q.length) {
+      emitPlaybackEvent('skipped', q[idxRef.current]);
+    }
+    if (reason === 'end' && idxRef.current >= 0 && idxRef.current < q.length) {
+      emitPlaybackEvent('completed', q[idxRef.current]);
+    }
     if (idxRef.current < q.length - 1) {
       const ni = idxRef.current + 1;
       playQueueIndex(ni, true);
@@ -345,41 +516,71 @@ export default function App() {
     clearPlaybackRecovery();
     setPlaying(false);
     const q = queueRef.current;
+    const failedUrl = audioRef.current?.src || null;
+    errorTrackUrlRef.current = failedUrl;
     if (idxRef.current >= 0 && idxRef.current < q.length - 1) {
       const ni = idxRef.current + 1;
       setSay(t('sayTrackFailNext'));
-      window.setTimeout(() => playQueueIndex(ni, true), 250);
+      skipTimerRef.current = window.setTimeout(() => {
+        skipTimerRef.current = undefined;
+        const cur = queueRef.current[idxRef.current];
+        if (cur?.url && errorTrackUrlRef.current && cur.url !== errorTrackUrlRef.current) return;
+        playQueueIndex(ni, true);
+      }, 250);
       return;
     }
     setSay(t('sayTrackFail'));
     reportState();
+    if (isController && idxRef.current >= 0 && idxRef.current >= q.length - 1) {
+      window.setTimeout(() => reportState(), 500);
+    }
   };
 
   const schedulePlaybackRecovery = () => {
     clearPlaybackRecovery();
+    const expectedUrl = queueRef.current[idxRef.current]?.url || '';
     playbackRecoveryTimer.current = window.setTimeout(() => {
       const a = audioRef.current;
       if (!a || a.paused) return;
+      if (a.src !== expectedUrl) return;
       if (a.readyState < 3) onAudioError();
     }, 10000);
   };
 
   const prev = () => {
+    clearPlaybackRecovery();
     const q = queueRef.current;
     if (idxRef.current > 0) {
+      emitPlaybackEvent('replayed', q[idxRef.current]);
       const pi = idxRef.current - 1;
       playQueueIndex(pi);
     }
   };
 
-  const toggle = () => {
+  const resumePlayback = () => {
+    primeAudio();
     const a = audioRef.current!;
     const q = queueRef.current;
     if (idxRef.current < 0 && q.length) {
       playTrack(q[0], 0);
       return;
     }
-    if (a.paused) a.play().catch(() => {});
+    a.play().catch(() => {
+      primeAudio();
+      window.setTimeout(() => {
+        a.play().catch(() => setSay(t('sayTapPlay')));
+      }, 300);
+    });
+  };
+
+  const toggle = () => {
+    if (!isController) return;
+    const a = audioRef.current!;
+    if (idxRef.current < 0 && queueRef.current.length) {
+      resumePlayback();
+      return;
+    }
+    if (a.paused) resumePlayback();
     else a.pause();
   };
 
@@ -398,18 +599,53 @@ export default function App() {
         return;
       }
       wsRef.current = ws;
-      ws.onopen = () => { setConn('on'); reportState(); };
-      ws.onclose = () => { wsRef.current = null; setConn(''); if (!stop) setTimeout(connect, 2000); };
+      ws.onopen = () => {
+        setConn('on');
+        reconnectDelayRef.current = 1000;
+        reportState();
+      };
+      ws.onclose = () => {
+        wsRef.current = null;
+        setConn('');
+        api.resetSession();
+        if (!stop) {
+          const delay = reconnectDelayRef.current;
+          reconnectDelayRef.current = Math.min(delay * 1.8 + Math.random() * 400, 30000);
+          window.setTimeout(connect, delay);
+        }
+      };
       ws.onmessage = (e) => {
         try {
           const m = JSON.parse(e.data);
           if (m.type === 'hello') {
+            clientIdRef.current = m.clientId || '';
+            setWsClientId(m.clientId || null);
+            if (m.role === 'observer' || m.role === 'controller') setClientRole(m.role);
             const q: Track[] = Array.isArray(m.queue) ? m.queue : [];
-            syncQueueState(q, idxRef.current >= 0 && idxRef.current < q.length ? idxRef.current : -1);
+            syncFromServer(q, m.queueRevision ?? queueRevisionRef.current);
+            void reconcileQueue();
             reportState();
+          }
+          if (m.type === 'queue' && Array.isArray(m.queue)) {
+            syncFromServer(m.queue, m.revision ?? queueRevisionRef.current);
           }
           if (m.type === 'broadcast') applyBroadcastRef.current(m);
           if (m.type === 'tts') applyTtsPatchRef.current(m);
+          if (m.type === 'session') {
+            if (!m.clientId || m.clientId === clientIdRef.current) {
+              if (m.role === 'observer' || m.role === 'controller') {
+                setClientRole(m.role);
+                if (m.role === 'observer') {
+                  audioRef.current?.pause();
+                  setPlaying(false);
+                  setSay(t('sayObserver'));
+                }
+              }
+            }
+          }
+          if (m.type === 'profile') {
+            window.dispatchEvent(new CustomEvent('aurio:profile-progress', { detail: m }));
+          }
         } catch (err) {
           console.warn('[Aurio WS] bad message', err);
         }
@@ -418,7 +654,42 @@ export default function App() {
 
     connect();
     return () => { stop = true; wsRef.current = null; ws?.close(); };
-  }, [syncQueueState, reportState]);
+  }, [syncFromServer, reconcileQueue, reportState, t]);
+
+  useEffect(() => {
+    if (conn !== 'on') return;
+    const timer = window.setInterval(() => reportState(), 30000);
+    return () => window.clearInterval(timer);
+  }, [conn, reportState]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const tr = current;
+    if (!tr) {
+      navigator.mediaSession.metadata = null;
+      return;
+    }
+    const artwork = tr.coverArt
+      ? [{ src: tr.coverArt, sizes: '512x512', type: 'image/jpeg' as const }]
+      : [];
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: tr.title,
+      artist: tr.artist,
+      album: tr.album || 'Aurio',
+      artwork,
+    });
+    navigator.mediaSession.playbackState = playing || segueActive ? 'playing' : 'paused';
+    navigator.mediaSession.setActionHandler('play', () => { if (isController) resumePlayback(); });
+    navigator.mediaSession.setActionHandler('pause', () => { audioRef.current?.pause(); });
+    navigator.mediaSession.setActionHandler('previoustrack', () => { if (isController) prev(); });
+    navigator.mediaSession.setActionHandler('nexttrack', () => { if (isController) next(); });
+    return () => {
+      navigator.mediaSession.setActionHandler('play', null);
+      navigator.mediaSession.setActionHandler('pause', null);
+      navigator.mediaSession.setActionHandler('previoustrack', null);
+      navigator.mediaSession.setActionHandler('nexttrack', null);
+    };
+  }, [current, playing, segueActive, isController]);
 
   const refreshStatus = useCallback(async (announce = false) => {
     try {
@@ -463,6 +734,33 @@ export default function App() {
   useEffect(() => () => clearPlaybackRecovery(), []);
 
   useEffect(() => {
+    if (!playing) return;
+    const timer = window.setInterval(() => reportState(), 20000);
+    return () => window.clearInterval(timer);
+  }, [playing, reportState]);
+
+  useEffect(() => {
+    if (!playing || !isController) return;
+    let lock: WakeLockSentinel | null = null;
+    if ('wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').then((l) => { lock = l; }).catch(() => {});
+    }
+    return () => { lock?.release().catch(() => {}); };
+  }, [playing, isController]);
+
+  useEffect(() => {
+    api.planToday().then((r) => {
+      if (r?.plan?.mood) setPlanNote(r.plan.mood + (r.plan.note ? ` · ${r.plan.note}` : ''));
+    }).catch(() => {});
+    api.taste().then((r) => {
+      const parts: string[] = [];
+      if (r?.liked?.length) parts.push(r.liked.slice(0, 2).map((x) => x.name).join('、'));
+      if (r?.avoidArtists?.length) parts.push(`避开 ${r.avoidArtists.slice(0, 2).map((a) => a.artist).join('、')}`);
+      if (parts.length) setTasteLine(parts.join(' · '));
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     api.messages(120).then((r) => {
       if (Array.isArray(r.messages)) {
         setMessages(r.messages.map((m) => ({
@@ -474,7 +772,6 @@ export default function App() {
     }).catch(() => {});
   }, []);
 
-  // First-run onboarding: only for a fresh, unconfigured install.
   useEffect(() => {
     api.settings().then((s) => {
       if (!s.onboarded) setOnboard(true);
@@ -489,7 +786,14 @@ export default function App() {
     if (!scrobbled.current && a.currentTime > 20 && idxRef.current >= 0) {
       scrobbled.current = true;
       const tr = queueRef.current[idxRef.current];
-      if (tr) api.played({ id: tr.id, title: tr.title, artist: tr.artist, source: tr.source });
+      if (tr) api.played({
+        id: tr.id,
+        title: tr.title,
+        artist: tr.artist,
+        source: tr.source,
+        position_sec: a.currentTime,
+        queue_index: idxRef.current,
+      });
     }
   };
 
@@ -500,8 +804,26 @@ export default function App() {
     a.currentTime = ((e.clientX - r.left) / r.width) * a.duration;
   };
 
-  const send = async (text: string) => {
+  const steer = async (text: string) => {
+    if (!isController) return;
     primeAudio();
+    autoPlayUserInitRef.current = true;
+    setConn('busy');
+    setSay(t('sayArranging'));
+    try {
+      const b = (await api.chat(text)) as Broadcast;
+      applyBroadcast(b);
+    } catch {
+      setSay(t('sayConnFail'));
+      setConn('on');
+      autoPlayUserInitRef.current = false;
+    }
+  };
+
+  const send = async (text: string) => {
+    if (!isController) return;
+    primeAudio();
+    autoPlayUserInitRef.current = true;
     setMessages((m) => [...m, { role: 'user', text }]);
     setConn('busy');
     setSay(t('sayThinking'));
@@ -511,11 +833,14 @@ export default function App() {
     } catch {
       setSay(t('sayConnFail'));
       setConn('on');
+      autoPlayUserInitRef.current = false;
     }
   };
 
   const trig = async (kind: string) => {
+    if (!isController) return;
     primeAudio();
+    autoPlayUserInitRef.current = true;
     setConn('busy');
     setSay(t('sayArranging'));
     try {
@@ -524,6 +849,7 @@ export default function App() {
     } catch {
       setSay(t('sayConnFail'));
       setConn('on');
+      autoPlayUserInitRef.current = false;
     }
   };
 
@@ -540,7 +866,8 @@ export default function App() {
     }
   };
 
-  const petState: PetState = conn === 'busy' ? 'talking' : playing ? 'playing' : 'idle';
+  const petState: PetState = conn === 'busy' ? 'talking' : (playing || segueActive) ? 'playing' : 'idle';
+  const controlsDisabled = !isController || conn === 'busy';
   const connLabel = conn === 'on' ? t('connOn') : conn === 'busy' ? t('connBusy') : t('connOff');
   const headerSub = playing && current
     ? current.title
@@ -620,8 +947,20 @@ export default function App() {
           onReorder={reorderUpNext}
           onRemove={removeAt}
           onClear={clearUpNext}
+          onSteer={steer}
+          onTrigger={trig}
+          isObserver={!isController}
+          controlsDisabled={controlsDisabled}
+          tasteLine={tasteLine}
+          planNote={planNote}
         />
       </motion.div>
+
+      {feedbackHint && (
+        <motion.p {...stagger(2)} className="text-center text-[11px] text-[rgb(var(--hi-rgb))] font-mono shrink-0">
+          {feedbackHint}
+        </motion.p>
+      )}
 
       <motion.div {...stagger(3)} className="transport-row shrink-0">
         <AnimatePresence>
@@ -636,14 +975,18 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <PressButton variant="ghost" ariaLabel={t('ariaPrev')} onClick={prev} disabled={queueIndex <= 0}>
+        <PressButton variant="ghost" ariaLabel={t('ariaPrev')} onClick={prev} disabled={controlsDisabled || queueIndex <= 0}>
           <IconPrev size={17} />
+        </PressButton>
+        <PressButton variant="ghost" ariaLabel={t('ariaLike')} onClick={() => emitPlaybackEvent('like', current)} disabled={controlsDisabled || !current}>
+          <span className={`text-sm ${likedKey && current && likedKey === `${current.source}:${current.id}` ? 'text-[rgb(var(--hi-rgb))]' : ''}`}>♥</span>
         </PressButton>
         <PressButton
           variant="play"
           ariaLabel={playing ? t('ariaPause') : t('ariaPlay')}
           onClick={toggle}
           className={playing ? 'is-playing' : ''}
+          disabled={controlsDisabled && !isController}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
@@ -657,7 +1000,16 @@ export default function App() {
             </motion.span>
           </AnimatePresence>
         </PressButton>
-        <PressButton variant="ghost" ariaLabel={t('ariaNext')} onClick={next} disabled={queueIndex < 0 || queueRemaining === 0}>
+        <PressButton variant="ghost" ariaLabel={t('ariaDislike')} onClick={() => {
+          emitPlaybackEvent('dislike', current);
+          clearPlaybackRecovery();
+          const q = queueRef.current;
+          if (idxRef.current < q.length - 1) playQueueIndex(idxRef.current + 1, true);
+          else reportState();
+        }} disabled={controlsDisabled || !current}>
+          <span className="text-sm">👎</span>
+        </PressButton>
+        <PressButton variant="ghost" ariaLabel={t('ariaNext')} onClick={next} disabled={controlsDisabled || queueIndex < 0}>
           <IconNext size={17} />
         </PressButton>
       </motion.div>
@@ -672,24 +1024,35 @@ export default function App() {
       <audio
         ref={audioRef}
         onTimeUpdate={onTime}
-        onEnded={next}
+        onEnded={() => next({ reason: 'end' })}
         onError={onAudioError}
         onWaiting={schedulePlaybackRecovery}
         onStalled={schedulePlaybackRecovery}
         onCanPlay={clearPlaybackRecovery}
         onPlaying={clearPlaybackRecovery}
         onPlay={() => { clearPlaybackRecovery(); setPlaying(true); reportState(); }}
-        onPause={() => { clearPlaybackRecovery(); setPlaying(false); reportState(); }}
+        onPause={() => {
+          clearPlaybackRecovery();
+          if (!segueActiveRef.current) setPlaying(false);
+          reportState();
+        }}
       />
       <audio ref={ttsRef} />
     </WidgetShell>
 
-    <ChatSheet open={chatOpen} onClose={() => setChatOpen(false)} messages={messages} onSend={send} onTrigger={trig} busy={conn === 'busy'} />
+    <ChatSheet open={chatOpen} onClose={() => setChatOpen(false)} messages={messages} onSend={send} onTrigger={trig} busy={conn === 'busy'} onGoAir={() => trig('station')} isObserver={!isController} />
     <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} currentTrack={current} initialGroup={settingsGroup} />
     <Onboarding
       open={onboard}
       onOpenGroup={(g) => { setSettingsGroup(g); setSettingsOpen(true); }}
-      onFinish={async () => { try { await api.saveSettings({ ONBOARDED: '1' }); } catch { /* ignore */ } setOnboard(false); }}
+      onFinish={async () => {
+        try { await api.saveSettings({ ONBOARDED: '1' }); } catch { /* ignore */ }
+        setOnboard(false);
+        if (isController) {
+          autoPlayUserInitRef.current = true;
+          void trig('station');
+        }
+      }}
     />
     </>
   );

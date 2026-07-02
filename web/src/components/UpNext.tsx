@@ -47,15 +47,23 @@ function Row({ track, absIndex, onPick, onRemove }: {
   );
 }
 
-export default function UpNext({ items, baseIndex, onPick, onRemove, onReorder, onClear }: {
-  items: Track[];          // upcoming tracks (after the current one)
-  baseIndex: number;       // absolute index of items[0] in the full queue
+export default function UpNext({ items, baseIndex, onPick, onRemove, onReorder, onClear, disabled = false }: {
+  items: Track[];
+  baseIndex: number;
   onPick: (index: number) => void;
   onRemove: (index: number) => void;
   onReorder: (next: Track[]) => void;
   onClear: () => void;
+  disabled?: boolean;
 }) {
   if (!items.length) return null;
+  if (disabled) {
+    return (
+      <div className="upnext mt-3 pt-3 border-t opacity-50" style={{ borderColor: 'var(--glass-border)' }}>
+        <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)]">待播 · {items.length}</p>
+      </div>
+    );
+  }
   return (
     <div className="upnext mt-3 pt-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
       <div className="flex items-center justify-between mb-1.5">
