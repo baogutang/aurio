@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { spring } from '../lib/motion';
 import { useI18n } from '../context/PreferencesContext';
@@ -14,6 +14,7 @@ interface Props {
 export default function BootLog({ netease, navidrome, qqmusic, weather, connected }: Props) {
   const { t } = useI18n();
   const [visible, setVisible] = useState(0);
+  const prevConnected = useRef<boolean | undefined>(undefined);
 
   const lines = [
     { text: t('bootReady'), ok: true },
@@ -31,6 +32,15 @@ export default function BootLog({ netease, navidrome, qqmusic, weather, connecte
   const total = lines.length + services.length + 1;
 
   useEffect(() => {
+    const shouldAnimate = prevConnected.current === undefined
+      || (connected === true && prevConnected.current === false);
+    prevConnected.current = !!connected;
+
+    if (!shouldAnimate) {
+      setVisible(total);
+      return;
+    }
+
     setVisible(0);
     let i = 0;
     const timer = setInterval(() => {

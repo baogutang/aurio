@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.3] - 2026-07-02
+
+### Added
+
+- Standby screen shows all four steer chips and a contextual CTA (`继续播放` when a queue exists, `开台` otherwise).
+- Flip clock style now shows ON AIR / standby status like the dot-matrix clock.
+- Updates panel auto-checks for new versions when opened.
+
+### Fixed
+
+- Removed the oversized green scrollbar on the standby clock view; inset panels use a subtle thin thumb.
+- Transport controls: like/dislike clustered around play with proper SVG icons; observer play button no longer clickable.
+- Next track enabled when a queue exists but playback is idle.
+- Radio refill no longer spins when append adds zero tracks; backs off after repeated empty refills.
+- Queue-end `completed` events trigger immediate server refill.
+- Low-priority DJ segments superseded before expensive compose when user is waiting.
+- Consolidated duplicate heartbeat intervals; taste line refreshes after like/dislike.
+- Observer mode cannot pause via Media Session; boot log no longer re-animates on every reconnect.
+- In-app update download no longer restarts when re-checking while downloading.
+
 ## [0.3.2] - 2026-07-02
 
 ### Added

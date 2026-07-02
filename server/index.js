@@ -24,7 +24,7 @@ import { openCalendarPrivacy, testSystemCalendar } from './calendar/system.js';
 import { startScheduler } from './scheduler.js';
 import { enabledProviders } from './calendar/index.js';
 import { cast } from './cast/upnp.js';
-import { onHeartbeat, startRadio, currentIndex, hasActiveSession } from './radio.js';
+import { onHeartbeat, startRadio, currentIndex, hasActiveSession, maybeRefill } from './radio.js';
 import { clientSessionManager } from './runtime/client-session-manager.js';
 import { queueController, ConflictError } from './runtime/queue-controller.js';
 import { eventBus } from './runtime/event-bus.js';
@@ -567,6 +567,9 @@ app.post('/api/playback-event', (req, res) => {
   const signal = event === 'like' ? 'like' : event === 'dislike' ? 'dislike' : event;
   recordFeedback({ signal, track, position_sec, queue_index });
   onPlaybackFeedback({ signal, track, position_sec });
+  if (event === 'completed') {
+    setImmediate(() => maybeRefill());
+  }
   res.json({ ok: true });
 });
 

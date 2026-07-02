@@ -170,6 +170,9 @@ function revisionNow() {
 
 async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: playIdx = -1 } = {}, priority = PRIORITY.system) {
   try {
+    if (priority < PRIORITY.user && pendingHighPriority > 0) {
+      return { error: 'superseded', revision: revisionNow() };
+    }
     if (trigger.text) db.addMessage('user', trigger.text, { kind: trigger.kind || 'chat' });
 
     const seg = await composeSegment(trigger);

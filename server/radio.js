@@ -11,6 +11,7 @@ const ACTIVE_TTL_MS = 90000;
 let composing = false;
 let timer = null;
 let sessionSuspended = false;
+let refillFailStreak = 0;
 
 export function onHeartbeat() {
   sessionSuspended = false;
@@ -68,11 +69,25 @@ export async function maybeRefill() {
       }, 2500);
       return;
     }
-    if (!b?.error && remainingTracks() <= LOW_WATER) {
-      holdComposing = true;
-      composing = false;
-      setImmediate(() => maybeRefill());
-      return;
+    const addedCount = Array.isArray(b?.queue) ? b.queue.length : 0;
+    if (!b?.error && addedCount > 0) {
+      refillFailStreak = 0;
+      if (remainingTracks() <= LOW_WATER) {
+        holdComposing = true;
+        composing = false;
+        setImmediate(() => maybeRefill());
+        return;
+      }
+    } else if (!b?.error) {
+      refillFailStreak += 1;
+      if (refillFailStreak < 4) {
+        holdComposing = true;
+        setTimeout(() => {
+          composing = false;
+          maybeRefill();
+        }, 5000 * refillFailStreak);
+        return;
+      }
     }
   } catch (e) {
     console.error('[radio] refill failed:', e.message);

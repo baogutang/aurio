@@ -186,19 +186,21 @@ html[data-electron][data-platform="darwin"] .widget-drag {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--text-muted-rgb), 0.28) transparent;
 }
 .scroll-panel::-webkit-scrollbar {
-  width: 5px;
+  width: 3px;
 }
 .scroll-panel::-webkit-scrollbar-track {
   background: transparent;
 }
 .scroll-panel::-webkit-scrollbar-thumb {
-  background: rgba(var(--sci-cyan-rgb), 0.35);
+  background: rgba(var(--text-muted-rgb), 0.22);
   border-radius: 999px;
 }
 .scroll-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--sci-cyan-rgb), 0.55);
+  background: rgba(var(--text-muted-rgb), 0.38);
 }
 
 .widget-drag {
@@ -550,8 +552,15 @@ html[data-electron][data-platform="darwin"] .widget-drag {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1.35rem;
+  gap: 1.5rem;
   padding: 0.35rem 0;
+}
+
+.transport-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .transport-ring {
@@ -598,9 +607,8 @@ html[data-electron][data-platform="darwin"] .widget-drag {
 }
 
 .main-card--clock {
-  padding-right: 0.12rem;
-  overflow-y: auto;
-  overflow-x: hidden;
+  padding-right: 0;
+  overflow: hidden;
 }
 
 .play-card-scroll {

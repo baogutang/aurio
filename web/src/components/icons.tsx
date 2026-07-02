@@ -59,6 +59,23 @@ export function IconPause({ className, size = 26 }: IconProps) {
   );
 }
 
+export function IconHeart({ className, size = 18, filled = false }: IconProps & { filled?: boolean }) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19.5 12.572 12 20.25l-7.5-7.678A5.25 5.25 0 1 1 12 6.343a5.25 5.25 0 1 1 7.5 6.229Z" />
+    </svg>
+  );
+}
+
+export function IconSkip({ className, size = 18 }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 5v14" />
+      <path d="m19 5-7 7 7 7V5Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function IconClose({ className, size = 20 }: IconProps) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

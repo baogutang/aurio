@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('aurio', {
   platform: process.platform,
   releasesUrl: 'https://github.com/baogutang/aurio/releases/latest',
   updates: {
+    status: () => ipcRenderer.invoke('aurio:update:status'),
     check: () => ipcRenderer.invoke('aurio:update:check'),
     download: () => ipcRenderer.invoke('aurio:update:download'),
     install: () => ipcRenderer.invoke('aurio:update:install'),

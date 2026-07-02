@@ -8,7 +8,7 @@ import WidgetShell from './components/WidgetShell';
 import StatusStrip from './components/StatusStrip';
 import PressButton from './components/PressButton';
 import PixelPet, { type PetState } from './components/PixelPet';
-import { IconChat, IconSettings, IconPrev, IconNext, IconPlay, IconPause } from './components/icons';
+import { IconChat, IconSettings, IconPrev, IconNext, IconPlay, IconPause, IconHeart, IconSkip } from './components/icons';
 import { api, fmt, setWsClientId } from './lib/api';
 import { mergeQueueWhilePlaying } from './lib/queueSync';
 import { formatNow, type NowDisplay } from './lib/dateFormat';
@@ -476,6 +476,15 @@ export default function App() {
     }
   };
 
+  const refreshTaste = useCallback(() => {
+    api.taste().then((r) => {
+      const parts: string[] = [];
+      if (r?.liked?.length) parts.push(r.liked.slice(0, 2).map((x) => x.name).join('、'));
+      if (r?.avoidArtists?.length) parts.push(`避开 ${r.avoidArtists.slice(0, 2).map((a) => a.artist).join('、')}`);
+      setTasteLine(parts.length ? parts.join(' · ') : '');
+    }).catch(() => {});
+  }, []);
+
   const emitPlaybackEvent = useCallback((event: 'started' | 'completed' | 'skipped' | 'replayed' | 'like' | 'dislike', track?: Track | null) => {
     const tr = track || queueRef.current[idxRef.current];
     if (!tr?.id) return;
@@ -490,12 +499,14 @@ export default function App() {
       setLikedKey(`${tr.source}:${tr.id}`);
       setFeedbackHint(t('feedbackLike'));
       window.setTimeout(() => setFeedbackHint(''), 3000);
+      refreshTaste();
     }
     if (event === 'dislike') {
       setFeedbackHint(t('feedbackDislike'));
       window.setTimeout(() => setFeedbackHint(''), 3000);
+      refreshTaste();
     }
-  }, [t]);
+  }, [t, refreshTaste]);
 
   const next = (opts?: { reason?: 'skip' | 'end' }) => {
     clearPlaybackRecovery();
@@ -666,12 +677,6 @@ export default function App() {
   }, [conn, reportState]);
 
   useEffect(() => {
-    if (!playing) return;
-    const timer = window.setInterval(() => reportState(), 8000);
-    return () => window.clearInterval(timer);
-  }, [playing, reportState]);
-
-  useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     const tr = current;
     if (!tr) {
@@ -689,7 +694,7 @@ export default function App() {
     });
     navigator.mediaSession.playbackState = playing || segueActive ? 'playing' : 'paused';
     navigator.mediaSession.setActionHandler('play', () => { if (isController) resumePlayback(); });
-    navigator.mediaSession.setActionHandler('pause', () => { audioRef.current?.pause(); });
+    navigator.mediaSession.setActionHandler('pause', () => { if (isController) audioRef.current?.pause(); });
     navigator.mediaSession.setActionHandler('previoustrack', () => { if (isController) prev(); });
     navigator.mediaSession.setActionHandler('nexttrack', () => { if (isController) next(); });
     return () => {
@@ -741,12 +746,6 @@ export default function App() {
   }, [refreshStatus]);
 
   useEffect(() => () => clearPlaybackRecovery(), []);
-
-  useEffect(() => {
-    if (!playing) return;
-    const timer = window.setInterval(() => reportState(), 20000);
-    return () => window.clearInterval(timer);
-  }, [playing, reportState]);
 
   useEffect(() => {
     if (!playing || !isController) return;
@@ -958,10 +957,12 @@ export default function App() {
           onClear={clearUpNext}
           onSteer={steer}
           onTrigger={trig}
+          onResume={resumePlayback}
           isObserver={!isController}
           controlsDisabled={controlsDisabled}
           tasteLine={tasteLine}
           planNote={planNote}
+          queueTotal={queueTotal}
         />
       </motion.div>
 
@@ -987,38 +988,46 @@ export default function App() {
         <PressButton variant="ghost" ariaLabel={t('ariaPrev')} onClick={prev} disabled={controlsDisabled || queueIndex <= 0}>
           <IconPrev size={17} />
         </PressButton>
-        <PressButton variant="ghost" ariaLabel={t('ariaLike')} onClick={() => emitPlaybackEvent('like', current)} disabled={controlsDisabled || !current}>
-          <span className={`text-sm ${likedKey && current && likedKey === `${current.source}:${current.id}` ? 'text-[rgb(var(--hi-rgb))]' : ''}`}>♥</span>
-        </PressButton>
-        <PressButton
-          variant="play"
-          ariaLabel={playing ? t('ariaPause') : t('ariaPlay')}
-          onClick={toggle}
-          className={playing ? 'is-playing' : ''}
-          disabled={controlsDisabled && !isController}
-        >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.span
-              key={playing ? 'pause' : 'play'}
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.5, opacity: 0 }}
-              transition={spring.snappy}
-            >
-              {playing ? <IconPause size={22} /> : <IconPlay size={22} className="ml-0.5" />}
-            </motion.span>
-          </AnimatePresence>
-        </PressButton>
-        <PressButton variant="ghost" ariaLabel={t('ariaDislike')} onClick={() => {
-          emitPlaybackEvent('dislike', current);
-          clearPlaybackRecovery();
-          const q = queueRef.current;
-          if (idxRef.current < q.length - 1) playQueueIndex(idxRef.current + 1, true);
-          else reportState();
-        }} disabled={controlsDisabled || !current}>
-          <span className="text-sm">👎</span>
-        </PressButton>
-        <PressButton variant="ghost" ariaLabel={t('ariaNext')} onClick={next} disabled={controlsDisabled || queueIndex < 0}>
+
+        <div className="transport-cluster">
+          <PressButton variant="ghost" ariaLabel={t('ariaLike')} onClick={() => emitPlaybackEvent('like', current)} disabled={controlsDisabled || !current}>
+            <IconHeart
+              size={17}
+              filled={!!(likedKey && current && likedKey === `${current.source}:${current.id}`)}
+              className={likedKey && current && likedKey === `${current.source}:${current.id}` ? 'text-[rgb(var(--hi-rgb))]' : ''}
+            />
+          </PressButton>
+          <PressButton
+            variant="play"
+            ariaLabel={playing ? t('ariaPause') : t('ariaPlay')}
+            onClick={toggle}
+            className={playing ? 'is-playing' : ''}
+            disabled={controlsDisabled}
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={playing ? 'pause' : 'play'}
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.5, opacity: 0 }}
+                transition={spring.snappy}
+              >
+                {playing ? <IconPause size={22} /> : <IconPlay size={22} className="ml-0.5" />}
+              </motion.span>
+            </AnimatePresence>
+          </PressButton>
+          <PressButton variant="ghost" ariaLabel={t('ariaDislike')} onClick={() => {
+            emitPlaybackEvent('dislike', current);
+            clearPlaybackRecovery();
+            const q = queueRef.current;
+            if (idxRef.current < q.length - 1) playQueueIndex(idxRef.current + 1, true);
+            else reportState();
+          }} disabled={controlsDisabled || !current}>
+            <IconSkip size={17} />
+          </PressButton>
+        </div>
+
+        <PressButton variant="ghost" ariaLabel={t('ariaNext')} onClick={next} disabled={controlsDisabled || (queueIndex < 0 && queueTotal === 0)}>
           <IconNext size={17} />
         </PressButton>
       </motion.div>

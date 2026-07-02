@@ -13,6 +13,8 @@ let win = null;
 let tray = null;
 let hasTray = false;
 let updateDownloaded = false;
+let downloadedVersion = '';
+let downloading = false;
 
 function requestQuit() {
   app.isQuitting = true;
@@ -117,26 +119,51 @@ async function findAvailablePort(startPort) {
   });
 }
 
-autoUpdater.on('download-progress', (progress) => emitUpdate('download-progress', { progress }));
+autoUpdater.on('download-progress', (progress) => {
+  downloading = true;
+  emitUpdate('download-progress', { progress });
+});
 autoUpdater.on('update-downloaded', (info) => {
   updateDownloaded = true;
+  downloadedVersion = info?.version || '';
+  downloading = false;
   emitUpdate('update-downloaded', { version: info?.version || '' });
 });
-autoUpdater.on('error', (e) => emitUpdate('error', { message: e.message }));
+autoUpdater.on('error', (e) => {
+  downloading = false;
+  emitUpdate('error', { message: e.message });
+});
+
+function updateStatus() {
+  return {
+    version: app.getVersion(),
+    downloaded: updateDownloaded,
+    downloadedVersion,
+    downloading,
+  };
+}
+
+ipcMain.handle('aurio:update:status', () => updateStatus());
 
 ipcMain.handle('aurio:update:check', async () => {
   if (!app.isPackaged) {
     return { ok: false, status: 'dev', version: app.getVersion(), detail: 'updates are only available in packaged builds' };
   }
   try {
-    updateDownloaded = false;
     const result = await autoUpdater.checkForUpdates();
     const latest = result?.updateInfo?.version || app.getVersion();
+    const updateAvailable = newerThan(latest, app.getVersion());
+    if (updateDownloaded && downloadedVersion && downloadedVersion !== latest) {
+      updateDownloaded = false;
+      downloadedVersion = '';
+    }
     return {
       ok: true,
       version: app.getVersion(),
       latestVersion: latest,
-      updateAvailable: newerThan(latest, app.getVersion()),
+      updateAvailable,
+      downloaded: updateDownloaded && downloadedVersion === latest,
+      downloading,
       info: result?.updateInfo || null,
     };
   } catch (e) {
@@ -146,10 +173,14 @@ ipcMain.handle('aurio:update:check', async () => {
 
 ipcMain.handle('aurio:update:download', async () => {
   if (!app.isPackaged) return { ok: false, status: 'dev', detail: 'updates are only available in packaged builds' };
+  if (updateDownloaded) return { ok: true, status: 'already-downloaded' };
+  if (downloading) return { ok: true, status: 'downloading' };
   try {
+    downloading = true;
     await autoUpdater.downloadUpdate();
     return { ok: true };
   } catch (e) {
+    downloading = false;
     return { ok: false, status: 'error', detail: e.message };
   }
 });

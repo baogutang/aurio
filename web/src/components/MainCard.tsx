@@ -32,17 +32,19 @@ interface Props {
   onClear?: () => void;
   onSteer?: (text: string) => void;
   onTrigger?: (kind: string) => void;
+  onResume?: () => void;
   isObserver?: boolean;
   controlsDisabled?: boolean;
   tasteLine?: string;
   planNote?: string;
+  queueTotal?: number;
 }
 
 export default function MainCard({
   track, progress, cur, dur, say, now, playing, conn, onSeek, audioRef, services,
   queue = [], queueIndex = -1, onPick, onReorder, onRemove, onClear,
-  onSteer, onTrigger, isObserver = false, controlsDisabled = false,
-  tasteLine = '', planNote = '',
+  onSteer, onTrigger, onResume, isObserver = false, controlsDisabled = false,
+  tasteLine = '', planNote = '', queueTotal = 0,
 }: Props) {
   const { clock, tr: t, resolved } = usePreferences();
   const sayTheme = resolved === 'light' ? 'card' : 'dark';
@@ -185,7 +187,7 @@ export default function MainCard({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={spring.gentle}
-          className="main-card main-card--clock scroll-panel"
+          className="main-card main-card--clock"
         >
           <ClockDisplay
             time={now.time}
@@ -225,6 +227,8 @@ export default function MainCard({
                 {[
                   { label: t('steerCalm'), text: t('steerPayloadCalm') },
                   { label: t('steerEnergy'), text: t('steerPayloadEnergy') },
+                  { label: t('steerSimilar'), text: t('steerPayloadSimilar') },
+                  { label: t('steerBan'), text: t('steerPayloadBan') },
                 ].map((chip) => (
                   <button
                     key={chip.label}
@@ -244,9 +248,9 @@ export default function MainCard({
                 className="mt-3 w-full rounded-2xl py-2.5 text-[12px] font-medium disabled:opacity-40"
                 style={{ background: 'rgb(var(--accent-rgb) / 0.12)', color: 'rgb(var(--accent-rgb))' }}
                 disabled={controlsDisabled}
-                onClick={() => onTrigger('station')}
+                onClick={() => (queueTotal > 0 && onResume ? onResume() : onTrigger('station'))}
               >
-                {t('goOnAir')}
+                {queueTotal > 0 ? t('resumePlay') : t('goOnAir')}
               </button>
             )}
           </div>

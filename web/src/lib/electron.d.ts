@@ -7,12 +7,20 @@ declare global {
       platform?: string;
       releasesUrl?: string;
       updates?: {
+        status: () => Promise<{
+          version?: string;
+          downloaded?: boolean;
+          downloadedVersion?: string;
+          downloading?: boolean;
+        }>;
         check: () => Promise<{
           ok: boolean;
           status?: string;
           version?: string;
           latestVersion?: string;
           updateAvailable?: boolean;
+          downloaded?: boolean;
+          downloading?: boolean;
           detail?: string;
         }>;
         download: () => Promise<{ ok: boolean; status?: string; detail?: string }>;

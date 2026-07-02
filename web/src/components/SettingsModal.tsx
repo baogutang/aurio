@@ -664,23 +664,87 @@ function UpdatesPanel({ t }: { t: T }) {
   const [busy, setBusy] = useState(false);
   const [available, setAvailable] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentVersion, setCurrentVersion] = useState('');
   const [latestVersion, setLatestVersion] = useState('');
+  const autoChecked = useRef(false);
+
+  useEffect(() => {
+    if (!updates?.status) return;
+    updates.status().then((s) => {
+      if (s.downloaded) setDownloaded(true);
+      if (s.downloading) setDownloading(true);
+      if (s.version) setCurrentVersion(s.version);
+      if (s.downloadedVersion) setLatestVersion(s.downloadedVersion);
+    }).catch(() => {});
+  }, [updates]);
+
+  useEffect(() => {
+    if (!updates || autoChecked.current) return;
+    autoChecked.current = true;
+    let cancelled = false;
+    (async () => {
+      const s = await updates.status?.().catch(() => null);
+      if (cancelled || !s) return;
+      if (s.downloaded || s.downloading) return;
+      setBusy(true);
+      setRes({ ok: true, msg: t('updatesChecking') });
+      try {
+        const r = await updates.check();
+        if (cancelled) return;
+        setCurrentVersion(r.version || '');
+        setLatestVersion(r.latestVersion || r.version || '');
+        if (!r.ok) {
+          setAvailable(false);
+          setRes({ ok: false, msg: r.status === 'dev' ? t('updatesDev') : `${t('updatesError')}: ${r.detail || r.status || ''}` });
+          return;
+        }
+        setAvailable(!!r.updateAvailable);
+        if (r.downloaded) {
+          setDownloaded(true);
+          setProgress(100);
+          setRes({ ok: true, msg: t('updatesDownloaded') });
+          return;
+        }
+        if (r.downloading) {
+          setDownloading(true);
+          setRes({ ok: true, msg: t('updatesDownloading') });
+          return;
+        }
+        setRes({
+          ok: true,
+          msg: r.updateAvailable
+            ? t('updatesAvailable').replace('{version}', r.latestVersion || '')
+            : t('updatesNoUpdate'),
+        });
+      } catch {
+        if (!cancelled) setRes({ ok: false, msg: t('updatesError') });
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [updates, t]);
 
   useEffect(() => {
     if (!updates?.onEvent) return;
     return updates.onEvent((payload) => {
       if (payload.event === 'download-progress') {
+        setDownloading(true);
         setProgress(Math.round(payload.progress?.percent || 0));
         setRes({ ok: true, msg: `${t('updatesDownloading')} ${Math.round(payload.progress?.percent || 0)}%` });
       }
       if (payload.event === 'update-downloaded') {
         setDownloaded(true);
+        setDownloading(false);
         setBusy(false);
+        setProgress(100);
+        if (payload.version) setLatestVersion(payload.version);
         setRes({ ok: true, msg: t('updatesDownloaded') });
       }
       if (payload.event === 'error') {
+        setDownloading(false);
         setBusy(false);
         setRes({ ok: false, msg: `${t('updatesError')}: ${payload.message || ''}` });
       }
@@ -692,9 +756,8 @@ function UpdatesPanel({ t }: { t: T }) {
   }
 
   const check = async () => {
+    if (downloading) return;
     setBusy(true);
-    setDownloaded(false);
-    setProgress(0);
     setRes({ ok: true, msg: t('updatesChecking') });
     try {
       const r = await updates.check();
@@ -706,6 +769,17 @@ function UpdatesPanel({ t }: { t: T }) {
         return;
       }
       setAvailable(!!r.updateAvailable);
+      if (r.downloaded) {
+        setDownloaded(true);
+        setProgress(100);
+        setRes({ ok: true, msg: t('updatesDownloaded') });
+        return;
+      }
+      if (r.downloading) {
+        setDownloading(true);
+        setRes({ ok: true, msg: t('updatesDownloading') });
+        return;
+      }
       setRes({
         ok: true,
         msg: r.updateAvailable
@@ -720,15 +794,18 @@ function UpdatesPanel({ t }: { t: T }) {
   };
 
   const download = async () => {
+    if (downloaded || downloading) return;
     setBusy(true);
-    setProgress(0);
+    setDownloading(true);
     setRes({ ok: true, msg: t('updatesDownloading') });
     try {
       const r = await updates.download();
       if (r.ok) return;
+      setDownloading(false);
       setBusy(false);
       setRes({ ok: false, msg: `${t('updatesError')}: ${r.detail || r.status || ''}` });
     } catch {
+      setDownloading(false);
       setBusy(false);
       setRes({ ok: false, msg: t('updatesError') });
     }
@@ -773,8 +850,8 @@ function UpdatesPanel({ t }: { t: T }) {
         </div>
       )}
       <Buttons>
-        <button disabled={busy} onClick={check} className="pill-btn flex-1 disabled:opacity-40">{t('updatesCheck')}</button>
-        <button disabled={busy || !available || downloaded} onClick={download} className="pill-btn flex-1 disabled:opacity-40">{t('updatesDownload')}</button>
+        <button disabled={busy || downloading} onClick={check} className="pill-btn flex-1 disabled:opacity-40">{t('updatesCheck')}</button>
+        <button disabled={busy || downloading || !available || downloaded} onClick={download} className="pill-btn flex-1 disabled:opacity-40">{t('updatesDownload')}</button>
       </Buttons>
       <button disabled={!downloaded} onClick={install} className="pill-btn pill-btn-active w-full disabled:opacity-40">{t('updatesInstall')}</button>
     </div>
