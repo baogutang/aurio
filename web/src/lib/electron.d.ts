@@ -3,6 +3,8 @@ export {};
 declare global {
   interface Window {
     aurio?: {
+      isElectron?: boolean;
+      platform?: string;
       releasesUrl?: string;
       updates?: {
         check: () => Promise<{
