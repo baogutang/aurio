@@ -191,6 +191,12 @@ ipcMain.handle('aurio:update:install', async () => {
   return { ok: true };
 });
 
+ipcMain.on('aurio:tray:onAir', (_event, onAir) => {
+  if (!tray) return;
+  const icon = loadTrayImage(Boolean(onAir));
+  if (!icon.isEmpty()) tray.setImage(icon);
+});
+
 function createWindow(port) {
   const isMac = process.platform === 'darwin';
   win = new BrowserWindow({
@@ -234,18 +240,36 @@ function createWindow(port) {
   });
 }
 
-// Returns true if a usable (non-empty) tray icon was created.
-function createTray() {
+// Returns a tray image (22pt @2x). macOS uses template (mono black) assets.
+function loadTrayImage(onAir = false) {
+  const file = onAir ? 'trayOnAir.png' : 'trayTemplate.png';
   const candidates = app.isPackaged
-    ? [path.join(process.resourcesPath, 'icon.png'), path.join(__dirname, '..', 'pwa', 'aurio-logo.png')]
-    : [path.join(__dirname, '..', 'build', 'icon.png'), path.join(__dirname, '..', 'pwa', 'aurio-logo.png')];
+    ? [
+      path.join(process.resourcesPath, file),
+      path.join(process.resourcesPath, 'icon.png'),
+      path.join(__dirname, '..', 'pwa', 'aurio-logo.png'),
+    ]
+    : [
+      path.join(__dirname, '..', 'build', file),
+      path.join(__dirname, '..', 'build', 'icon.png'),
+      path.join(__dirname, '..', 'pwa', 'aurio-logo.png'),
+    ];
   let icon = nativeImage.createEmpty();
   for (const iconPath of candidates) {
+    if (!fs.existsSync(iconPath)) continue;
     icon = nativeImage.createFromPath(iconPath);
     if (!icon.isEmpty()) break;
   }
-  if (icon.isEmpty()) return false; // no real icon → don't trap the window on close
-  icon = icon.resize({ width: 16, height: 16 });
+  if (icon.isEmpty()) return icon;
+  if (process.platform === 'darwin') icon.setTemplateImage(true);
+  else if (icon.getSize().width !== 22) icon = icon.resize({ width: 22, height: 22 });
+  return icon;
+}
+
+// Returns true if a usable (non-empty) tray icon was created.
+function createTray() {
+  const icon = loadTrayImage(false);
+  if (icon.isEmpty()) return false;
   try { tray = new Tray(icon); } catch { return false; }
   const menu = Menu.buildFromTemplate([
     { label: '显示 Aurio', click: () => win?.show() },

@@ -126,10 +126,13 @@ function requestedArtist(text = '') {
   const patterns = [
     /(?:歌手|艺人|artist)\s*[:：]?\s*([\u3400-\u9fffA-Za-z0-9 .·&-]{2,40})/i,
     /([\u3400-\u9fffA-Za-z0-9 .·&-]{2,40})(?:的歌|歌曲|唱的)/i,
+    /(?:听|放|来(?:首|一首)?)\s*([\u4e00-\u9fffA-Za-z0-9 .·&-]{2,8})[的\s《]*([\u4e00-\u9fffA-Za-z0-9 .·&-]{2,20})/i,
+    /([\u4e00-\u9fff]{2,6})[的\s《]+([\u4e00-\u9fffA-Za-z0-9 .·&-]{2,20})/,
   ];
   for (const pattern of patterns) {
     const hit = text.match(pattern);
-    const cleaned = cleanArtistHint(hit?.[1] || '');
+    const name = hit?.[2] ? hit[1] : hit?.[1];
+    const cleaned = cleanArtistHint(name || '');
     if (cleaned) return cleaned;
   }
   return '';
@@ -298,7 +301,14 @@ export async function resolveQueue(requests = [], constraints = {}) {
   for (const req of requests) {
     const q = typeof req === 'string' ? req : req.query;
     if (!q) continue;
-    const track = await resolve(q, constraints);
+    const reqConstraints = { ...constraints };
+    const hint = typeof req === 'object' ? (req.source_hint || req.source) : '';
+    if (hint) {
+      if (/navidrome|nas|本地|曲库/i.test(String(hint))) reqConstraints.source = 'navidrome';
+      else if (/netease|网易/i.test(String(hint))) reqConstraints.source = 'netease';
+      else if (/qq/i.test(String(hint))) reqConstraints.source = 'qqmusic';
+    }
+    const track = await resolve(q, reqConstraints);
     if (track) out.push({ ...track, reason: req.reason || '' });
   }
   return rankTracks(dedupeTracks(out));

@@ -122,7 +122,7 @@ function untrusted(label, text) {
 const OUTPUT_CONTRACT = `
 你必须只输出一个原始 JSON 对象，不要 markdown，不要代码块，不要 \`\`\`json，不要任何额外文字或解释，格式如下：
 {
-  "say": "Aurio口播（短句、口语、自然，像真人主播顺手接歌）",
+  "say": "这首前奏一出来，今晚就慢下来了。",
   "play": [
     { "query": "歌手 - 歌名", "reason": "为什么选这首" }
   ],

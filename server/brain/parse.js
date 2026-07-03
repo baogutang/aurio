@@ -148,7 +148,7 @@ export function toAction(resultText) {
   if (!action.say && !action.play.length) {
     const fallback = (resultText || '').toString().trim().slice(0, 800);
     action.say = looksLikeJsonReply(fallback)
-      ? '刚才我把编排稿整理歪了一下，先不让这些格式打扰你。我们把音乐接上，慢慢听。'
+      ? '刚才嘴瓢了，音乐先接上。'
       : fallback;
   }
   return action;

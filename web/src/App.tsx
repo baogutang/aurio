@@ -8,7 +8,8 @@ import WidgetShell from './components/WidgetShell';
 import StatusStrip from './components/StatusStrip';
 import PressButton from './components/PressButton';
 import PixelPet, { type PetState } from './components/PixelPet';
-import { IconChat, IconSettings, IconPrev, IconNext, IconPlay, IconPause, IconHeart, IconSkip } from './components/icons';
+import HeaderWeather from './components/HeaderWeather';
+import { IconChat, IconSettings, IconPrev, IconNext, IconPlay, IconPause, IconHeart, IconDislike } from './components/icons';
 import { api, fmt, setWsClientId } from './lib/api';
 import { mergeQueueWhilePlaying } from './lib/queueSync';
 import { formatNow, type NowDisplay } from './lib/dateFormat';
@@ -198,7 +199,11 @@ export default function App() {
   }, [locale, localeTag]);
 
   const playTrack = useCallback((tr: Track, idx: number) => {
-    if (!tr?.url) return;
+    if (!tr?.url) {
+      setPlaying(false);
+      setSay(t('sayTrackFail'));
+      return;
+    }
     clearPlaybackRecovery();
     scrobbled.current = false;
     setCurrent(tr);
@@ -340,14 +345,6 @@ export default function App() {
     if (cleanSay) {
       setSay(cleanSay);
       setMessages((m) => [...m, { role: 'dj', text: cleanSay }]);
-    } else {
-      // A response with no patter (silent music refill, or the brain declined to
-      // talk) must still clear the transient "thinking/arranging" placeholder,
-      // or the 口播 line gets stuck. Leave a real DJ line from a prior segment
-      // untouched during background refills.
-      setSay((prev) => (prev === t('sayThinking') || prev === t('sayArranging'))
-        ? (b.queue?.length ? t('sayTapPlay') : t('sayReady'))
-        : prev);
     }
 
     const shouldAutoPlay = autoPlayUserInitRef.current && isController;
@@ -385,11 +382,7 @@ export default function App() {
             const startAt = Math.max(0, Math.min(at, q.length - 1));
             syncQueueState(q, startAt);
             if (shouldAutoPlay) {
-              if (b.ttsUrl) playTts(() => startQueue(q, startAt));
-              else if (b.say) {
-                schedulePendingIdleStart(q, startAt);
-                playTts();
-              } else startQueue(q, startAt);
+              playTts(() => startQueue(q, startAt));
             }
             reportState();
             return;
@@ -573,12 +566,13 @@ export default function App() {
 
   const resumePlayback = () => {
     primeAudio();
-    const a = audioRef.current!;
     const q = queueRef.current;
-    if (idxRef.current < 0 && q.length) {
-      playTrack(q[0], 0);
+    const idx = idxRef.current >= 0 ? idxRef.current : 0;
+    if (q.length) {
+      playTrack(q[idx], idx);
       return;
     }
+    const a = audioRef.current!;
     a.play().catch(() => {
       primeAudio();
       window.setTimeout(() => {
@@ -590,7 +584,7 @@ export default function App() {
   const toggle = () => {
     if (!isController) return;
     const a = audioRef.current!;
-    if (idxRef.current < 0 && queueRef.current.length) {
+    if ((idxRef.current < 0 || !current) && queueRef.current.length) {
       resumePlayback();
       return;
     }
@@ -705,6 +699,11 @@ export default function App() {
     };
   }, [current, playing, segueActive, isController]);
 
+  useEffect(() => {
+    const aurio = (window as Window & { aurio?: { tray?: { setOnAir?: (on: boolean) => void } } }).aurio;
+    aurio?.tray?.setOnAir?.(playing || segueActive);
+  }, [playing, segueActive]);
+
   const refreshStatus = useCallback(async (announce = false) => {
     try {
       const s = await api.status();
@@ -817,7 +816,6 @@ export default function App() {
     primeAudio();
     autoPlayUserInitRef.current = true;
     setConn('busy');
-    setSay(t('sayArranging'));
     try {
       const b = (await api.chat(text)) as Broadcast;
       applyBroadcast(b);
@@ -834,7 +832,6 @@ export default function App() {
     autoPlayUserInitRef.current = true;
     setMessages((m) => [...m, { role: 'user', text }]);
     setConn('busy');
-    setSay(t('sayThinking'));
     try {
       const b = (await api.chat(text)) as Broadcast;
       applyBroadcast(b);
@@ -850,7 +847,6 @@ export default function App() {
     primeAudio();
     autoPlayUserInitRef.current = true;
     setConn('busy');
-    setSay(t('sayArranging'));
     try {
       const b = (await api.trigger(kind)) as Broadcast;
       applyBroadcast(b);
@@ -874,7 +870,7 @@ export default function App() {
     }
   };
 
-  const petState: PetState = conn === 'busy' ? 'talking' : (playing || segueActive) ? 'playing' : 'idle';
+  const petState: PetState = (playing || segueActive) ? 'playing' : 'idle';
   const controlsDisabled = !isController || conn === 'busy';
   const connLabel = conn === 'on' ? t('connOn') : conn === 'busy' ? t('connBusy') : t('connOff');
   const headerSub = playing && current
@@ -891,6 +887,7 @@ export default function App() {
           <div className={`header-avatar ${petState !== 'idle' ? 'is-live' : ''}`} aria-hidden>
             <PixelPet state={petState} cell={4} />
           </div>
+          <HeaderWeather />
           <div className="min-w-0">
             <p className="font-matrix text-[16px] text-[var(--matrix-fg)] leading-none tracking-[0.02em] lowercase">aurio</p>
             <p className="text-[10px] text-[var(--text-muted)] font-mono mt-1 truncate max-w-[180px]" title={headerSub}>
@@ -986,16 +983,22 @@ export default function App() {
         </AnimatePresence>
 
         <PressButton variant="ghost" ariaLabel={t('ariaPrev')} onClick={prev} disabled={controlsDisabled || queueIndex <= 0}>
-          <IconPrev size={17} />
+          <span className="transport-glyph"><IconPrev /></span>
         </PressButton>
 
         <div className="transport-cluster">
-          <PressButton variant="ghost" ariaLabel={t('ariaLike')} onClick={() => emitPlaybackEvent('like', current)} disabled={controlsDisabled || !current}>
-            <IconHeart
-              size={17}
-              filled={!!(likedKey && current && likedKey === `${current.source}:${current.id}`)}
-              className={likedKey && current && likedKey === `${current.source}:${current.id}` ? 'text-[rgb(var(--hi-rgb))]' : ''}
-            />
+          <PressButton
+            variant="ghost"
+            ariaLabel={t('ariaLike')}
+            onClick={() => emitPlaybackEvent('like', current)}
+            disabled={controlsDisabled || !current}
+            className={likedKey && current && likedKey === `${current.source}:${current.id}` ? 'is-liked' : ''}
+          >
+            <span className="transport-glyph">
+              <IconHeart
+                filled={!!(likedKey && current && likedKey === `${current.source}:${current.id}`)}
+              />
+            </span>
           </PressButton>
           <PressButton
             variant="play"
@@ -1007,12 +1010,13 @@ export default function App() {
             <AnimatePresence mode="wait" initial={false}>
               <motion.span
                 key={playing ? 'pause' : 'play'}
+                className="transport-glyph transport-glyph--play"
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.5, opacity: 0 }}
                 transition={spring.snappy}
               >
-                {playing ? <IconPause size={22} /> : <IconPlay size={22} className="ml-0.5" />}
+                {playing ? <IconPause /> : <IconPlay />}
               </motion.span>
             </AnimatePresence>
           </PressButton>
@@ -1023,12 +1027,12 @@ export default function App() {
             if (idxRef.current < q.length - 1) playQueueIndex(idxRef.current + 1, true);
             else reportState();
           }} disabled={controlsDisabled || !current}>
-            <IconSkip size={17} />
+            <span className="transport-glyph"><IconDislike /></span>
           </PressButton>
         </div>
 
         <PressButton variant="ghost" ariaLabel={t('ariaNext')} onClick={next} disabled={controlsDisabled || (queueIndex < 0 && queueTotal === 0)}>
-          <IconNext size={17} />
+          <span className="transport-glyph"><IconNext /></span>
         </PressButton>
       </motion.div>
 

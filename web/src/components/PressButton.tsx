@@ -33,7 +33,11 @@ export default function PressButton({
       whileTap={disabled ? undefined : { scale: variant === 'play' ? 0.965 : variant === 'bar' ? 0.992 : 0.975 }}
       transition={spring.snappy}
     >
-      <span className="relative z-10 flex items-center justify-center gap-2 w-full">{children}</span>
+      <span className={
+        variant === 'bar'
+          ? 'relative z-10 flex items-center gap-2 w-full'
+          : 'relative z-10 flex items-center justify-center'
+      }>{children}</span>
     </motion.button>
   );
 }

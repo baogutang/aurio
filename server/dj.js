@@ -67,6 +67,11 @@ export async function drainDj(timeoutMs = 5000) {
 async function fillTracks(seg, trigger, candidateTracks) {
   if (seg.tracks.length) return seg.tracks;
   if (seg.hardRequest) {
+    if (candidateTracks.length) {
+      const matched = rankTracks(candidateTracks).slice(0, 4);
+      for (const t of matched) t.url = await playbackUrl(t);
+      if (matched.length) return matched;
+    }
     if (seg.constraints?.source && !seg.constraints?.artist) {
       try {
         const rec = await recommend(4, seg.constraints);
@@ -185,9 +190,17 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
     if (mode === 'auto') {
       const wantsMusic = /放|听|来(?:点|首|一首)|歌|音乐|排|播|play|song|music/i.test(trigger.text || '');
       const intent = seg.intent || (seg.tracks.length || wantsMusic ? 'enqueue' : 'chat');
-      if (intent === 'chat') eff = 'chat';
-      else if (intent === 'steer') eff = 'steer';
-      else { eff = 'insert'; placement = seg.placement === 'append' ? 'append' : 'next'; }
+      if (intent === 'chat' && (seg.tracks.length || wantsMusic)) {
+        eff = 'insert';
+        placement = seg.placement === 'append' ? 'append' : 'next';
+      } else if (intent === 'chat') {
+        eff = 'chat';
+      } else if (intent === 'steer') {
+        eff = 'steer';
+      } else {
+        eff = 'insert';
+        placement = seg.placement === 'append' ? 'append' : 'next';
+      }
     }
 
     if (['append', 'insert', 'replace'].includes(eff) && !seg.tracks.length) {
@@ -195,15 +208,15 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       if (filled.length) {
         seg.tracks = filled;
       } else if (seg.hardRequest) {
-        seg.say = `我在${seg.requested || '指定范围'}里没找到能播的歌，先不乱放。`;
+        seg.say = seg.say || `你点的那首库里暂时没有，要不换一首类似的？`;
         eff = 'chat';
       }
     }
 
     if (seg.degraded && !seg.say && eff !== 'append') {
       seg.say = seg.tracks.length
-        ? '我的大脑这会儿连不上，先按你的曲库顺了几首，边听边等它回来。'
-        : '我的大脑这会儿连不上（去设置里看看 AI 配置），先陪你安静待一会儿。';
+        ? '信号有点飘，我先放几首你常听的垫一下。'
+        : '这会儿连不上，先陪你安静待一会儿。';
     }
 
     const idxNow = freshPlayIndex(playIdx);
@@ -258,7 +271,7 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
     console.error('[dj] run failed:', e.message);
     const fail = {
       ts: Date.now(), error: e.message,
-      say: '抱歉，我的大脑刚刚卡了一下，再试一次？',
+      say: '刚才卡了一下，再说一次？',
       queue: [], revision: revisionNow(),
     };
     eventBus.emit('broadcast', fail);

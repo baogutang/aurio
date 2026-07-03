@@ -77,37 +77,6 @@ function fillEllipse(img, cx, cy, rx, ry, paint) {
   }
 }
 
-function drawLine(img, x1, y1, x2, y2, width, paint) {
-  const minX = Math.floor(Math.min(x1, x2) - width - 2);
-  const maxX = Math.ceil(Math.max(x1, x2) + width + 2);
-  const minY = Math.floor(Math.min(y1, y2) - width - 2);
-  const maxY = Math.ceil(Math.max(y1, y2) + width + 2);
-  const vx = x2 - x1;
-  const vy = y2 - y1;
-  const len2 = vx * vx + vy * vy || 1;
-  for (let py = minY; py <= maxY; py++) {
-    for (let px = minX; px <= maxX; px++) {
-      const t = clamp(((px + 0.5 - x1) * vx + (py + 0.5 - y1) * vy) / len2);
-      const dx = px + 0.5 - (x1 + vx * t);
-      const dy = py + 0.5 - (y1 + vy * t);
-      const d = Math.hypot(dx, dy) - width / 2;
-      const coverage = clamp(0.8 - d);
-      if (coverage > 0) blendPixel(img, px, py, typeof paint === 'function' ? paint(px, py) : paint, coverage);
-    }
-  }
-}
-
-function drawArc(img, cx, cy, rx, ry, start, end, width, paint) {
-  const steps = Math.max(24, Math.round(Math.abs(end - start) * Math.max(rx, ry) / 10));
-  let prev = null;
-  for (let i = 0; i <= steps; i++) {
-    const t = start + (end - start) * (i / steps);
-    const p = { x: cx + Math.cos(t) * rx, y: cy + Math.sin(t) * ry };
-    if (prev) drawLine(img, prev.x, prev.y, p.x, p.y, width, paint);
-    prev = p;
-  }
-}
-
 function radialGlow(img, cx, cy, radius, base) {
   const minX = Math.floor(cx - radius);
   const maxX = Math.ceil(cx + radius);
@@ -121,9 +90,10 @@ function radialGlow(img, cx, cy, radius, base) {
   }
 }
 
-// 12×13 pixel sprite — matches web/src/components/PixelPet.tsx
+// 12×13 — matches web/src/components/PixelPet.tsx
 const SPRITE = [
   '......T.....',
+  '......A.....',
   '...SSSSSS...',
   '..SBBBBBBS..',
   '.SBBBBBBBBS.',
@@ -141,18 +111,69 @@ const SPRITE_COLORS = {
   B: color('#ff6a3d'),
   S: color('#ff6a3d', 0.42),
   L: color('#5ad19a'),
-  E: color('#120c08', 0.82),
+  E: color('#0a0705', 0.88),
   G: color('#ffffff'),
   A: color('#5ad19a', 0.85),
   T: color('#eafff2'),
   F: color('#ff6a3d', 0.42),
 };
 
-function drawPixel(img, x, y, cell, c) {
-  fillRoundedRect(img, x, y, cell, cell, Math.max(1, cell * 0.08), c);
+function drawAuriDots(img, size, { mono = false, onAir = false } = {}) {
+  const rows = SPRITE.length;
+  const cols = 12;
+  const rd = size * 0.0215;
+  const gap = size * 0.007;
+  const step = rd * 2 + gap;
+  const totalW = cols * step - gap;
+  const totalH = rows * step - gap;
+  const ox = size * 0.5 - totalW / 2;
+  const oy = size * 0.53 - totalH / 2;
+  const monoPaint = color('#000000', 0.92);
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < SPRITE[row].length; col++) {
+      const ch = SPRITE[row][col];
+      if (ch === '.') continue;
+      const cx = ox + col * step + rd;
+      const cy = oy + row * step + rd;
+      if (!mono && (ch === 'B' || ch === 'L')) {
+        radialGlow(img, cx, cy, rd * 1.6, ch === 'L' ? color('#5ad19a', 0.2) : color('#ff6a3d', 0.18));
+      }
+      if (!mono && ch === 'T') {
+        radialGlow(img, cx, cy, rd * 2, color('#eafff2', 0.35));
+      }
+      fillEllipse(img, cx, cy, rd, rd, mono ? monoPaint : SPRITE_COLORS[ch]);
+    }
+  }
+
+  if (onAir) {
+    const topY = oy - step * 0.35;
+    const cx = size * 0.5;
+    for (const [ring, mul] of [[0, 3.8], [1, 4.6], [2, 5.4]]) {
+      const r = step * mul * 0.32;
+      const steps = 12 + ring * 3;
+      for (let i = 0; i < steps; i++) {
+        const ang = Math.PI * (0.18 + 0.64 * i / Math.max(1, steps - 1));
+        const px = cx + Math.cos(ang) * r;
+        const py = topY - Math.sin(ang) * r * 0.55;
+        const dotR = rd * (mono ? 0.5 : 0.6);
+        fillEllipse(
+          img,
+          px,
+          py,
+          dotR,
+          dotR,
+          mono ? color('#000000', 0.55) : color('#5ad19a', 0.88 - ring * 0.18),
+        );
+      }
+    }
+    if (mono) {
+      fillRoundedRect(img, size * 0.18, size - size * 0.05, size * 0.64, Math.max(1, size * 0.028), 1, color('#000000', 0.9));
+    }
+  }
 }
 
-function renderIcon(size) {
+function renderDockIcon(size, { onAir = false } = {}) {
   const img = image(size);
   const s = size / 1024;
   const sx = (v) => v * s;
@@ -161,44 +182,22 @@ function renderIcon(size) {
 
   fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), (x, y) => mix(top, bottom, y / size));
   fillRoundedRect(img, sx(76), sx(76), sx(872), sx(872), sx(184), color('#ffffff', 0.03));
-  radialGlow(img, sx(512), sx(360), sx(360), color('#2bf5ff', 0.14));
-  radialGlow(img, sx(512), sx(620), sx(320), color('#ff6a3d', 0.12));
 
   for (let y = 120; y < 900; y += 48) {
     for (let x = 120; x < 900; x += 48) fillEllipse(img, sx(x), sx(y), sx(2.2), sx(2.2), color('#ffffff', 0.05));
   }
 
-  const cell = sx(58);
-  const cols = 12;
-  const rows = SPRITE.length;
-  const ox = sx(512) - (cols * cell) / 2;
-  const oy = sx(560) - (rows * cell) / 2;
+  radialGlow(img, sx(512), sx(544), sx(360), color('#ff6a3d', 0.16));
 
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < SPRITE[row].length; col++) {
-      const ch = SPRITE[row][col];
-      if (ch === '.') continue;
-      drawPixel(img, ox + col * cell, oy + row * cell, cell, SPRITE_COLORS[ch]);
-    }
-  }
-
-  // Broadcast arcs (pixel dots)
-  for (const [ring, radius] of [[0, 7.4], [1, 8.6], [2, 9.8]]) {
-    const r = cell * radius;
-    const steps = 24 + ring * 6;
-    for (let i = 0; i < steps; i++) {
-      const ang = Math.PI * (0.18 + 0.64 * i / (steps - 1));
-      const px = sx(512) + Math.cos(ang) * r;
-      const py = oy - cell * 1.2 - Math.sin(ang) * r * 0.55;
-      fillEllipse(img, px, py, cell * 0.22, cell * 0.22, color('#5ad19a', 0.9 - ring * 0.18));
-    }
-  }
-
-  // Antenna glow
-  radialGlow(img, sx(512), oy - cell * 0.8, cell * 2.2, color('#eafff2', 0.55));
-  fillEllipse(img, sx(512), oy - cell * 0.8, cell * 0.55, cell * 0.55, color('#ffffff', 0.95));
+  drawAuriDots(img, size, { mono: false, onAir });
 
   fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), color('#ffffff', 0.035));
+  return img;
+}
+
+function renderTrayIcon(size, { onAir = false } = {}) {
+  const img = image(size);
+  drawAuriDots(img, size, { mono: true, onAir });
   return img;
 }
 
@@ -312,8 +311,10 @@ function writeIcns(file, images) {
 
 fs.mkdirSync(outDir, { recursive: true });
 
-const master = renderIcon(1024);
+const master = renderDockIcon(1024, { onAir: false });
 writePng(path.join(outDir, 'icon.png'), master);
+writePng(path.join(outDir, 'trayTemplate.png'), renderTrayIcon(44, { onAir: false }));
+writePng(path.join(outDir, 'trayOnAir.png'), renderTrayIcon(44, { onAir: true }));
 
 const iconset = new Map(
   [16, 32, 64, 128, 256, 512, 1024].map((size) => [size, encodePng(size === 1024 ? master : resizeImage(master, size))]),
@@ -332,4 +333,4 @@ writeIcns(path.join(outDir, 'icon.icns'), [
 const icoSizes = [16, 24, 32, 48, 64, 128, 256];
 writeIco(path.join(outDir, 'icon.ico'), icoSizes.map((size) => ({ size, data: encodePng(resizeImage(master, size)) })));
 
-console.log('Generated build/icon.png, build/icon.icns, and build/icon.ico');
+console.log('Generated build/icon.png, build/icon.icns, build/icon.ico, build/trayTemplate.png, build/trayOnAir.png');

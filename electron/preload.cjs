@@ -7,6 +7,12 @@ contextBridge.exposeInMainWorld('aurio', {
   isElectron: true,
   platform: process.platform,
   releasesUrl: 'https://github.com/baogutang/aurio/releases/latest',
+  tray: {
+    setOnAir: (onAir) => {
+      if (typeof onAir !== 'boolean') return;
+      ipcRenderer.send('aurio:tray:onAir', onAir);
+    },
+  },
   updates: {
     status: () => ipcRenderer.invoke('aurio:update:status'),
     check: () => ipcRenderer.invoke('aurio:update:check'),

@@ -527,9 +527,22 @@ app.post('/api/trigger', requireController, async (req, res) => {
 });
 
 // ---- Current queue / plan ----
-app.get('/api/queue', (req, res) => {
+async function hydrateQueueTracks(queue = []) {
+  return Promise.all(queue.map(async (t) => {
+    if (!t?.url && t?.id && t?.source) {
+      try {
+        const url = await music.playbackUrl(t);
+        return url ? { ...t, url } : t;
+      } catch { return t; }
+    }
+    return t;
+  }));
+}
+
+app.get('/api/queue', async (req, res) => {
   const snap = queueController.getSnapshot();
-  res.json({ queue: snap.queue, revision: snap.revision });
+  const queue = await hydrateQueueTracks(snap.queue);
+  res.json({ queue, revision: snap.revision });
 });
 
 app.post('/api/queue', requireController, (req, res) => {

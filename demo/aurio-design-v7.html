@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurio 设计方向 v7 · 对照参考图</title>
+  <style>
+    /* ── 与 web/src/index.css 同源 token ── */
+    :root {
+      --font-ui: ui-monospace, 'SF Mono', Menlo, 'PingFang SC', monospace;
+      --bg-window: #030303;
+      --card-bg: #050505;
+      --card-border: rgba(255,255,255,.14);
+      --card-shadow: 0 24px 64px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.06) inset;
+      --text-primary: #f2f2f2;
+      --text-secondary: rgba(255,255,255,.72);
+      --text-muted: rgba(255,255,255,.38);
+      --matrix-fg: #fff;
+      --dot-surface-bg: #040404;
+      --dot-color: rgba(255,255,255,.11);
+      --glass-border: rgba(255,255,255,.12);
+      --inset-bg: rgba(255,255,255,.03);
+      --accent-rgb: 255, 106, 61;
+      --hi-rgb: 90, 209, 154;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-ui);
+      background: #111;
+      color: var(--text-primary);
+      padding: 24px 16px 40px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { max-width: 900px; margin: 0 auto; }
+    .intro {
+      text-align: center;
+      margin-bottom: 28px;
+      padding: 0 8px;
+    }
+    .intro h1 { font-size: 18px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 8px; }
+    .intro p { font-size: 12px; line-height: 1.65; color: var(--text-muted); max-width: 520px; margin: 0 auto; }
+    .intro strong { color: var(--text-secondary); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    @media (min-width: 780px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+
+  /* ── App shell 420×~680 ── */
+    .phone {
+      width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    .phone-label {
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    .app-frame {
+      padding: 12px;
+      background: var(--bg-window);
+      border-radius: 28px;
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .app-card {
+      border-radius: 22px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      box-shadow: var(--card-shadow);
+      padding: 14px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      min-height: 580px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .brand { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+    .brand-dot { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--hi-rgb)); box-shadow: 0 0 8px rgba(var(--hi-rgb),.6); }
+    .header-pills { display: flex; gap: 4px; }
+    .pill {
+      font-size: 9px; padding: 4px 8px; border-radius: 999px;
+      border: 1px solid var(--glass-border); color: var(--text-muted); background: transparent;
+    }
+    .pill.on { background: #fff; color: #050505; border-color: #fff; }
+
+    .status-strip {
+      display: flex; gap: 0; margin-bottom: 10px;
+      border: 1px solid var(--glass-border); border-radius: 10px;
+      background: var(--inset-bg); overflow: hidden;
+    }
+    .status-item {
+      flex: 1; padding: 6px 8px; text-align: center;
+      border-right: 1px solid var(--glass-border);
+      font-size: 8px; letter-spacing: .08em; text-transform: uppercase;
+    }
+    .status-item:last-child { border-right: none; }
+    .status-item .lbl { color: var(--text-muted); display: block; margin-bottom: 2px; }
+    .status-item .val { color: var(--text-secondary); font-weight: 600; }
+    .status-item .val.live { color: rgb(var(--hi-rgb)); }
+
+    .main-card {
+      flex: 1;
+      border-radius: 16px;
+      border: 1px solid var(--glass-border);
+      background-color: var(--dot-surface-bg);
+      background-image: radial-gradient(var(--dot-color) .65px, transparent .65px);
+      background-size: 5px 5px;
+      padding: 18px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    /* clock */
+    .matrix-grid {
+      --md: 7px;
+      --mg: calc(var(--md) * .55);
+      display: flex; align-items: center; justify-content: center;
+      gap: calc(var(--md) * 1.6);
+    }
+    .matrix-digit {
+      display: grid;
+      grid-template-columns: repeat(5, var(--md));
+      gap: var(--mg);
+    }
+    .matrix-colon {
+      display: grid;
+      grid-template-rows: repeat(7, var(--md));
+      gap: var(--mg);
+      margin: 0 calc(var(--md) * -.2);
+    }
+    .matrix-pixel {
+      width: var(--md); height: var(--md);
+      border-radius: 50%;
+      background: transparent;
+    }
+    .matrix-pixel.on { background: var(--matrix-fg); }
+    .clock-weekday { text-align: center; margin-top: 14px; font-size: 11px; color: var(--text-muted); letter-spacing: .06em; }
+    .clock-date { text-align: center; font-size: 9px; color: var(--text-muted); opacity: .7; letter-spacing: .22em; text-transform: uppercase; margin-top: 3px; }
+    .clock-status {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      margin-top: 12px;
+      font-size: 9px; letter-spacing: .22em; text-transform: uppercase; color: var(--text-muted);
+    }
+    .live-dot { width: 6px; height: 6px; border-radius: 50%; background: rgb(var(--hi-rgb)); box-shadow: 0 0 8px rgba(var(--hi-rgb),.7); }
+
+    /* play card */
+    .spectrum {
+      display: flex; align-items: flex-end; justify-content: center; gap: 3px;
+      height: 72px; margin-bottom: 12px;
+    }
+    .spec-bar {
+      width: 4px; border-radius: 2px;
+      background: linear-gradient(180deg, rgb(var(--accent-rgb)), rgba(var(--accent-rgb),.4));
+      animation: spec 1.2s ease-in-out infinite alternate;
+    }
+    @keyframes spec { from { height: 12%; } to { height: var(--h); } }
+    .track-title { font-size: 18px; font-weight: 700; line-height: 1.25; margin-bottom: 4px; }
+    .track-artist { font-size: 11px; color: var(--text-muted); margin-bottom: 14px; }
+    .progress {
+      height: 4px; border-radius: 999px; background: var(--inset-bg);
+      position: relative; margin-bottom: 6px;
+    }
+    .progress-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 38%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgb(var(--accent-rgb)), #ff8f6b);
+      box-shadow: 0 0 10px rgba(var(--accent-rgb),.4);
+    }
+    .progress-times { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); }
+
+    /* transport — 统一 18px ghost / 24px play */
+    .transport-row {
+      display: flex; align-items: center; justify-content: center;
+      gap: 1.1rem; margin-top: 12px; position: relative;
+    }
+    .transport-ring {
+      position: absolute; width: 56px; height: 56px; border-radius: 50%;
+      border: 1.5px solid rgba(var(--accent-rgb),.3);
+    }
+    .transport-cluster { display: flex; align-items: center; gap: 0.4rem; }
+    .transport-glyph {
+      display: flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; line-height: 0;
+    }
+    .transport-glyph--play { width: 24px; height: 24px; }
+    .transport-glyph > svg { display: block; width: 18px; height: 18px; }
+    .transport-glyph--play > svg { width: 24px; height: 24px; }
+    .tbtn {
+      width: 44px; height: 44px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--inset-bg);
+      border: 1px solid var(--glass-border);
+      color: var(--text-muted);
+    }
+    .tbtn.liked { color: var(--text-primary); }
+    .tbtn-play {
+      width: 56px; height: 56px; border: none;
+      background: linear-gradient(145deg, #ff7a50, rgb(var(--accent-rgb)));
+      color: #fff;
+      box-shadow: 0 6px 22px rgba(var(--accent-rgb),.42), inset 0 1px 0 rgba(255,255,255,.22);
+    }
+    .tbtn-play.live {
+      box-shadow: 0 8px 28px rgba(var(--accent-rgb),.55), 0 0 0 5px rgba(var(--accent-rgb),.1), inset 0 1px 0 rgba(255,255,255,.25);
+    }
+
+    .chat-bar {
+      margin-top: 10px; padding: 10px 12px; border-radius: 12px;
+      background: var(--inset-bg); border: 1px solid var(--glass-border);
+      font-size: 12px; color: var(--text-muted);
+    }
+
+    /* brand section */
+    .brand-section {
+      max-width: 400px;
+      margin: 28px auto 0;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.02);
+    }
+    .brand-section h2 {
+      font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+      color: var(--text-muted); margin-bottom: 12px; text-align: center;
+    }
+    .brand-row { display: flex; gap: 20px; justify-content: center; align-items: flex-end; flex-wrap: wrap; }
+    .brand-item { text-align: center; }
+    .brand-item canvas { display: block; border-radius: 22%; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+    .brand-item span { display: block; margin-top: 6px; font-size: 10px; color: var(--text-muted); }
+    .dock {
+      display: flex; gap: 8px; justify-content: center; align-items: flex-end;
+      margin-top: 14px; padding: 10px 14px; border-radius: 14px;
+      background: rgba(255,255,255,.08); backdrop-filter: blur(20px);
+    }
+    .dock-ph { width: 44px; height: 44px; border-radius: 10px; background: rgba(255,255,255,.12); }
+    .dock canvas { width: 44px; height: 44px; }
+
+    .principles {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(var(--hi-rgb),.15);
+      background: rgba(var(--hi-rgb),.05);
+      font-size: 11px;
+      line-height: 1.7;
+      color: var(--text-muted);
+    }
+    .principles strong { color: var(--text-secondary); }
+    .principles ul { margin: 8px 0 0 16px; }
+    .principles li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="intro">
+      <h1>设计方向 v7</h1>
+      <p>
+        对照 <strong>docs/reference/clock.png</strong>：点阵只用于<strong>大时钟</strong>；播放控件是<strong>干净矢量</strong>，不是微缩点阵。<br>
+        之前 v4–v6 方向错了，才会又丑又空。下面是按真实 App 壳 + 参考质感重做的两态预览。
+      </p>
+    </div>
+
+    <div class="grid">
+      <!-- 待机 -->
+      <div class="phone">
+        <div class="phone-label">待机 · 对照 clock.png</div>
+        <div class="app-frame">
+          <div class="app-card">
+            <div class="header">
+              <div class="brand"><span class="brand-dot"></span> Aurio</div>
+              <div class="header-pills">
+                <span class="pill on">深色</span>
+                <span class="pill">浅色</span>
+              </div>
+            </div>
+            <div class="status-strip">
+              <div class="status-item"><span class="lbl">源</span><span class="val">NAS</span></div>
+              <div class="status-item"><span class="lbl">电台</span><span class="val live">待机</span></div>
+              <div class="status-item"><span class="lbl">队列</span><span class="val">3</span></div>
+            </div>
+            <div class="main-card" id="standbyCard"></div>
+            <div class="transport-row" id="standbyTransport"></div>
+            <div class="chat-bar">和 DJ 说点什么…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 播放 -->
+      <div class="phone">
+        <div class="phone-label">播放 · 对照 play.png</div>
+        <div class="app-frame">
+          <div class="app-card">
+            <div class="header">
+              <div class="brand"><span class="brand-dot"></span> Aurio</div>
+              <div class="header-pills">
+                <span class="pill on">深色</span>
+                <span class="pill">浅色</span>
+              </div>
+            </div>
+            <div class="status-strip">
+              <div class="status-item"><span class="lbl">源</span><span class="val">NAS</span></div>
+              <div class="status-item"><span class="lbl">电台</span><span class="val live">ON AIR</span></div>
+              <div class="status-item"><span class="lbl">队列</span><span class="val">2</span></div>
+            </div>
+            <div class="main-card">
+              <div class="spectrum" id="spectrum"></div>
+              <div class="track-title">真英雄</div>
+              <div class="track-artist">张卫健 · NAS</div>
+              <div class="progress"><div class="progress-fill"></div></div>
+              <div class="progress-times"><span>1:24</span><span>4:02</span></div>
+            </div>
+            <div class="transport-row" id="playTransport"></div>
+            <div class="chat-bar">和 DJ 说点什么…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="brand-section">
+      <h2>Dock · 菜单栏 — Auri</h2>
+      <p class="hint" style="text-align:center;font-size:11px;color:var(--text-muted);margin:-4px 0 12px;line-height:1.5">
+        来自 <code>PixelPet.tsx</code> 12×13 精灵 · 圆点 LED（与时钟同语法）· 点阵底与主卡 <code>panel-dot</code> 一致
+      </p>
+      <div class="brand-row">
+        <div class="brand-item">
+          <canvas id="dockStandby" width="512" height="512" style="width:88px;height:88px"></canvas>
+          <span>Dock · 待机</span>
+        </div>
+        <div class="brand-item">
+          <canvas id="dockOnAir" width="512" height="512" style="width:88px;height:88px"></canvas>
+          <span>Dock · ON AIR</span>
+        </div>
+        <div class="brand-item">
+          <canvas id="trayDefault" width="44" height="44" style="width:22px;height:22px;background:rgba(0,0,0,.88);border-radius:4px;padding:3px"></canvas>
+          <span>菜单栏 · 默认</span>
+        </div>
+        <div class="brand-item">
+          <canvas id="trayOnAir" width="44" height="44" style="width:22px;height:22px;background:rgba(0,0,0,.88);border-radius:4px;padding:3px"></canvas>
+          <span>菜单栏 · 播放</span>
+        </div>
+      </div>
+      <div class="dock">
+        <div class="dock-ph"></div>
+        <canvas id="dockSmall" width="128" height="128" style="width:44px;height:44px"></canvas>
+        <div class="dock-ph"></div>
+        <div class="dock-ph"></div>
+      </div>
+    </div>
+
+    <div class="principles">
+      <strong>设计原则（为什么 v7 不同）</strong>
+      <ul>
+        <li><strong>点阵 = 大尺寸</strong>：时钟、品牌字标；46px 按钮里放点阵必糊必空</li>
+        <li><strong>Transport = 矢量</strong>：与参考图一致，细线/实心几何，橙主键 + 灰幽灵键</li>
+        <li><strong>Dock / 菜单栏</strong>：真吉祥物 Auri（<code>PixelPet.tsx</code>），非臆想波形</li>
+        <li><strong>Transport 统一</strong>：ghost 全 18×18、stroke 1.75；播放 24×24 实心；间距收紧</li>
+        <li><strong>符合实际</strong>：布局、token、尺寸与 <code>App.tsx</code> / <code>index.css</code> 一致</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    /* ── transport：与 icons.tsx 完全一致 ── */
+    const G = 'transform="translate(0 1.25)"';
+    const S = 'stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" fill="none"';
+    const I = {
+      prev: `<svg viewBox="0 0 24 24" aria-hidden><g ${G}><path d="M7 5.5v11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10.5 11 17.5 6.2v9.6L10.5 11z" ${S}/></g></svg>`,
+      next: `<svg viewBox="0 0 24 24" aria-hidden><g ${G}><path d="M17 5.5v11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13.5 11 6.5 6.2v9.6L13.5 11z" ${S}/></g></svg>`,
+      play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M9.25 7v10l8.75-5-8.75-5z"/></svg>',
+      pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden><rect x="7" y="6.5" width="4" height="11" rx="1"/><rect x="13" y="6.5" width="4" height="11" rx="1"/></svg>',
+      heart: `<svg viewBox="0 0 24 24" ${S}><g ${G}><path d="M19.5 12.572 12 20.25l-7.5-7.678A5.25 5.25 0 1 1 12 6.343a5.25 5.25 0 1 1 7.5 6.229Z"/></g></svg>`,
+      heartOn: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden><g ${G}><path d="M19.5 12.572 12 20.25l-7.5-7.678A5.25 5.25 0 1 1 12 6.343a5.25 5.25 0 1 1 7.5 6.229Z"/></g></svg>`,
+      dislike: `<svg viewBox="0 0 24 24" ${S}><g ${G}><path d="M19.5 12.572 12 20.25l-7.5-7.678A5.25 5.25 0 1 1 12 6.343a5.25 5.25 0 1 1 7.5 6.229Z"/><path d="M11.35 7.1 12.05 9.55 10.75 11.85 12.1 14.15 10.95 16.45"/></g></svg>`,
+    };
+
+    function tbtn(html, cls = '', play = false) {
+      const b = document.createElement('div');
+      b.className = 'tbtn ' + cls + (play ? ' tbtn-play' : '');
+      const g = document.createElement('span');
+      g.className = 'transport-glyph' + (play ? ' transport-glyph--play' : '');
+      g.innerHTML = html;
+      b.appendChild(g);
+      return b;
+    }
+
+    function buildTransport(root, { playing = false, liked = false } = {}) {
+      root.innerHTML = '';
+      if (playing) root.appendChild(Object.assign(document.createElement('span'), { className: 'transport-ring' }));
+      root.appendChild(tbtn(I.prev));
+      const cluster = document.createElement('div');
+      cluster.className = 'transport-cluster';
+      cluster.append(
+        tbtn(liked ? I.heartOn : I.heart, liked ? 'liked' : ''),
+        tbtn(playing ? I.pause : I.play, playing ? 'live' : '', true),
+        tbtn(I.dislike),
+      );
+      root.append(cluster, tbtn(I.next));
+    }
+
+    /* ── 时钟字模 ── */
+    const GLYPH = {
+      '2': ['01110','10001','00001','00010','00100','01000','11111'],
+      '1': ['00100','01100','00100','00100','00100','00100','01110'],
+      '4': ['00010','00110','01010','10010','11111','00010','00010'],
+      '7': ['11111','00001','00010','00100','01000','01000','01000'],
+    };
+    function digit(ch) {
+      const el = document.createElement('div');
+      el.className = 'matrix-digit';
+      for (const row of GLYPH[ch]) {
+        for (const bit of row) {
+          const p = document.createElement('span');
+          p.className = 'matrix-pixel' + (bit === '1' ? ' on' : '');
+          el.appendChild(p);
+        }
+      }
+      return el;
+    }
+    function colon() {
+      const el = document.createElement('div');
+      el.className = 'matrix-colon';
+      for (let r = 0; r < 7; r++) {
+        const p = document.createElement('span');
+        p.className = 'matrix-pixel' + (r === 2 || r === 4 ? ' on' : '');
+        el.appendChild(p);
+      }
+      return el;
+    }
+    function buildClock(root) {
+      const g = document.createElement('div');
+      g.className = 'matrix-grid';
+      g.append(digit('2'), digit('1'), colon(), digit('1'), digit('1'));
+      root.append(g);
+      root.append(Object.assign(document.createElement('p'), { className: 'clock-weekday', textContent: '星期五' }));
+      root.append(Object.assign(document.createElement('p'), { className: 'clock-date', textContent: '2026 · JUL · 03' }));
+      const st = document.createElement('div');
+      st.className = 'clock-status';
+      st.innerHTML = '<span class="live-dot"></span><span>ON AIR</span>';
+      root.append(st);
+    }
+
+    /* ── Auri — same sprite as PixelPet.tsx ── */
+    const AURI_SPRITE = [
+      '......T.....',
+      '......A.....',
+      '...SSSSSS...',
+      '..SBBBBBBS..',
+      '.SBBBBBBBBS.',
+      '.SBEEBBEEBS.',
+      '.SBGEBBGEBS.',
+      '.SBBBBBBBBS.',
+      '.SBLLLLLLBS.',
+      '.SBLLLLLLBS.',
+      '.SBBBBBBBBS.',
+      '..SBBBBBBS..',
+      '...FF..FF...',
+    ];
+    const AURI_COLORS = {
+      B: '#ff6a3d', S: 'rgba(255,106,61,0.42)', L: '#5ad19a',
+      E: 'rgba(10,7,5,0.88)', G: '#ffffff', A: 'rgba(90,209,154,0.85)',
+      T: '#eafff2', F: 'rgba(255,106,61,0.42)',
+    };
+
+    function squircle(ctx, s, inset, r) {
+      const x = inset, y = inset, w = s - inset * 2, h = s - inset * 2;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function drawAuriDots(ctx, size, { mono = false, onAir = false } = {}) {
+      const rows = AURI_SPRITE.length;
+      const cols = 12;
+      const rd = size * 0.0215;
+      const gap = size * 0.007;
+      const totalW = cols * (rd * 2 + gap) - gap;
+      const totalH = rows * (rd * 2 + gap) - gap;
+      const ox = size * 0.5 - totalW / 2;
+      const oy = size * 0.53 - totalH / 2;
+      const step = rd * 2 + gap;
+
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < AURI_SPRITE[y].length; x++) {
+          const ch = AURI_SPRITE[y][x];
+          if (ch === '.') continue;
+          const cx = ox + x * step + rd;
+          const cy = oy + y * step + rd;
+          const col = mono ? 'rgba(255,255,255,0.92)' : (AURI_COLORS[ch] || '#ff6a3d');
+          if (!mono && (ch === 'B' || ch === 'L')) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, rd * 1.6, 0, Math.PI * 2);
+            ctx.fillStyle = ch === 'L' ? 'rgba(90,209,154,0.2)' : 'rgba(255,106,61,0.18)';
+            ctx.fill();
+          }
+          if (!mono && ch === 'T') {
+            ctx.beginPath();
+            ctx.arc(cx, cy, rd * 2, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(90,209,154,0.35)';
+            ctx.fill();
+          }
+          ctx.beginPath();
+          ctx.arc(cx, cy, rd, 0, Math.PI * 2);
+          ctx.fillStyle = col;
+          ctx.fill();
+        }
+      }
+
+      if (onAir) {
+        const topY = oy - step * 0.35;
+        const cx = size * 0.5;
+        for (const [ring, mul] of [[0, 3.8], [1, 4.6], [2, 5.4]]) {
+          const r = step * mul * 0.32;
+          const steps = 12 + ring * 3;
+          for (let i = 0; i < steps; i++) {
+            const ang = Math.PI * (0.18 + 0.64 * i / Math.max(1, steps - 1));
+            const px = cx + Math.cos(ang) * r;
+            const py = topY - Math.sin(ang) * r * 0.55;
+            ctx.beginPath();
+            ctx.arc(px, py, rd * (mono ? 0.5 : 0.6), 0, Math.PI * 2);
+            ctx.fillStyle = mono ? 'rgba(255,255,255,0.55)' : `rgba(90,209,154,${0.88 - ring * 0.18})`;
+            ctx.fill();
+          }
+        }
+      }
+    }
+
+    function drawDockIcon(canvas, { onAir = false } = {}) {
+      const s = canvas.width;
+      const ctx = canvas.getContext('2d');
+      const inset = s * 0.06;
+      const r = s * 0.22;
+
+      const bg = ctx.createLinearGradient(0, 0, s * 0.2, s);
+      bg.addColorStop(0, '#0a0b0d');
+      bg.addColorStop(1, '#040405');
+      ctx.fillStyle = bg;
+      squircle(ctx, s, inset, r);
+      ctx.fill();
+
+      ctx.save();
+      squircle(ctx, s, inset, r);
+      ctx.clip();
+      ctx.fillStyle = 'rgba(255,255,255,0.11)';
+      const grid = s * 0.046;
+      for (let y = inset; y < s - inset; y += grid) {
+        for (let x = inset; x < s - inset; x += grid) {
+          ctx.beginPath();
+          ctx.arc(x, y, s * 0.0025, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      const warm = ctx.createRadialGradient(s * 0.5, s * 0.58, 0, s * 0.5, s * 0.58, s * 0.36);
+      warm.addColorStop(0, 'rgba(255,106,61,0.16)');
+      warm.addColorStop(1, 'transparent');
+      ctx.fillStyle = warm;
+      ctx.fillRect(0, 0, s, s);
+      ctx.restore();
+
+      drawAuriDots(ctx, s, { mono: false, onAir });
+
+      squircle(ctx, s, inset + 0.5, r);
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+      ctx.lineWidth = s * 0.003;
+      ctx.stroke();
+    }
+
+    function drawTrayIcon(canvas, { onAir = false } = {}) {
+      const s = canvas.width;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, s, s);
+      drawAuriDots(ctx, s, { mono: true, onAir });
+      if (onAir) {
+        ctx.fillStyle = 'rgba(90,209,154,0.9)';
+        ctx.fillRect(s * 0.18, s - 2, s * 0.64, 1.2);
+      }
+    }
+
+    /* init */
+    buildClock(document.getElementById('standbyCard'));
+    buildTransport(document.getElementById('standbyTransport'), { playing: false, liked: false });
+    buildTransport(document.getElementById('playTransport'), { playing: true, liked: true });
+
+    const spec = document.getElementById('spectrum');
+    for (let i = 0; i < 28; i++) {
+      const b = document.createElement('div');
+      b.className = 'spec-bar';
+      b.style.setProperty('--h', (30 + Math.random() * 65) + '%');
+      b.style.animationDelay = (i * 0.04) + 's';
+      spec.appendChild(b);
+    }
+
+    drawDockIcon(document.getElementById('dockStandby'), { onAir: false });
+    drawDockIcon(document.getElementById('dockOnAir'), { onAir: true });
+    const sm = document.getElementById('dockSmall');
+    sm.width = sm.height = 128;
+    drawDockIcon(sm, { onAir: false });
+    drawTrayIcon(document.getElementById('trayDefault'), { onAir: false });
+    drawTrayIcon(document.getElementById('trayOnAir'), { onAir: true });
+  </script>
+</body>
+</html>

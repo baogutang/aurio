@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.4] - 2026-07-03
+
+### Added
+
+- Dock icon regenerated from in-app Auri mascot (`PixelPet.tsx`) with round LED dots and panel-dot texture.
+- Dedicated menu-bar tray icons (`trayTemplate` / `trayOnAir`); tray swaps when playback is active.
+
+### Changed
+
+- Transport controls: unified vector glyph sizes (18px ghost / 24px play), heart-break dislike, liked state uses accent orange instead of green.
+- Header pixel weather widget on standby screen.
+
+### Fixed
+
+- Chat-to-play pipeline and queue hydration for NAS tracks.
+- Natural DJ speech: removed mechanical placeholders; persona fallbacks tightened.
+
 ## [0.3.3] - 2026-07-02
 
 ### Added

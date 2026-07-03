@@ -1,7 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import ClockDisplay from './ClockDisplay';
 import BootLog from './BootLog';
-import ContextGlance from './ContextGlance';
 import Spectrum from './Spectrum';
 import Lyrics from './Lyrics';
 import UpNext from './UpNext';
@@ -92,10 +91,6 @@ export default function MainCard({
             )}
             <Spectrum audioRef={audioRef} height={108} />
 
-            <div className="mt-2">
-              <ContextGlance compact />
-            </div>
-
             <motion.h1
               key={track.title}
               initial={{ opacity: 0, y: 6 }}
@@ -141,9 +136,6 @@ export default function MainCard({
                   />
                 )}
               </p>
-              {conn === 'busy' && (
-                <p className="mt-1.5 text-[10px] text-[var(--text-muted)] font-mono">{t('busyStages')}</p>
-              )}
             </div>
 
             {onSteer && !isObserver && (
@@ -197,10 +189,6 @@ export default function MainCard({
             live={live && conn === 'on'}
             style={clock}
           />
-
-          <div className="mt-2.5">
-            <ContextGlance />
-          </div>
 
           <div className="panel-dot p-3.5 mt-2.5 max-h-[156px] min-h-[84px] scroll-panel">
             <BootLog
