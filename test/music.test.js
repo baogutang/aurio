@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  candidatesToText, dedupeTracks, requestConstraints, trackKeys, trackMatchesConstraints,
+  candidatesToText, dedupeTracks, requestConstraints, scoreMatch, trackKeys, trackMatchesConstraints,
 } from '../server/music/index.js';
 
 const t = (o) => ({ source: 'netease', id: '1', title: 'A', artist: 'X', ...o });
@@ -68,10 +68,43 @@ describe('trackMatchesConstraints', () => {
   });
 });
 
+describe('scoreMatch', () => {
+  it('prefers the exact artist over a same-title cover (CJK)', () => {
+    const real = { source: 'netease', id: '1', title: '晴天', artist: '周杰伦' };
+    const cover = { source: 'netease', id: '2', title: '晴天 (Live)', artist: '群星' };
+    expect(scoreMatch('周杰伦 - 晴天', real)).toBeGreaterThan(scoreMatch('周杰伦 - 晴天', cover));
+  });
+
+  it('penalizes an artist mismatch even on an exact title', () => {
+    const wrong = { title: '晴天', artist: '林俊杰' };
+    const right = { title: '晴天', artist: '周杰伦' };
+    expect(scoreMatch('周杰伦 - 晴天', right)).toBeGreaterThan(scoreMatch('周杰伦 - 晴天', wrong));
+  });
+
+  it('scores an exact title above a karaoke cover when no artist is given', () => {
+    const exact = { title: 'Hello', artist: 'Adele' };
+    const karaoke = { title: 'Hello (Karaoke Version)', artist: 'Sing King' };
+    expect(scoreMatch('Hello', exact)).toBe(1);
+    expect(scoreMatch('Hello', exact)).toBeGreaterThan(scoreMatch('Hello', karaoke));
+  });
+});
+
 describe('candidatesToText', () => {
   it('renders NAS source labels for prompt candidates', () => {
     expect(candidatesToText([
       { source: 'navidrome', id: '1', title: '晴天', artist: '周杰伦', album: '叶惠美' },
     ])).toBe('- 周杰伦 - 晴天 《叶惠美》 [NAS]');
+  });
+
+  it('enriches the line with year, duration and genre when present', () => {
+    expect(candidatesToText([
+      { source: 'netease', id: '1', title: '晴天', artist: '周杰伦', album: '叶惠美', year: 2003, duration: 269, genre: 'Pop' },
+    ])).toBe('- 周杰伦 - 晴天 《叶惠美》 (2003 · 4:29 · Pop) [网易云]');
+  });
+
+  it('omits missing metadata fields rather than printing empties', () => {
+    expect(candidatesToText([
+      { source: 'qqmusic', id: '1', title: 'A', artist: 'X', duration: 65 },
+    ])).toBe('- X - A (1:05) [QQ音乐]');
   });
 });

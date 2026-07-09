@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { getAnalyser } from '../lib/audioGraph';
+import { getMusicAnalyser } from '../lib/audioGraph';
 import { usePreferences } from '../context/PreferencesContext';
 
 interface Props {
@@ -70,9 +70,6 @@ export default function Spectrum({ audioRef, height = 104 }: Props) {
     ro?.observe(canvas);
     window.addEventListener('resize', resize);
 
-    const ensure = () => { getAnalyser(audio); };
-    audio.addEventListener('play', ensure);
-
     const dot = (cx: number, cy: number, color: string, radius = D / 2) => {
       c2d.fillStyle = color;
       c2d.beginPath();
@@ -92,7 +89,7 @@ export default function Spectrum({ audioRef, height = 104 }: Props) {
       const accent = cssRGB('--accent-rgb', [255, 106, 61]);
       const accentStr = `rgb(${accent[0]},${accent[1]},${accent[2]})`;
 
-      const g = getAnalyser(audio);
+      const g = getMusicAnalyser();
       const playing = !audio.paused;
       if (g && playing) g.an.getByteFrequencyData(g.data as Uint8Array<ArrayBuffer>);
 
@@ -128,12 +125,17 @@ export default function Spectrum({ audioRef, height = 104 }: Props) {
       }
     };
 
-    draw();
+    const start = () => { if (!raf) draw(); };
+    const stop = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } };
+    const onVisibility = () => { if (document.hidden) stop(); else start(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    if (!document.hidden) start();
+
     return () => {
-      cancelAnimationFrame(raf);
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
       ro?.disconnect();
       window.removeEventListener('resize', resize);
-      audio.removeEventListener('play', ensure);
     };
   }, [audioRef, height, resolved]);
 

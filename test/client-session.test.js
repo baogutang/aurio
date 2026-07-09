@@ -27,6 +27,34 @@ describe('clientSessionManager', () => {
     expect(ctrl?.clientId).toBe(b.clientId);
   });
 
+  it('stores valid positionSec/durationSec from the heartbeat', () => {
+    const a = clientSessionManager.register(fakeWs());
+    registered.push(a.clientId);
+    clientSessionManager.onHeartbeat(a.clientId, {
+      playingIndex: 0, paused: false, queueLen: 2, positionSec: 42, durationSec: 200,
+    });
+    const ctrl = clientSessionManager.getController();
+    expect(ctrl?.positionSec).toBe(42);
+    expect(ctrl?.durationSec).toBe(200);
+  });
+
+  it('rejects garbage position/duration and a position past the duration', () => {
+    const a = clientSessionManager.register(fakeWs());
+    registered.push(a.clientId);
+    clientSessionManager.onHeartbeat(a.clientId, {
+      playingIndex: 0, paused: false, queueLen: 2, positionSec: 'NaN', durationSec: -5,
+    });
+    let ctrl = clientSessionManager.getController();
+    expect(ctrl?.positionSec).toBeNull();
+    expect(ctrl?.durationSec).toBeNull();
+    clientSessionManager.onHeartbeat(a.clientId, {
+      playingIndex: 0, paused: false, queueLen: 2, positionSec: 500, durationSec: 200,
+    });
+    ctrl = clientSessionManager.getController();
+    expect(ctrl?.positionSec).toBeNull();
+    expect(ctrl?.durationSec).toBe(200);
+  });
+
   it('emits session:all-gone after grace when last client leaves', () => {
     const onGone = vi.fn();
     eventBus.once('session:all-gone', onGone);

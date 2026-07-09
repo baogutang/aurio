@@ -1,5 +1,12 @@
 import { config } from '../config.js';
 
+// Map the host locale to an OpenWeather `lang` code (e.g. zh-CN → zh_cn).
+function owmLang() {
+  const loc = (config.locale || 'zh-CN').toLowerCase();
+  if (loc.startsWith('zh')) return (loc.includes('tw') || loc.includes('hant')) ? 'zh_tw' : 'zh_cn';
+  return loc.split('-')[0];
+}
+
 let cache = { ts: 0, data: null };
 
 export const weather = {
@@ -12,7 +19,7 @@ export const weather = {
       const u = new URL('https://api.openweathermap.org/data/2.5/weather');
       u.searchParams.set('appid', config.weather.key);
       u.searchParams.set('units', 'metric');
-      u.searchParams.set('lang', 'zh_cn');
+      u.searchParams.set('lang', owmLang());
       if (config.weather.lat && config.weather.lon) {
         u.searchParams.set('lat', config.weather.lat);
         u.searchParams.set('lon', config.weather.lon);
@@ -52,7 +59,7 @@ export async function testWeather({ key, city, lat, lon } = {}) {
     const u = new URL('https://api.openweathermap.org/data/2.5/weather');
     u.searchParams.set('appid', key);
     u.searchParams.set('units', 'metric');
-    u.searchParams.set('lang', 'zh_cn');
+    u.searchParams.set('lang', owmLang());
     if (lat && lon) { u.searchParams.set('lat', lat); u.searchParams.set('lon', lon); }
     else u.searchParams.set('q', city);
     const res = await fetch(u, { signal: AbortSignal.timeout(10000) });

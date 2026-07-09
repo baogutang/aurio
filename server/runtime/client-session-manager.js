@@ -54,6 +54,8 @@ export const clientSessionManager = {
       queueLen: 0,
       queueRevision: 0,
       currentTrack: null,
+      positionSec: null,
+      durationSec: null,
       role: 'observer',
       userAgent: meta.userAgent || '',
     };
@@ -93,6 +95,14 @@ export const clientSessionManager = {
     if (state.currentTrack && typeof state.currentTrack === 'object') {
       c.currentTrack = state.currentTrack;
     }
+    // Playback position (contract A). Validate hard: finite, non-negative, and
+    // never past the duration when we have one. Garbage → null, not stored.
+    const dur = Number(state.durationSec);
+    c.durationSec = Number.isFinite(dur) && dur >= 0 ? dur : null;
+    const pos = Number(state.positionSec);
+    c.positionSec = Number.isFinite(pos) && pos >= 0 && (!(c.durationSec > 0) || pos <= c.durationSec)
+      ? pos
+      : null;
     c.lastSeen = Date.now();
     const prevRole = c.role;
     c.role = roleFor(clientId);

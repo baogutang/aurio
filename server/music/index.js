@@ -214,25 +214,106 @@ function normalizeQuery(q = '') {
   return q.replace(/\s+[-–—]\s+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Similarity scoring for resolution. The DJ writes "artist - title"; without
+// scoring, searchOne would take hits[0] and happily return a karaoke cover or a
+// wrong-artist same-title track. Normalization strips punctuation/spaces and is
+// CJK-safe (no word boundaries), so it works for both 中文 and latin queries.
+function normScore(value = '') {
+  return value
+    .toString()
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]/gu, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+function bigrams(s = '') {
+  if (s.length <= 1) return s ? [s] : [];
+  const out = [];
+  for (let i = 0; i < s.length - 1; i += 1) out.push(s.slice(i, i + 2));
+  return out;
+}
+
+// Dice coefficient over character bigrams — degrades gracefully on CJK where
+// there are no tokens to split on.
+function overlap(a, b) {
+  const ga = bigrams(a);
+  const gb = bigrams(b);
+  if (!ga.length || !gb.length) return 0;
+  const counts = new Map();
+  for (const g of gb) counts.set(g, (counts.get(g) || 0) + 1);
+  let hits = 0;
+  for (const g of ga) {
+    const n = counts.get(g) || 0;
+    if (n > 0) { hits += 1; counts.set(g, n - 1); }
+  }
+  return (2 * hits) / (ga.length + gb.length);
+}
+
+function fieldScore(query, value) {
+  const a = normScore(query);
+  const b = normScore(value);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (b.includes(a) || a.includes(b)) {
+    // Containment: reward, but penalize the extra "(Live)/(Cover)/伴奏" tail.
+    const ratio = Math.min(a.length, b.length) / Math.max(a.length, b.length);
+    return 0.5 + 0.4 * ratio;
+  }
+  return 0.7 * overlap(a, b);
+}
+
+export function scoreMatch(query, track = {}) {
+  const q = (query || '').toString();
+  const parts = q.split(/\s+[-–—]\s+/);
+  let qArtist = '';
+  let qTitle = q;
+  if (parts.length >= 2) {
+    qArtist = parts[0];
+    qTitle = parts.slice(1).join(' ');
+  }
+  const titleScore = fieldScore(qTitle, track.title);
+  if (!qArtist) return titleScore;
+  const artistScore = fieldScore(qArtist, track.artist);
+  return 0.6 * titleScore + 0.4 * artistScore;
+}
+
+const MATCH_FLOOR = 0.4;
+
+function pickBestMatch(query, hits = [], constraints = {}) {
+  const eligible = hits.filter((track) => trackMatchesConstraints(track, constraints));
+  if (!eligible.length) return null;
+  let best = null;
+  let bestScore = -1;
+  for (const track of eligible) {
+    const s = scoreMatch(query, track);
+    if (s > bestScore) { bestScore = s; best = track; }
+  }
+  // Below the floor we can't trust the scoring; fall back to the legacy "first
+  // eligible hit" so resolution is never made worse.
+  return bestScore >= MATCH_FLOOR ? best : eligible[0];
+}
+
 async function searchOne(query, constraints = {}) {
   if (shouldUseSource('navidrome', constraints)) {
     try {
       const hits = await navidrome.search(query, 8);
-      const hit = hits.find((track) => trackMatchesConstraints(track, constraints));
+      const hit = pickBestMatch(query, hits, constraints);
       if (hit) return hit;
     } catch (e) { console.error('[music] navidrome resolve:', e.message); }
   }
   if (shouldUseSource('netease', constraints)) {
     try {
       const hits = await netease.search(query, 8);
-      const hit = hits.find((track) => trackMatchesConstraints(track, constraints));
+      const hit = pickBestMatch(query, hits, constraints);
       if (hit) return hit;
     } catch (e) { console.error('[music] netease resolve:', e.message); }
   }
   if (shouldUseSource('qqmusic', constraints)) {
     try {
       const hits = await qqmusic.search(query, 8);
-      const hit = hits.find((track) => trackMatchesConstraints(track, constraints));
+      const hit = pickBestMatch(query, hits, constraints);
       if (hit) return hit;
     } catch (e) { console.error('[music] qq resolve:', e.message); }
   }
@@ -290,9 +371,23 @@ export function rankTracks(tracks = []) {
     .map((x) => x.track);
 }
 
+function formatDuration(sec) {
+  const s = Math.round(Number(sec) || 0);
+  if (s <= 0) return '';
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 export function candidatesToText(tracks = []) {
   return tracks
-    .map((t) => `- ${t.artist} - ${t.title}${t.album ? ` 《${t.album}》` : ''} [${sourceLabel(t.source)}]`)
+    .map((t) => {
+      const meta = [];
+      if (t.year) meta.push(String(t.year));
+      const dur = formatDuration(t.duration);
+      if (dur) meta.push(dur);
+      if (t.genre) meta.push(t.genre);
+      const metaStr = meta.length ? ` (${meta.join(' · ')})` : '';
+      return `- ${t.artist} - ${t.title}${t.album ? ` 《${t.album}》` : ''}${metaStr} [${sourceLabel(t.source)}]`;
+    })
     .join('\n');
 }
 

@@ -45,6 +45,25 @@ Aurio is designed as a **local-first** application:
 - Navidrome credentials are used server-side only; the PWA never receives raw passwords.
 - Do not set `AURIO_ALLOW_LAN=true` (or otherwise expose the port) on an untrusted network without putting your own authentication in front of it.
 
+### Auto-Update Integrity
+
+The macOS app is shipped **unsigned** (no Apple Developer ID; the build sets
+`identity: null` and `sign: false`). Because there is no code signature, the
+macOS in-app updater disables Squirrel's code-signature verification — enabling
+it would add no security (there is nothing to verify) and would simply cause
+every in-app update to be rejected.
+
+Update integrity therefore rests on two things:
+
+- **HTTPS** to GitHub Releases (TLS authenticates the download host).
+- The **SHA512 checksum** in the release manifest (`latest-mac.yml`), which
+  `electron-updater` verifies against the downloaded artifact.
+
+There is currently **no code-signature guarantee** on macOS. The proper fix is a
+signed build — an Apple Developer ID with signing (and notarization) performed in
+CI — after which code-signature verification can be re-enabled. Until then, the
+guarantee is only as strong as HTTPS plus the manifest checksum.
+
 ### Third-Party Services
 
 Depending on configuration, Aurio may contact:

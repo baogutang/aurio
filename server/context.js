@@ -2,7 +2,7 @@
 //   1 persona  2 user corpus  3 environment  4 memory  5 input  6 trace
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, DATA_ROOT } from './config.js';
+import { ROOT, DATA_ROOT, config } from './config.js';
 import { db } from './store.js';
 import { weather } from './weather/openweather.js';
 import { todayEvents } from './calendar/index.js';
@@ -29,14 +29,62 @@ function persona() {
   return readIfExists(path.join(ROOT, 'prompts', 'dj-persona.md')).trim();
 }
 
+// Voice bible: exemplar patter that teaches by demonstration. Loaded once and
+// cached. Style transfers by example, not by adjective lists — the negatives
+// live only in the judge (server/agent/judge.js), never in this prompt.
+let voiceBibleCache = null;
+function voiceBible() {
+  if (voiceBibleCache) return voiceBibleCache;
+  try {
+    const raw = readIfExists(path.join(ROOT, 'prompts', 'voice-bible.zh.json'));
+    const parsed = raw ? JSON.parse(raw) : {};
+    voiceBibleCache = { links: parsed.links || [] };
+  } catch {
+    voiceBibleCache = { links: [] };
+  }
+  return voiceBibleCache;
+}
+
+// Which beats to surface first for each trigger kind, so a morning open sees
+// cold opens and a refill sees the quiet ones.
+const BEATS_FOR_KIND = {
+  morning: ['cold_open', 'time_check', 'weather'],
+  station: ['cold_open', 'front_sell', 'back_announce'],
+  mood: ['weather', 'time_check', 'callback'],
+  refill: ['silence', 'front_sell', 'back_announce'],
+  plan: ['front_sell', 'cold_open'],
+  chat: ['callback', 'back_announce'],
+};
+
+function formatExemplar(ex) {
+  const said = ex.say ? `她说：「${ex.say}」` : '她选择不说话（这一段留给音乐）';
+  return `- 情境：${ex.situation}｜她注意到：${ex.observation}\n  ${said}`;
+}
+
+// A rotating window of 4–5 exemplars, beat-matched to the trigger, advanced by a
+// cursor in prefs so it isn't the same five forever.
+function exemplars(kind) {
+  const links = voiceBible().links;
+  if (!links.length) return '';
+  const prefer = BEATS_FOR_KIND[kind] || [];
+  const rank = (b) => { const i = prefer.indexOf(b); return i === -1 ? 99 : i; };
+  const ordered = [...links].sort((a, b) => rank(a.beat) - rank(b.beat));
+  const n = Math.min(5, ordered.length);
+  const cursor = Number(db.getPref('voiceBibleCursor', 0)) || 0;
+  const picked = [];
+  for (let i = 0; i < n; i++) picked.push(ordered[(cursor + i) % ordered.length]);
+  db.setPref('voiceBibleCursor', (cursor + n) % ordered.length);
+  return picked.map(formatExemplar).join('\n');
+}
+
 function fmtTime(ts) {
   if (!ts) return '';
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return new Date(ts).toLocaleTimeString(config.locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 async function environment() {
   const now = new Date();
-  const lines = [`现在: ${now.toLocaleString('zh-CN')}`];
+  const lines = [`现在: ${now.toLocaleString(config.locale)}`];
   const w = await weather.current();
   if (w) lines.push(`天气: ${w.city} ${w.desc} ${w.temp}°C (体感 ${w.feels}°C)`);
   try {
@@ -135,8 +183,7 @@ const OUTPUT_CONTRACT = `
 play 数组里的每个 query 会被用来在用户的音乐库里检索歌曲，请写成"歌手 - 歌名"的形式。
 如果这次不需要播歌，play 留空数组即可。
 say 通常写 1 句中文，最多 2 句；用户点歌时 45 个中文字符以内最舒服。必须像真人主播顺手说出来，不要模板。
-不要说“根据你的需求”“我将为你”“以下是”“希望你喜欢”“为你精心挑选”“接下来让我们”等 AI 助手腔。
-不要说“不急着开太满”“不用太赶”“接进来”“慢慢走”“味道接进来”“先挑几首线索”“有点回潮”这类不自然表达。
+没有真正想说的东西时，say 留空字符串就行——沉默是正当的选择，不是失败。
 不要把中文歌手硬说成英文昵称；周杰伦就说“周杰伦”，不要说“Jay”，除非候选歌曲里的官方名称本来就是英文。
 如果用户指定了音源或歌手，只能基于真实命中的歌说话；没找到就直接说明没找到，不要假装已经按要求找到了。
 少用抽象形容词堆叠，多用一个具体场景细节，比如时间、天气、城市、正在播的歌或用户刚说的话；没有好细节就少说。
@@ -232,6 +279,9 @@ export async function assemble(trigger = {}) {
 
   blocks.push(`## 本次触发\n[${triggerLabel}]`);
   if (trigger.text) blocks.push(untrusted('本次用户输入', trigger.text));
+
+  const ex = exemplars(trigger.kind);
+  if (ex) blocks.push(`## 口播示范（学这个感觉，别照抄内容）\n下面是一些真人电台主播会说的话。看她怎么抓一个具体的点、怎么留白：\n${ex}`);
 
   blocks.push(OUTPUT_CONTRACT);
 

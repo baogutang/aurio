@@ -17,6 +17,8 @@ import { nextMusicSource, postMusicSource, servicesFromModes, type MusicSourceMo
 import { spring, stagger } from './lib/motion';
 import { cleanSayText } from './lib/highlight';
 import { dedupeQueue } from './lib/queue';
+import { coverUrl } from './lib/cover';
+import { initMixer, resumeMixer, duckMusic, unduckMusic, getMixer } from './lib/audioGraph';
 import { useI18n, usePreferences } from './context/PreferencesContext';
 import type { Track, Broadcast, ChatMsg, TtsPatch } from './lib/types';
 
@@ -41,13 +43,12 @@ export default function App() {
   const reconnectDelayRef = useRef(1000);
   const autoPlayUserInitRef = useRef(false);
   const segueActiveRef = useRef(false);
-  const pendingIdleStartRef = useRef<{ q: Track[]; idx: number } | null>(null);
-
-  const pendingIdleTimerRef = useRef<number | undefined>(undefined);
+  const consumedSegueRef = useRef<Set<string>>(new Set());
 
   const [current, setCurrent] = useState<Track | null>(null);
   const [playing, setPlaying] = useState(false);
   const [segueActive, setSegueActive] = useState(false);
+  const [talking, setTalking] = useState(false);
   const [clientRole, setClientRole] = useState<'unknown' | 'controller' | 'observer'>('unknown');
   const [feedbackHint, setFeedbackHint] = useState('');
   const [tasteLine, setTasteLine] = useState('');
@@ -151,18 +152,34 @@ export default function App() {
     const ws = wsRef.current;
     if (ws?.readyState === 1) {
       const tr = queueRef.current[idxRef.current];
+      const audio = audioRef.current;
       ws.send(JSON.stringify({
         type: 'state',
         playingIndex: idxRef.current,
-        paused: audioRef.current?.paused ?? true,
+        paused: audio?.paused ?? true,
         queueLen: queueRef.current.length,
         queueRevision: queueRevisionRef.current,
         currentTrack: tr ? { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source } : null,
+        positionSec: audio?.currentTime ?? 0,
+        durationSec: audio && !Number.isNaN(audio.duration) ? audio.duration : 0,
       }));
     }
   }, []);
 
+  // Duck / unduck the music bed under the DJ voice. Uses the scheduled gain
+  // ramp when the mixer exists, and falls back to the old el.volume step when
+  // Web Audio is unavailable.
+  const duck = useCallback((music: HTMLAudioElement | null) => {
+    if (getMixer()) duckMusic();
+    else if (music) music.volume = 0.12;
+  }, []);
+  const unduck = useCallback((music: HTMLAudioElement | null) => {
+    if (getMixer()) unduckMusic();
+    else if (music) music.volume = 1;
+  }, []);
+
   const primeAudio = useCallback(() => {
+    resumeMixer();
     if (audioPrimed.current) return;
     const prime = (el: HTMLAudioElement | null) => {
       if (!el || !el.paused || el.getAttribute('src')) return Promise.resolve(false);
@@ -185,6 +202,12 @@ export default function App() {
     Promise.all([prime(audioRef.current), prime(ttsRef.current)]).then(() => {
       audioPrimed.current = true;
     });
+  }, []);
+
+  useEffect(() => {
+    const music = audioRef.current;
+    const voice = ttsRef.current;
+    if (music && voice) initMixer(music, voice);
   }, []);
 
   useEffect(() => {
@@ -216,7 +239,8 @@ export default function App() {
       segueActiveRef.current = false;
       setSegueActive(false);
       a.src = tr.url!;
-      a.volume = 1;
+      resumeMixer();
+      unduck(a);
       api.playbackEvent({
         event: 'started',
         track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
@@ -231,12 +255,14 @@ export default function App() {
         });
     };
 
-    if (tr.segueTtsUrl && ttsRef.current) {
+    const segueKey = tr.uid ?? `${tr.source}:${tr.id}`;
+    if (tr.segueTtsUrl && ttsRef.current && !consumedSegueRef.current.has(segueKey)) {
+      consumedSegueRef.current.add(segueKey);
       const tts = ttsRef.current;
       const dimMusic = !!(a.src && !a.paused);
       segueActiveRef.current = true;
       setSegueActive(true);
-      if (dimMusic) a.volume = 0.12;
+      if (dimMusic) duck(a);
       let done = false;
       let guard: number | undefined;
       const finish = () => {
@@ -250,12 +276,13 @@ export default function App() {
       tts.onended = finish;
       tts.onerror = finish;
       guard = window.setTimeout(finish, 15000);
+      resumeMixer();
       tts.src = tr.segueTtsUrl;
       tts.play().catch(finish);
     } else {
       startSong();
     }
-  }, [reportState, t]);
+  }, [reportState, t, duck, unduck]);
 
   const startQueue = useCallback((q: Track[], startAt = 0) => {
     if (!q.length) return;
@@ -279,27 +306,6 @@ export default function App() {
     playTrack(q[index], index);
   }, [applyQueueEdit, playTrack, isController]);
 
-  const clearPendingIdleStart = () => {
-    if (pendingIdleTimerRef.current) {
-      window.clearTimeout(pendingIdleTimerRef.current);
-      pendingIdleTimerRef.current = undefined;
-    }
-    pendingIdleStartRef.current = null;
-  };
-
-  const schedulePendingIdleStart = useCallback((q: Track[], idx: number) => {
-    clearPendingIdleStart();
-    pendingIdleStartRef.current = { q, idx };
-    pendingIdleTimerRef.current = window.setTimeout(() => {
-      pendingIdleTimerRef.current = undefined;
-      const pending = pendingIdleStartRef.current;
-      if (pending) {
-        pendingIdleStartRef.current = null;
-        startQueue(pending.q, pending.idx);
-      }
-    }, 10000);
-  }, [startQueue]);
-
   const playTtsUrl = useCallback((url?: string | null, after?: () => void) => {
     if (!url || !ttsRef.current) {
       after?.();
@@ -308,24 +314,25 @@ export default function App() {
     const tts = ttsRef.current;
     const a = audioRef.current;
     const dimMusic = !!(a && !a.paused);
-    if (dimMusic && a) a.volume = 0.12;
+    if (dimMusic) duck(a);
     let done = false;
     let guard: number | undefined;
     const finish = () => {
       if (done) return;
       done = true;
       if (guard) window.clearTimeout(guard);
-      if (a) a.volume = 1;
+      unduck(a);
       tts.onended = null;
       tts.onerror = null;
       after?.();
     };
     guard = window.setTimeout(finish, 15000);
+    resumeMixer();
     tts.src = url;
     tts.onended = finish;
     tts.onerror = finish;
     tts.play().catch(finish);
-  }, []);
+  }, [duck, unduck]);
 
   const stampReason = (tracks: Track[], reason?: string) => (
     reason ? tracks.map((tr) => ({ ...tr, reason: tr.reason || reason })) : tracks
@@ -350,7 +357,6 @@ export default function App() {
     const shouldAutoPlay = autoPlayUserInitRef.current && isController;
     const playTts = (after?: () => void) => {
       if (!b.ttsUrl && b.say && after) {
-        pendingIdleStartRef.current = null;
         after();
         return;
       }
@@ -420,7 +426,7 @@ export default function App() {
     } finally {
       autoPlayUserInitRef.current = false;
     }
-  }, [t, startQueue, syncQueueState, reportState, playTtsUrl, isController, schedulePendingIdleStart]);
+  }, [t, startQueue, syncQueueState, reportState, playTtsUrl, isController]);
 
   const applyBroadcastRef = useRef(applyBroadcast);
   applyBroadcastRef.current = applyBroadcast;
@@ -445,15 +451,8 @@ export default function App() {
 
     if (p.ts && p.ts < lastBroadcastTs.current) return;
     if (p.ts && Date.now() - p.ts > 45000) return;
-    playTtsUrl(p.ttsUrl, () => {
-      clearPendingIdleStart();
-      const pending = pendingIdleStartRef.current;
-      if (pending) {
-        pendingIdleStartRef.current = null;
-        startQueue(pending.q, pending.idx);
-      }
-    });
-  }, [playTtsUrl, syncQueueState, startQueue]);
+    playTtsUrl(p.ttsUrl);
+  }, [playTtsUrl, syncQueueState]);
 
   const applyTtsPatchRef = useRef(applyTtsPatch);
   applyTtsPatchRef.current = applyTtsPatch;
@@ -568,11 +567,17 @@ export default function App() {
     primeAudio();
     const q = queueRef.current;
     const idx = idxRef.current >= 0 ? idxRef.current : 0;
+    const a = audioRef.current!;
+    // Resume the already-loaded track in place. Re-running playTrack would reset
+    // the media element (currentTime -> 0) and could replay the segue.
+    if (idxRef.current >= 0 && q[idx]?.url && a.src === q[idx].url && !a.ended) {
+      a.play().catch(() => setSay(t('sayTapPlay')));
+      return;
+    }
     if (q.length) {
       playTrack(q[idx], idx);
       return;
     }
-    const a = audioRef.current!;
     a.play().catch(() => {
       primeAudio();
       window.setTimeout(() => {
@@ -591,6 +596,15 @@ export default function App() {
     if (a.paused) resumePlayback();
     else a.pause();
   };
+
+  // Transport handlers are re-created every render; keep them in refs so the
+  // stable media-key effect always calls the current closure.
+  const toggleRef = useRef(toggle);
+  toggleRef.current = toggle;
+  const nextRef = useRef(next);
+  nextRef.current = next;
+  const prevRef = useRef(prev);
+  prevRef.current = prev;
 
   useEffect(() => {
     let ws: WebSocket | undefined;
@@ -677,8 +691,9 @@ export default function App() {
       navigator.mediaSession.metadata = null;
       return;
     }
-    const artwork = tr.coverArt
-      ? [{ src: tr.coverArt, sizes: '512x512', type: 'image/jpeg' as const }]
+    const cover = coverUrl(tr);
+    const artwork = cover
+      ? [{ src: cover, sizes: '512x512', type: 'image/jpeg' as const }]
       : [];
     navigator.mediaSession.metadata = new MediaMetadata({
       title: tr.title,
@@ -703,6 +718,21 @@ export default function App() {
     const aurio = (window as Window & { aurio?: { tray?: { setOnAir?: (on: boolean) => void } } }).aurio;
     aurio?.tray?.setOnAir?.(playing || segueActive);
   }, [playing, segueActive]);
+
+  useEffect(() => {
+    const media = (window as Window & {
+      aurio?: { media?: { onCommand?: (h: (cmd: 'playpause' | 'next' | 'prev' | 'stop') => void) => (() => void) } };
+    }).aurio?.media;
+    if (!media?.onCommand) return;
+    const unsub = media.onCommand((cmd) => {
+      if (!isController) return;
+      if (cmd === 'playpause') toggleRef.current();
+      else if (cmd === 'next') nextRef.current();
+      else if (cmd === 'prev') prevRef.current();
+      else if (cmd === 'stop') audioRef.current?.pause();
+    });
+    return () => { unsub?.(); };
+  }, [isController]);
 
   const refreshStatus = useCallback(async (announce = false) => {
     try {
@@ -870,7 +900,9 @@ export default function App() {
     }
   };
 
-  const petState: PetState = (playing || segueActive) ? 'playing' : 'idle';
+  const petState: PetState = talking
+    ? 'talking'
+    : (playing || segueActive) ? 'playing' : 'idle';
   const controlsDisabled = !isController || conn === 'busy';
   const connLabel = conn === 'on' ? t('connOn') : conn === 'busy' ? t('connBusy') : t('connOff');
   const headerSub = playing && current
@@ -1059,7 +1091,13 @@ export default function App() {
           reportState();
         }}
       />
-      <audio ref={ttsRef} />
+      <audio
+        ref={ttsRef}
+        onPlay={() => setTalking(true)}
+        onPause={() => setTalking(false)}
+        onEnded={() => setTalking(false)}
+        onError={() => setTalking(false)}
+      />
     </WidgetShell>
 
     <ChatSheet open={chatOpen} onClose={() => setChatOpen(false)} messages={messages} onSend={send} onTrigger={trig} busy={conn === 'busy'} onGoAir={() => trig('station')} isObserver={!isController} />

@@ -662,7 +662,60 @@ app.get('/api/qq/stream/:id', async (req, res) => {
   }
 });
 
-// ---- Cover art proxy ----
+// ---- Cover art proxy (same-origin image bytes) ----
+// The client extracts colours from a <canvas>, so a cross-origin image would
+// taint it. We resolve art *server-side* from (source, id) and never accept a
+// caller-supplied URL (that would be an SSRF hole). Bounded FIFO cache of the
+// resolved upstream URLs; 404 (never 500) when there is no art.
+const coverUrlCache = new Map(); // `${source}:${id}` -> resolved image URL
+const COVER_CACHE_MAX = 200;
+
+function cacheCoverUrl(key, url) {
+  if (coverUrlCache.has(key)) coverUrlCache.delete(key);
+  coverUrlCache.set(key, url);
+  while (coverUrlCache.size > COVER_CACHE_MAX) {
+    coverUrlCache.delete(coverUrlCache.keys().next().value);
+  }
+}
+
+async function resolveCoverUrl(source, id) {
+  const key = `${source}:${id}`;
+  if (coverUrlCache.has(key)) return coverUrlCache.get(key);
+  let url = null;
+  if (source === 'navidrome') {
+    if (navidrome.enabled()) url = navidrome.coverUrl(id, 512);
+  } else if (source === 'netease') {
+    url = await netease.coverArt(id);
+  }
+  // qqmusic: the cover lives at albumMid, which we can't derive from a bare
+  // songMid without extra per-song state — resolve to 404 rather than hack it.
+  if (url) cacheCoverUrl(key, url);
+  return url;
+}
+
+app.get('/api/cover/:source/:id', async (req, res) => {
+  const source = (req.params.source || '').toString();
+  const id = (req.params.id || '').toString();
+  if (!['navidrome', 'netease', 'qqmusic'].includes(source)) return res.status(404).end();
+  let url = null;
+  try { url = await resolveCoverUrl(source, id); } catch { url = null; }
+  if (!url) return res.status(404).end();
+  try {
+    const upstream = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!upstream.ok) return res.status(404).end();
+    const ct = upstream.headers.get('content-type') || 'image/jpeg';
+    if (!/^image\//i.test(ct)) return res.status(404).end();
+    res.status(200);
+    res.setHeader('content-type', ct);
+    res.setHeader('cache-control', 'public, max-age=86400');
+    if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
+    else res.end();
+  } catch {
+    res.status(404).end();
+  }
+});
+
+// ---- Cover art proxy (legacy single-id, Navidrome only) ----
 app.get('/api/cover/:id', async (req, res) => {
   if (!navidrome.enabled()) return res.status(404).end();
   try {
@@ -719,6 +772,8 @@ wss.on('connection', (ws, req) => {
           queueLen: m.queueLen,
           queueRevision: m.queueRevision,
           currentTrack: m.currentTrack,
+          positionSec: m.positionSec,
+          durationSec: m.durationSec,
         });
         const snap = queueController.peekSnapshot();
         if (session?.role === 'controller') {

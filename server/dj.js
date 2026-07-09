@@ -8,6 +8,7 @@ import {
   describeConstraints, requestCandidates, candidatesToText, recommend, rankTracks,
 } from './music/index.js';
 import { cachedSynthesis, synthesizeBackground } from './tts/index.js';
+import { judgeSay, rememberSaid } from './agent/judge.js';
 import { db } from './store.js';
 import { queueController } from './runtime/queue-controller.js';
 import { clientSessionManager } from './runtime/client-session-manager.js';
@@ -94,6 +95,31 @@ async function fillTracks(seg, trigger, candidateTracks) {
   return [];
 }
 
+// Run the (rule-based, deterministic) judge over an action's spoken lines.
+// Returns the deduped set of violated category codes — never the phrases.
+function judgeAction(action) {
+  const codes = [];
+  if (action.say) codes.push(...judgeSay(action.say).violations.map((v) => v.code));
+  if (action.segue) codes.push(...judgeSay(action.segue, { segue: true, skipRepeat: true }).violations.map((v) => v.code));
+  return [...new Set(codes)];
+}
+
+// Corrective note for a retry. Names the violated CATEGORY only — quoting the
+// offending phrase would reintroduce the priming we removed from the prompt.
+const CORRECTION = {
+  assistant_voice: '上一版带了客服／AI 助手腔，请彻底去掉那种语气，像真人主播随口说。',
+  stilted: '上一版用了生硬做作的「氛围腔」，请换成自然的口语。',
+  meta_narration: '上一版在解释自己的工作流程（意图、选曲、编排），听众不需要知道，删掉。',
+  tech_words: '上一版出现了技术词，请不要提任何技术相关的词。',
+  too_long: '上一版太长了，请压到一句话。',
+  repetition: '上一版和最近说过的话太像了，请换一个完全不同的开头和说法。',
+};
+
+function correctiveNote(codes) {
+  const lines = codes.map((c) => CORRECTION[c]).filter(Boolean);
+  return `（重写要求，只改口播、不改选曲）\n${lines.join('\n')}`;
+}
+
 export async function composeSegment(trigger = {}) {
   const constraints = trigger.text ? requestConstraints(trigger.text) : {};
   const hardRequest = hasHardConstraints(constraints);
@@ -120,6 +146,30 @@ export async function composeSegment(trigger = {}) {
     console.error('[dj] brain unavailable:', e.message);
     action = { say: '', play: [], reason: '', segue: '', intent: '', placement: '', mood: '' };
     degraded = true;
+  }
+
+  // Judge the spoken lines. On a violation, regenerate ONCE with a category-only
+  // corrective note (never the offending phrase); if it still fails, drop the
+  // say and keep the track selection. Refill lines are meant to be short/empty,
+  // so we don't spend a retry on them.
+  if (!degraded && trigger.kind !== 'refill') {
+    const codes = judgeAction(action);
+    if (codes.length) {
+      try {
+        const raw2 = await think(`${prompt}\n\n${correctiveNote(codes)}`);
+        const v2 = validateRadioAction(raw2);
+        if (v2.ok && !judgeAction(v2.action).length) {
+          action = v2.action;
+        } else {
+          const codes2 = v2.ok ? judgeAction(v2.action) : codes;
+          console.error('[dj] judge failed after retry, going silent:', codes2.join(','));
+          action = { ...action, say: '', segue: '' };
+        }
+      } catch (e) {
+        console.error('[dj] judge regen failed, going silent:', e.message);
+        action = { ...action, say: '', segue: '' };
+      }
+    }
   }
 
   let tracks = rankTracks(await resolveQueue(action.play, constraints));
@@ -259,7 +309,10 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       broadcast = { ...base, mode: 'replace', ttsUrl: seg.ttsUrl, queue: snapshot.queue, revision: snapshot.revision };
     }
 
-    if (seg.say && eff !== 'append') db.addMessage('dj', seg.say, { kind: trigger.kind || 'chat', reason: seg.reason });
+    if (seg.say && eff !== 'append') {
+      db.addMessage('dj', seg.say, { kind: trigger.kind || 'chat', reason: seg.reason });
+      rememberSaid(seg.say);
+    }
     if (trigger.kind === 'plan' && seg.mood) {
       db.setPlan({ date: new Date().toISOString().slice(0, 10), mood: seg.mood, note: seg.say || seg.reason });
     }

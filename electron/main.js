@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, shell, nativeImage, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, Menu, shell, nativeImage, ipcMain, globalShortcut } from 'electron';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -51,8 +51,14 @@ if (!hasSingleInstanceLock) {
 
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
-// GitHub Actions builds are unsigned (no Apple Developer ID). ShipIt rejects
-// in-app installs unless we skip signature verification on macOS.
+// The shipped macOS app is genuinely unsigned (build.mac sets identity: null,
+// sign: false — no Apple Developer ID). With no signature to verify, ShipIt's
+// code-signature check has nothing to check and would reject every in-app
+// update, so we disable it. Update integrity does NOT rest on code signing
+// here: electron-updater verifies each artifact's SHA512 from latest-mac.yml,
+// which is fetched over HTTPS from GitHub Releases. TLS + that SHA512 are the
+// integrity guarantee today. The real fix is a signed build (Developer ID +
+// CI signing); see SECURITY.md.
 if (process.platform === 'darwin') {
   autoUpdater.verifyUpdateCodeSignature = false;
 }
@@ -217,8 +223,15 @@ function createWindow(port) {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Tray radio: audio must start without a click, and Chromium must not
+      // throttle rAF/timers while the window is hidden or the spectrum, clock,
+      // and audio scheduling drift.
+      autoplayPolicy: 'no-user-gesture-required',
+      backgroundThrottling: false,
     },
   });
+
+  win.webContents.setBackgroundThrottling(false);
 
   win.loadURL(`http://localhost:${port}`);
 
@@ -292,6 +305,33 @@ function seedUserDir(dataRoot) {
   } catch (e) { console.error('seed user dir failed:', e.message); }
 }
 
+function sendMediaCommand(command) {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  win.webContents.send('aurio:media:command', command);
+}
+
+// Hardware media keys, so an always-on tray radio can be paused/skipped while
+// another app is focused. Registration can fail (another app owns the key, or
+// Wayland has no global shortcut support) — that's non-fatal; log once.
+function registerMediaKeys() {
+  const bindings = [
+    ['MediaPlayPause', 'playpause'],
+    ['MediaNextTrack', 'next'],
+    ['MediaPreviousTrack', 'prev'],
+    ['MediaStop', 'stop'],
+  ];
+  for (const [accelerator, command] of bindings) {
+    let ok = false;
+    try { ok = globalShortcut.register(accelerator, () => sendMediaCommand(command)); }
+    catch (e) { console.warn(`[Aurio] media key ${accelerator} registration threw:`, e.message); continue; }
+    if (!ok) console.warn(`[Aurio] media key ${accelerator} unavailable (already claimed or unsupported)`);
+  }
+}
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
+
 app.on('second-instance', () => {
   if (!win) return;
   if (win.isMinimized()) win.restore();
@@ -345,7 +385,16 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   }
 
   createWindow(port);
-  hasTray = createTray();
+  try {
+    hasTray = createTray();
+  } catch (e) {
+    hasTray = false;
+    console.error('[Aurio] tray creation failed — running without a tray icon:', describeRuntimeError(e));
+  }
+  if (!hasTray) {
+    console.error('[Aurio] no tray icon; the window is the only way back to the app.');
+  }
+  registerMediaKeys();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(port);

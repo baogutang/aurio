@@ -46,7 +46,17 @@ async function call(fn, params = {}) {
   return res.body;
 }
 
+const trialLogged = new Set(); // dedupe the "VIP trial clip" warning per track id
+
+function yearFrom(publishTime) {
+  const ms = Number(publishTime);
+  if (!Number.isFinite(ms) || ms <= 0) return undefined;
+  const y = new Date(ms).getFullYear();
+  return y > 0 ? y : undefined;
+}
+
 function mapSong(s) {
+  const pic = s.al?.picUrl || s.album?.picUrl || '';
   return {
     source: 'netease',
     id: String(s.id),
@@ -54,6 +64,8 @@ function mapSong(s) {
     artist: (s.ar || s.artists || []).map((a) => a.name).join(' / '),
     album: s.al?.name || s.album?.name || '',
     duration: Math.round((s.dt || s.duration || 0) / 1000),
+    coverArt: pic || undefined,
+    year: yearFrom(s.publishTime),
   };
 }
 
@@ -69,10 +81,32 @@ export const netease = {
   },
 
   // 解析可播放 URL（登录后可拿到更多歌曲 / 更高音质）。版权受限的返回 null。
+  // VIP 曲目未登录时只给 30 秒试听片段（freeTrialInfo 非空）——当整首歌播会中途
+  // 截断，比无声更糟，所以按不可播放处理（返回 null，调用方已作降级）。
   async streamUrl(id) {
     try {
       const body = await call('song_url_v1', { id, level: 'exhigh' });
-      return body?.data?.[0]?.url || null;
+      const d = body?.data?.[0];
+      if (!d?.url) return null;
+      if (d.freeTrialInfo) {
+        if (!trialLogged.has(String(id))) {
+          trialLogged.add(String(id));
+          console.warn(`[netease] VIP 试听片段，跳过 track ${id}`);
+        }
+        return null;
+      }
+      return d.url;
+    } catch { return null; }
+  },
+
+  // Resolve a cover image URL for the local /api/cover proxy (never trust a
+  // caller-supplied URL). Larger square via netease's ?param resize.
+  async coverArt(id) {
+    try {
+      const body = await call('song_detail', { ids: String(id) });
+      const pic = body?.songs?.[0]?.al?.picUrl || body?.songs?.[0]?.album?.picUrl || '';
+      if (!/^https?:\/\//i.test(pic)) return null;
+      return `${pic}${pic.includes('?') ? '&' : '?'}param=512y512`;
     } catch { return null; }
   },
 

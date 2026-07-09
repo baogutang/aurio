@@ -13,6 +13,14 @@ contextBridge.exposeInMainWorld('aurio', {
       ipcRenderer.send('aurio:tray:onAir', onAir);
     },
   },
+  media: {
+    onCommand: (handler) => {
+      if (typeof handler !== 'function') return () => {};
+      const listener = (_event, command) => handler(command);
+      ipcRenderer.on('aurio:media:command', listener);
+      return () => ipcRenderer.removeListener('aurio:media:command', listener);
+    },
+  },
   updates: {
     status: () => ipcRenderer.invoke('aurio:update:status'),
     check: () => ipcRenderer.invoke('aurio:update:check'),

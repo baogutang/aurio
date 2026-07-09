@@ -6,6 +6,11 @@ declare global {
       isElectron?: boolean;
       platform?: string;
       releasesUrl?: string;
+      media?: {
+        onCommand: (
+          handler: (command: 'playpause' | 'next' | 'prev' | 'stop') => void,
+        ) => () => void;
+      };
       updates?: {
         status: () => Promise<{
           version?: string;

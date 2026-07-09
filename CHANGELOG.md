@@ -4,6 +4,51 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-07-09
+
+The DJ voice and the music now share one Web Audio mixer, so Auri talks over a bed
+that breathes down instead of clicking to a whisper.
+
+### Added
+
+- Shared `AudioContext` mixer bus (`web/src/lib/audioGraph.ts`): both audio elements are tapped once and routed through `musicGain` / `voiceGain` / `masterGain`.
+- Broadcast voice chain on the DJ voice — highpass 90 Hz, compressor (−24 dB, 3:1, 3 ms / 250 ms), de-esser at 6.5 kHz, +3.5 dB presence at 4 kHz, and a 12% procedurally generated room.
+- Album art: an `AlbumArt` component, a same-origin `GET /api/cover/:source/:id` proxy (Navidrome + NetEase), and a vibrant-swatch extractor that tints the now-playing card.
+- Global media keys — play/pause, next, previous, stop — exposed to the renderer as `window.aurio.media.onCommand`.
+- `prompts/voice-bible.zh.json`: 14 exemplar radio links, two of which answer with silence.
+- `server/agent/judge.js`: a deterministic post-generation judge (assistant voice, stilted phrasing, meta-narration, tech words, length, repetition) and a said-before ledger.
+- Track metadata now reaches the brain — year, duration and genre in candidate lists; playback position and duration in the client heartbeat.
+- `AURIO_LOCALE` (default `zh-CN`) drives date formatting and the weather API language.
+- `docs/RADIO_AUDIT.md`: a full technical audit and roadmap.
+- 34 new tests (88 total), including `test/dj-eval.test.js`.
+
+### Changed
+
+- Ducking under the DJ is a `GainNode` envelope (−12 dB, ~80 ms attack, ~500 ms release) instead of an instantaneous `el.volume = 0.12` step.
+- The forbidden-phrase list is gone from `prompts/dj-persona.md` and the output contract — naming a cliché primes it. Those rules now live in the judge, which never feeds them back to the model. The DJ regenerates once, then falls silent.
+- `searchOne` scores candidates by CJK-aware title/artist similarity instead of taking the first hit.
+- Electron sets `autoplayPolicy: 'no-user-gesture-required'` and disables background throttling, so the tray window keeps its clock and spectrum alive.
+- Dock icon v11: lighter warm-gray background with soft LED Auri (balanced pixel feel).
+- Menu bar tray: solid Auri silhouette template; on-air state uses dot above antenna.
+
+### Fixed
+
+- Pause then play no longer restarts the track from 0:00, and no longer replays the DJ's segue.
+- NetEase VIP tracks that resolve to a 30-second trial clip are rejected instead of played as if they were the whole song.
+- `mediaSession` artwork passed a raw Navidrome cover id where an image URL belonged.
+- The dot-matrix spectrum stops its animation loop while the window is hidden.
+- The mascot's `talking` state now fires while the DJ speaks.
+- The "why this track" panel referenced an undefined CSS variable and rendered with no background.
+- Removed the unreachable `schedulePendingIdleStart` machinery.
+
+### Security
+
+- `SECURITY.md` now states the auto-update threat model plainly: macOS artifacts are unsigned, so code-signature verification has nothing to verify. Integrity rests on HTTPS and the SHA-512 recorded in the release manifest. Signing with an Apple Developer ID is the fix.
+
+### Notes
+
+- The audio path is a substantial rework, verified by typecheck, 88 tests, and a live server smoke test — but not by ear on every platform. Please report regressions in ducking, playback resume, or cover art.
+
 ## [0.3.4] - 2026-07-03
 
 ### Added

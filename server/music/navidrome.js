@@ -41,6 +41,9 @@ function normalize(song) {
     duration: song.duration,
     coverArt: song.coverArt,
     year: song.year,
+    genre: song.genre,
+    bpm: song.bpm,
+    replayGain: song.replayGain, // OpenSubsonic: { trackGain, trackPeak }
   };
 }
 

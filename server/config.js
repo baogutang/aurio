@@ -125,6 +125,10 @@ function buildCalendars(s) {
 export const config = {
   root: ROOT,
   port: Number(process.env.PORT || 8080),
+  // UI/host locale. The persona and voice bible stay Chinese, but date
+  // formatting and weather language follow this so an English shell doesn't
+  // wrap a host who errors in Chinese.
+  locale: process.env.AURIO_LOCALE || 'zh-CN',
   claude: {
     bin: process.env.CLAUDE_BIN || 'claude',
     model: process.env.CLAUDE_MODEL || '',
@@ -147,6 +151,7 @@ export const config = {
 // Modules read config.<feature>.<field> at call time, so updates apply live.
 export function applyOverrides(overrides = {}) {
   const s = { ...process.env, ...overrides };
+  config.locale = s.AURIO_LOCALE || 'zh-CN';
   config.navidrome = buildNavidrome(s);
   config.netease = buildNetease(s);
   config.qq = buildQQ(s);

@@ -20,6 +20,12 @@ export function buildObservation(trigger = {}) {
   const upNext = idx >= 0 ? queue.slice(idx + 1, idx + 6) : queue.slice(0, 5);
   const recent = recentFeedback(5);
   const plan = db.getPlan();
+  const ctrl = clientSessionManager.getController();
+  const positionSec = Number.isFinite(ctrl?.positionSec) ? ctrl.positionSec : null;
+  const durationSec = Number.isFinite(ctrl?.durationSec) ? ctrl.durationSec : null;
+  const remainingSec = positionSec != null && durationSec != null && durationSec > 0
+    ? Math.max(0, Math.round(durationSec - positionSec))
+    : null;
   return {
     version: '1.1',
     trigger: {
@@ -35,6 +41,9 @@ export function buildObservation(trigger = {}) {
         title: nowPlaying.title,
         artist: nowPlaying.artist,
         source: nowPlaying.source,
+        positionSec,
+        durationSec,
+        remainingSec,
       } : null,
       upNext: upNext.map((t) => `${t.artist} — ${t.title}`),
     },

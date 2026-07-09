@@ -108,28 +108,26 @@ const SPRITE = [
   '...FF..FF...',
 ];
 
-const SPRITE_COLORS = {
+const LED_COLORS = {
   B: color('#ff6a3d'),
-  S: color('#ff6a3d', 0.42),
+  S: color('#ff6a3d', 0.32),
   L: color('#5ad19a'),
-  E: color('#0a0705', 0.88),
+  E: color('#0e0a08', 0.8),
   G: color('#ffffff'),
   A: color('#5ad19a', 0.85),
   T: color('#eafff2'),
-  F: color('#ff6a3d', 0.42),
+  F: color('#ff6a3d', 0.32),
 };
 
-function drawAuriDots(img, size, { mono = false, onAir = false } = {}) {
+/** v11 Dock — soft LED dots (larger, closer, light glow on tip only). */
+function drawAuriLed(img, size, { onAir = false } = {}) {
   const rows = SPRITE.length;
   const cols = 12;
-  const rd = size * 0.0215;
-  const gap = size * 0.007;
+  const rd = size * 0.0265;
+  const gap = size * 0.0035;
   const step = rd * 2 + gap;
-  const totalW = cols * step - gap;
-  const totalH = rows * step - gap;
-  const ox = size * 0.5 - totalW / 2;
-  const oy = size * 0.53 - totalH / 2;
-  const monoPaint = color('#000000', 0.92);
+  const ox = size * 0.5 - (cols * step - gap) / 2;
+  const oy = size * 0.53 - (rows * step - gap) / 2;
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < SPRITE[row].length; col++) {
@@ -137,68 +135,75 @@ function drawAuriDots(img, size, { mono = false, onAir = false } = {}) {
       if (ch === '.') continue;
       const cx = ox + col * step + rd;
       const cy = oy + row * step + rd;
-      if (!mono && (ch === 'B' || ch === 'L')) {
-        radialGlow(img, cx, cy, rd * 1.6, ch === 'L' ? color('#5ad19a', 0.2) : color('#ff6a3d', 0.18));
-      }
-      if (!mono && ch === 'T') {
-        radialGlow(img, cx, cy, rd * 2, color('#eafff2', 0.35));
-      }
-      fillEllipse(img, cx, cy, rd, rd, mono ? monoPaint : SPRITE_COLORS[ch]);
+      if (ch === 'T') radialGlow(img, cx, cy, rd * 1.5, color('#5ad19a', 0.25));
+      fillEllipse(img, cx, cy, rd, rd, LED_COLORS[ch]);
     }
   }
 
   if (onAir) {
-    const topY = oy - step * 0.35;
+    const topY = oy - step * 0.3;
     const cx = size * 0.5;
-    for (const [ring, mul] of [[0, 3.8], [1, 4.6], [2, 5.4]]) {
-      const r = step * mul * 0.32;
-      const steps = 12 + ring * 3;
-      for (let i = 0; i < steps; i++) {
-        const ang = Math.PI * (0.18 + 0.64 * i / Math.max(1, steps - 1));
-        const px = cx + Math.cos(ang) * r;
-        const py = topY - Math.sin(ang) * r * 0.55;
-        const dotR = rd * (mono ? 0.5 : 0.6);
-        fillEllipse(
-          img,
-          px,
-          py,
-          dotR,
-          dotR,
-          mono ? color('#000000', 0.55) : color('#5ad19a', 0.88 - ring * 0.18),
-        );
-      }
-    }
-    if (mono) {
-      fillRoundedRect(img, size * 0.18, size - size * 0.05, size * 0.64, Math.max(1, size * 0.028), 1, color('#000000', 0.9));
+    const r = step * 4.0 * 0.32;
+    const steps = 10;
+    for (let i = 0; i < steps; i++) {
+      const ang = Math.PI * (0.22 + 0.56 * i / Math.max(1, steps - 1));
+      fillEllipse(
+        img,
+        cx + Math.cos(ang) * r,
+        topY - Math.sin(ang) * r * 0.48,
+        rd * 0.58,
+        rd * 0.58,
+        color('#5ad19a', 0.9),
+      );
     }
   }
+}
+
+/** Menu bar — solid Auri silhouette (macOS template black). */
+function drawTraySilhouette(img, size, { onAir = false } = {}) {
+  const u = size / 22;
+  const ink = color('#000000', 0.92);
+  fillRoundedRect(img, 10.5 * u, 2 * u, 1 * u, 3.5 * u, 0.5 * u, ink);
+  fillEllipse(img, 11 * u, 1.8 * u, 1.3 * u, 1.3 * u, ink);
+  fillRoundedRect(img, 6 * u, 6 * u, 10 * u, 9.5 * u, 2.8 * u, ink);
+  fillEllipse(img, 8.5 * u, 16.8 * u, 1.1 * u, 1.1 * u, ink);
+  fillEllipse(img, 13.5 * u, 16.8 * u, 1.1 * u, 1.1 * u, ink);
+  if (onAir) fillEllipse(img, 11 * u, 0.8 * u, 0.95 * u, 0.95 * u, ink);
 }
 
 function renderDockIcon(size, { onAir = false } = {}) {
   const img = image(size);
   const s = size / 1024;
   const sx = (v) => v * s;
-  const top = color('#0a0b0d');
-  const bottom = color('#040405');
+  const top = color('#46403a');
+  const mid = color('#403a35');
+  const bottom = color('#3a3430');
 
-  fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), (x, y) => mix(top, bottom, y / size));
+  fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), (x, y) => {
+    const t = y / size;
+    if (t < 0.5) return mix(top, mid, t / 0.5);
+    return mix(mid, bottom, (t - 0.5) / 0.5);
+  });
   fillRoundedRect(img, sx(76), sx(76), sx(872), sx(872), sx(184), color('#ffffff', 0.03));
 
-  for (let y = 120; y < 900; y += 48) {
-    for (let x = 120; x < 900; x += 48) fillEllipse(img, sx(x), sx(y), sx(2.2), sx(2.2), color('#ffffff', 0.05));
+  for (let y = 120; y < 900; y += 67) {
+    for (let x = 120; x < 900; x += 67) {
+      fillEllipse(img, sx(x), sx(y), sx(1.8), sx(1.8), color('#ffffff', 0.025));
+    }
   }
 
-  radialGlow(img, sx(512), sx(544), sx(360), color('#ff6a3d', 0.16));
+  radialGlow(img, sx(512), sx(574), sx(388), color('#ff6a3d', 0.13));
+  radialGlow(img, sx(389), sx(205), sx(461), color('#ffdcb8', 0.12));
 
-  drawAuriDots(img, size, { mono: false, onAir });
+  drawAuriLed(img, size, { onAir });
 
-  fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), color('#ffffff', 0.035));
+  fillRoundedRect(img, sx(56), sx(56), sx(912), sx(912), sx(206), color('#ffffff', 0.04));
   return img;
 }
 
 function renderTrayIcon(size, { onAir = false } = {}) {
   const img = image(size);
-  drawAuriDots(img, size, { mono: true, onAir });
+  drawTraySilhouette(img, size, { onAir });
   return img;
 }
 
