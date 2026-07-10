@@ -39,6 +39,10 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Run web unit tests
+        working-directory: web
+        run: npm test
+
       - name: Audit production dependencies
         run: npm run audit:prod
 
