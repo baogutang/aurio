@@ -1,6 +1,6 @@
 {
   "name": "aurio",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Aurio - your personal AI radio. Cross-platform desktop and PWA.",
   "type": "module",
   "main": "electron/main.js",

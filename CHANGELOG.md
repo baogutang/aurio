@@ -4,6 +4,92 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-07-10
+
+Aurio becomes a station. The timeline now lives on the server and advances
+whether or not anyone is listening; clients JOIN a programme in progress, two
+devices hear the same second, and closing the tab no longer stops time.
+
+### Added
+
+- **Server-authoritative playout** (`server/playout/`): a wall-clock programme
+  log with segue arithmetic, an engine that fast-forwards through downtime in a
+  single jump, join-in-progress snapshots, and a horizon keeper that keeps the
+  log fed — through the brain when someone is listening, through `recommend()`
+  (zero LLM spend) when not. 48 fake-clock tests; cutover plan in
+  `docs/PLAYOUT_CUTOVER.md`.
+- **Gapless playback**: dual audio elements, prefetch at T−20s, ~2s equal-power
+  crossfade on natural endings (250ms on manual skips), and the DJ's segue rides
+  the crossfade — the bed is the transition itself.
+- **Station identity**: a procedurally generated sonic logo, 18 dayparted
+  liners on rotation, hourly station IDs (logo + time call stitched via ffmpeg
+  when available), pseudo-FM frequencies per source, and a 0.3s retune
+  noise/sweep when you change station.
+- **Programme grammar**: user-editable `user/shows.json` (早安频率 / 工作台 /
+  深夜航班 presets, hot-reloaded), per-show talk budgets — silence is enforced
+  as a decision — and a Friday-night weekly recap ritual.
+- **Hotline**: a non-urgent song request joins the end of the show with an
+  on-air confirmation; the DJ mentions it at the next spoken break. Urgent
+  wording (「现在放」) still cuts the line.
+- **Song material**: opening/chorus lyric hooks for the now-playing, previous
+  and next tracks reach the prompt, so the host can quote half a line instead
+  of talking about the weather again.
+- **Two-layer judge**: new deterministic categories (fabricated_listener,
+  critic_voice, written_prose) plus a post-generation LLM judge for scheduled
+  breaks asking the one unenumerable question — does this sound like a person?
+  Fails open; `AURIO_LLM_JUDGE=off` to disable.
+- **Deterministic detectors** hand the DJ verified facts with cooldowns:
+  return-after-absence, weather flips, shelf tracks, replay obsession, and
+  long-term memory from monthly listening rollups (「《夜曲》去年 11 月你听了
+  14 遍」).
+- **播出钟**: the standby clock is now a real 60-minute dial — arcs sit at the
+  minute they aired/will air, the sweep hand is the wall clock, voice breaks
+  are radial ticks. **LIVE timeline**: the progress row shows the wall-clock
+  position of what you are hearing plus continuous-uptime. **Honest listener
+  count** when more than one device is tuned in.
+- **磁带回放 (time-shift)**: ⏪ opens the aired-history tape — every song and
+  the DJ's actual spoken lines — for local replay, with one tap back to the
+  live edge. `GET /api/tape`.
+- **First-run ceremony**: onboarding ends with 「开台」— Auri scans what the
+  just-connected library actually holds and opens the station herself.
+- **Sleep timer** (15/30/60/90 min): fades the master bus and pauses locally;
+  the station keeps running.
+- **Doubao (火山引擎) TTS provider** with the multi-emotion 深夜播客 voice
+  (`DOUBAO_TTS_*`), cue-point/loudness analysis per track (ffmpeg, head+tail
+  40s, cached), and a master-bus limiter enabling the full −16 LUFS
+  normalization range.
+- Frontend test infrastructure: 128 vitest tests in `web/`; root suite grew
+  from 88 to 469.
+
+### Changed
+
+- **Pause is local; play rejoins the live edge.** The station does not wait —
+  0.4.0's resume-in-place is superseded. The progress bar is read-only and
+  `prev()` is gone (the tape replaces both).
+- Skips are taste signals, not conversations: only a streak earns one spoken
+  line. The judge tracks per-line angles so the host stops leaning on the
+  weather every break.
+- Chat auto-closes back to the main card once a request resolves; the active
+  lyric line finally centers itself.
+- UI convergence: one clock, one visual language — NeonClock, ParticleClock,
+  PixelClock, BootLog, ParticleField and the fake transport pulse are deleted;
+  reduced-motion is honored everywhere including canvases and subtitles.
+- Album art is no longer a main visual (a radio has no cover); the cover proxy
+  survives for future tinting.
+
+### Removed
+
+- The client-side queue world: queue-controller mutations, controller election,
+  five broadcast modes, `queueSync.ts`, `POST /api/queue`, and the
+  `AURIO_SCHEDULE_WITHOUT_LISTENER` escape hatch.
+
+### Notes
+
+- Ear-testing wanted on: crossfade feel, retune sound level, liner cadence,
+  and the Doubao voice (needs real credentials — liners can then be
+  regenerated in that voice).
+- macOS artifacts remain unsigned (SECURITY.md); signing is still the fix.
+
 ## [0.4.0] - 2026-07-09
 
 The DJ voice and the music now share one Web Audio mixer, so Auri talks over a bed
