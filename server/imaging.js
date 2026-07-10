@@ -5,21 +5,19 @@
 // pure Node, the liners are hand-written against prompts/voice-bible.zh.json,
 // and the time calls come from a template. Zero LLM calls.
 //
-// Delivery rides the same mechanism the DJ uses for segues: patch an upcoming
-// track's segueTtsUrl via queueController.patchSegueTts and mirror it to live
-// clients with eventBus.emit('tts', { mode: 'append', track }). The client then
-// plays the clip ducked, right before that track starts — between songs, with
-// zero client changes. Two rules, enforced here: never touch a track that
-// already carries a segue (the DJ's own words win), and never speak into an
-// empty studio (hasActiveSession()).
+// Delivery rides the programme log (P3 cutover): patch an upcoming log item's
+// `voice` via station.updateItem — the playout station pushes the change to
+// every client, which plays the clip ducked right as that item starts. Two
+// rules, enforced here: never touch an item that already carries a voice (the
+// DJ's own words win), and never speak into an empty studio
+// (hasActiveSession()).
 import fs from 'node:fs';
 import path from 'node:path';
 import { config, DATA_ROOT } from './config.js';
 import { db } from './store.js';
-import { queueController } from './runtime/queue-controller.js';
-import { eventBus } from './runtime/event-bus.js';
+import { station } from './playout/station.js';
 import { synthesizeBackground } from './tts/index.js';
-import { hasActiveSession, currentIndex } from './radio.js';
+import { hasActiveSession } from './radio.js';
 
 export const IMAGING_CACHE_DIR = path.join(DATA_ROOT, 'cache', 'imaging');
 export const SONIC_LOGO_FILE = 'sonic-logo.wav';
@@ -188,46 +186,37 @@ export function timeCallText(hour) {
 }
 
 // ---------------------------------------------------------------------------
-// Delivery — patch an upcoming track's segueTtsUrl, exactly like dj.js does.
+// Delivery — patch an upcoming log item's voice, exactly like the DJ's segues.
 // ---------------------------------------------------------------------------
 
-function trackRef(track) {
-  if (!track) return null;
-  return { source: track.source, id: track.id, title: track.title, artist: track.artist };
-}
-
-function matchesRef(item, ref) {
-  return (ref.source && item.source === ref.source && ref.id && item.id === ref.id)
-    || (ref.title && ref.artist && item.title === ref.title && item.artist === ref.artist);
-}
-
-// First upcoming track (within the lookahead) that has no segue attached.
-// Never the currently-playing one — its segue moment already passed.
-function upcomingFreeTrack() {
-  const { queue } = queueController.peekSnapshot();
-  const idx = currentIndex();
-  const start = idx >= 0 ? idx + 1 : 0;
-  for (const item of queue.slice(start, start + UPCOMING_LOOKAHEAD)) {
-    if (!item.segueTtsUrl) return trackRef(item);
+// First upcoming log item (within the lookahead) with no voice attached.
+// Never the on-air one — its intro moment already passed.
+function upcomingFreeItem() {
+  const { upNext } = station.join({ upNext: UPCOMING_LOOKAHEAD });
+  for (const item of upNext) {
+    if (!item.voice) return item.id;
   }
   return null;
 }
 
 // Attach the clip only if the slot is STILL free — synthesis may have taken a
-// while and the DJ may have claimed the track for her own segue meanwhile.
-function patchIfFree(ref, ttsUrl, kind) {
-  const { queue } = queueController.peekSnapshot();
-  const item = queue.find((t) => matchesRef(t, ref));
-  if (!item || item.segueTtsUrl) return false;
-  queueController.patchSegueTts(ref, ttsUrl);
-  eventBus.emit('tts', { ts: Date.now(), kind, mode: 'append', ttsUrl, track: ref });
+// while and the DJ may have claimed the item for her own words meanwhile
+// (or it may already have gone to air).
+function patchIfFree(itemId, ttsUrl, text, kind) {
+  const item = station.getItem(itemId);
+  if (!item || item.voice || item.airStart != null) return false;
+  try {
+    station.updateItem(itemId, { voice: { text, ttsUrl, kind } });
+  } catch {
+    return false;
+  }
   return true;
 }
 
 // Synthesize through the existing TTS cache (mp3/wav lands in cache/tts/) and
 // deliver when ready. Fire-and-forget; cached texts deliver immediately.
-function speakOnTrack(text, ref, kind) {
-  const deliver = (tts) => { if (tts?.url) patchIfFree(ref, tts.url, kind); };
+function speakOnTrack(text, itemId, kind) {
+  const deliver = (tts) => { if (tts?.url) patchIfFree(itemId, tts.url, text, kind); };
   const ready = synthesizeBackground(text, deliver);
   if (ready?.url) deliver(ready);
 }
@@ -254,12 +243,12 @@ function linerIntervalMs() {
 export function deliverLiner(now = Date.now()) {
   if (!imagingEnabled()) return false;
   if (!hasActiveSession()) return false;
-  const ref = upcomingFreeTrack();
-  if (!ref) return false;
+  const itemId = upcomingFreeItem();
+  if (!itemId) return false;
   const recent = db.getPref('imagingRecentLiners', []);
   const liner = pickLiner(new Date(now).getHours(), recent);
   if (!liner) return false;
-  speakOnTrack(liner.text, ref, 'liner');
+  speakOnTrack(liner.text, itemId, 'liner');
   db.setPref('imagingRecentLiners', [...recent, liner.id].slice(-RECENT_LINERS_KEPT));
   lastSpokeTs = now;
   return true;
@@ -275,9 +264,9 @@ export function maybeLiner(now = Date.now()) {
 export function hourlyStationId(date = new Date()) {
   if (!imagingEnabled()) return false;
   if (!hasActiveSession()) return false;
-  const ref = upcomingFreeTrack();
-  if (!ref) return false;
-  speakOnTrack(timeCallText(date.getHours()), ref, 'id');
+  const itemId = upcomingFreeItem();
+  if (!itemId) return false;
+  speakOnTrack(timeCallText(date.getHours()), itemId, 'id');
   lastSpokeTs = date.getTime();
   return true;
 }

@@ -10,6 +10,13 @@ let tmpDir;
 let db;
 let assemble;
 let hooksMod;
+let stationMod;
+
+// context.js reads the programme through queueController's log projection —
+// seed the station log where the old tests seeded the client queue.
+function seedProgramme(tracks) {
+  stationMod.station.appendTracks(tracks.map((t) => ({ ...t, duration: t.duration || 240 })));
+}
 
 beforeAll(async () => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aurio-material-'));
@@ -18,6 +25,7 @@ beforeAll(async () => {
   ({ db } = await import('../server/store.js'));
   ({ assemble } = await import('../server/context.js'));
   hooksMod = await import('../server/music/lyrics-hooks.js');
+  stationMod = await import('../server/playout/station.js');
 });
 
 afterAll(() => {
@@ -63,14 +71,15 @@ beforeEach(() => {
   db.state.plays.splice(0);
   db.state.messages.splice(0);
   db.state.prefs = {};
-  db.setQueueImmediate([]);
+  db.setPref('programmeLog', null);
+  stationMod.initStation();
   hooksMod.clearHooksCache();
 });
 
 describe('歌曲素材 block', () => {
   it('carries now-playing metadata + 2 hooks, back-announce + 1 hook, up-next + 1 hook', async () => {
     const queue = [NOW_TRACK, NEXT_TRACK];
-    db.setQueueImmediate(queue);
+    seedProgramme(queue);
     db.addPlay(PREV_TRACK);
     db.addPlay(NOW_TRACK);
     hooksMod.primeHooks(NOW_TRACK, NOW_LYRIC);
@@ -105,7 +114,7 @@ describe('歌曲素材 block', () => {
 
   it('stays bounded: material body never exceeds 9 lines (7 + wrapper margin)', async () => {
     const queue = [NOW_TRACK, NEXT_TRACK];
-    db.setQueueImmediate(queue);
+    seedProgramme(queue);
     db.addPlay(PREV_TRACK);
     db.addPlay(NOW_TRACK);
     hooksMod.primeHooks(NOW_TRACK, NOW_LYRIC);
@@ -123,7 +132,7 @@ describe('歌曲素材 block', () => {
   it('degrades silently to metadata-only lines when no lyrics are cached (unknown source → no fetch hit)', async () => {
     const unknownNow = { source: 'nosuch', id: 'x', title: '无词曲目', artist: '器乐团' };
     const queue = [unknownNow, { source: 'nosuch', id: 'y', title: '下一首', artist: '器乐团' }];
-    db.setQueueImmediate(queue);
+    seedProgramme(queue);
 
     const prompt = await assemble({ kind: 'refill', observation: observationFor(queue, 0) });
     const mat = materialSection(prompt);
@@ -136,7 +145,7 @@ describe('歌曲素材 block', () => {
     // Only now-playing is primed; next has nothing cached and its source is
     // unresolvable — the block must still render instantly without its hook.
     const queue = [NOW_TRACK, NEXT_TRACK];
-    db.setQueueImmediate(queue);
+    seedProgramme(queue);
     hooksMod.primeHooks(NOW_TRACK, NOW_LYRIC);
 
     const t0 = Date.now();

@@ -10,7 +10,7 @@ import { WebSocketServer } from 'ws';
 import { config, summarize, ROOT, DATA_ROOT } from './config.js';
 import { db, load } from './store.js';
 import { loadSettings, saveSettings, getSettings } from './settings.js';
-import { run, runSegment, isBusy } from './dj.js';
+import { runSegment, isBusy } from './dj.js';
 import * as music from './music/index.js';
 import { navidrome } from './music/navidrome.js';
 import { ncmLogin, netease } from './music/netease.js';
@@ -25,9 +25,10 @@ import { openCalendarPrivacy, testSystemCalendar } from './calendar/system.js';
 import { startScheduler } from './scheduler.js';
 import { enabledProviders } from './calendar/index.js';
 import { cast } from './cast/upnp.js';
-import { onHeartbeat, startRadio, currentIndex, hasActiveSession, maybeRefill } from './radio.js';
+import { hasActiveSession, currentIndex } from './radio.js';
+import { station, setListenerGate } from './playout/station.js';
+import { wireHorizonKeeper } from './playout/horizon.js';
 import { clientSessionManager } from './runtime/client-session-manager.js';
-import { queueController, ConflictError } from './runtime/queue-controller.js';
 import { eventBus } from './runtime/event-bus.js';
 import { recordFeedback, tasteSummary } from './agent/preferences.js';
 import { onPlaybackFeedback } from './agent/feedback-reaction.js';
@@ -37,10 +38,6 @@ import { performFirstRun } from './rituals.js';
 
 load();
 loadSettings();
-
-{
-  queueController.repairIfNeeded();
-}
 
 const app = express();
 
@@ -107,25 +104,13 @@ function hasValidToken(req) {
   return tokenFrom(req) === CONTROL_TOKEN;
 }
 
-function clientIdFrom(req) {
-  return (req.headers['x-aurio-client-id'] || '').toString();
-}
-
-function requireController(req, res, next) {
-  if (clientSessionManager.clientCount() === 0) return next();
-  const id = clientIdFrom(req);
-  if (!id || !clientSessionManager.isController(id)) {
-    return rejectControl(res, 403, 'forbidden: controller role required');
-  }
-  next();
-}
-
+// Trigger beats land on the shared log: opening the station adds to the
+// programme (an empty log self-anchors at now); a mood beat while on air
+// steers the future without touching aired history.
 function triggerMode(kind) {
-  const active = hasActiveSession();
-  const idx = currentIndex();
-  if (kind === 'station') return active && idx >= 0 ? 'append' : 'replace';
-  if (kind === 'mood') return active && idx >= 0 ? 'steer' : (active ? 'append' : 'replace');
-  return active ? 'append' : 'replace';
+  const onAir = !!station.current();
+  if (kind === 'mood') return onAir ? 'steer' : 'append';
+  return 'append';
 }
 
 function rejectControl(res, status, error) {
@@ -172,13 +157,14 @@ app.get('/api/session', (req, res) => {
 });
 
 app.get('/api/status', async (req, res) => {
-  const { queue, revision } = queueController.getSnapshot();
+  const snap = station.join({ upNext: 30 });
   res.json({
     ok: true,
     config: summarize(),
     calendars: enabledProviders(),
-    queue: queue.length,
-    queueRevision: revision,
+    onAir: !!snap.current,
+    queue: snap.upNext.length + (snap.current ? 1 : 0),
+    horizonMs: station.horizonRemaining(),
     musicSource: music.getMusicSource(),
     sourceModes: music.availableSourceModes(),
     sources: music.sourceServices(),
@@ -198,7 +184,6 @@ app.get('/api/context', async (req, res) => {
 });
 
 app.get('/api/health', async (req, res) => {
-  const { queue, revision } = queueController.getSnapshot();
   let brain = { ok: false };
   try { brain = await brainAvailable(); } catch { /* noop */ }
   res.json({
@@ -206,22 +191,21 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
     wsClients: clientSessionManager.clientCount(),
     hasActiveSession: hasActiveSession(),
-    queueLen: queue.length,
-    queueRevision: revision,
+    onAir: !!station.current(),
+    horizonMs: station.horizonRemaining(),
     composing: isBusy(),
     brain,
   });
 });
 
 app.get('/api/ready', async (req, res) => {
-  const { queue, revision } = queueController.getSnapshot();
   let brain = { ok: false };
   try { brain = await brainAvailable(); } catch { /* noop */ }
   const ready = !isBusy();
   res.status(ready ? 200 : 503).json({
     ok: ready,
-    queueLen: queue.length,
-    queueRevision: revision,
+    onAir: !!station.current(),
+    horizonMs: station.horizonRemaining(),
     composing: isBusy(),
     brain,
   });
@@ -514,7 +498,7 @@ app.get('/api/lyrics', async (req, res) => {
 });
 
 // ---- Talk to the DJ ----
-app.post('/api/chat', requireController, async (req, res) => {
+app.post('/api/chat', async (req, res) => {
   const text = (req.body?.text || '').toString().trim();
   if (!text) return res.status(400).json({ error: 'empty' });
   try {
@@ -529,7 +513,7 @@ app.post('/api/chat', requireController, async (req, res) => {
 // ---- Manually fire a scheduled-style beat (plan / morning / mood) ----
 // 'first-run' is the 开台仪式 (RADIO_VISION §六): performed at most once per
 // data dir — the guard and the library-scan fact live in server/rituals.js.
-app.post('/api/trigger', requireController, async (req, res) => {
+app.post('/api/trigger', async (req, res) => {
   const kind = (req.body?.kind || 'mood').toString();
   if (!['plan', 'morning', 'mood', 'station', 'first-run'].includes(kind)) {
     return res.status(400).json({ ok: false, error: 'invalid trigger kind' });
@@ -545,40 +529,18 @@ app.post('/api/trigger', requireController, async (req, res) => {
   }
 });
 
-// ---- Current queue / plan ----
-async function hydrateQueueTracks(queue = []) {
-  return Promise.all(queue.map(async (t) => {
-    if (!t?.url && t?.id && t?.source) {
-      try {
-        const url = await music.playbackUrl(t);
-        return url ? { ...t, url } : t;
-      } catch { return t; }
-    }
-    return t;
-  }));
-}
-
-app.get('/api/queue', async (req, res) => {
-  const snap = queueController.getSnapshot();
-  const queue = await hydrateQueueTracks(snap.queue);
-  res.json({ queue, revision: snap.revision });
+// ---- The programme (what is on air right now + what's coming) ----
+app.get('/api/programme', (req, res) => {
+  const upNext = Math.max(1, Math.min(30, Number(req.query.upNext || 5) || 5));
+  res.json({ ok: true, ...station.join({ upNext }) });
 });
 
-app.post('/api/queue', requireController, (req, res) => {
-  if (!Array.isArray(req.body?.queue)) return res.status(400).json({ ok: false, error: 'queue must be an array' });
-  try {
-    const expected = req.body.baseRevision;
-    const { snapshot } = queueController.replaceFromClient(req.body.queue, {
-      expectedRevision: Number.isFinite(expected) ? expected : undefined,
-    });
-    res.json({ ok: true, queue: snapshot.queue.length, revision: snapshot.revision });
-  } catch (e) {
-    if (e instanceof ConflictError) {
-      return res.status(409).json({ ok: false, code: e.code, revision: queueController.getSnapshot().revision });
-    }
-    res.status(500).json({ ok: false, error: e.message });
-  }
+// Skip is a server log operation: the on-air item ends now, for everyone.
+app.post('/api/skip', (req, res) => {
+  station.skip();
+  res.json({ ok: true, ...station.join() });
 });
+
 app.get('/api/plan/today', (req, res) => res.json({ plan: db.getPlan() }));
 
 // ---- Record a play (renderer tells us when a track actually starts) ----
@@ -599,9 +561,6 @@ app.post('/api/playback-event', (req, res) => {
   const signal = event === 'like' ? 'like' : event === 'dislike' ? 'dislike' : event;
   recordFeedback({ signal, track, position_sec, queue_index });
   onPlaybackFeedback({ signal, track, position_sec });
-  if (event === 'completed') {
-    setImmediate(() => maybeRefill());
-  }
   res.json({ ok: true });
 });
 
@@ -768,43 +727,30 @@ wss.on('connection', (ws, req) => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
-  const { clientId, role: initialRole } = clientSessionManager.register(ws, { userAgent: req.headers['user-agent'] });
+  const { clientId } = clientSessionManager.register(ws, { userAgent: req.headers['user-agent'] });
   ws.clientId = clientId;
 
-  const snap = queueController.getSnapshot();
-  ws.send(JSON.stringify({
-    type: 'hello',
-    clientId,
-    role: initialRole,
-    queue: snap.queue,
-    queueRevision: snap.revision,
-  }));
-  clientSessionManager.broadcastRoles();
+  // Join in progress: the client receives the on-air item + media offset +
+  // what's coming, and starts playback AT THE OFFSET. Everything after this
+  // is a delta-shaped push of the same snapshot.
+  ws.send(JSON.stringify({ type: 'hello', clientId }));
+  ws.send(JSON.stringify({ type: 'programme', reason: 'join', ...station.join() }));
+  // A listener arriving un-parks the horizon keeper (and turns the brain on).
+  horizonKeeper?.poke({ reset: true });
 
   ws.on('message', (data) => {
     try {
       const m = JSON.parse(data.toString());
       if (m.type === 'state') {
-        const session = clientSessionManager.onHeartbeat(clientId, {
-          playingIndex: m.playingIndex,
+        clientSessionManager.onHeartbeat(clientId, {
           paused: m.paused,
-          queueLen: m.queueLen,
-          queueRevision: m.queueRevision,
           currentTrack: m.currentTrack,
+          itemId: m.itemId,
           positionSec: m.positionSec,
           durationSec: m.durationSec,
         });
-        const snap = queueController.peekSnapshot();
-        if (session?.role === 'controller') {
-          const drift = m.queueRevision !== snap.revision
-            || (Number.isFinite(m.queueLen) && m.queueLen !== snap.queue.length);
-          if (drift) {
-            clientSessionManager.sendTo(clientId, {
-              type: 'queue', queue: snap.queue, revision: snap.revision,
-            });
-          }
-          onHeartbeat();
-        }
+      } else if (m.type === 'op' && m.op === 'skip') {
+        station.skip();
       }
     } catch { /* ignore malformed */ }
   });
@@ -835,13 +781,19 @@ function sendAll(obj) {
   }
 }
 
-eventBus.on('broadcast', (b) => sendAll({ type: 'broadcast', ...b }));
-eventBus.on('tts', (b) => sendAll({ type: 'tts', ...b }));
-
-eventBus.on('queue:changed', ({ snapshot }) => {
-  if (!snapshot) return;
-  sendAll({ type: 'queue', queue: snapshot.queue, revision: snapshot.revision });
+// Programme deltas: every log change ships a fresh join() snapshot with the
+// reason attached — the client has ONE reconcile path instead of five modes.
+eventBus.on('programme', ({ reason }) => {
+  if (!wss.clients.size) return;
+  sendAll({ type: 'programme', reason, ...station.join() });
 });
+
+// Transient spoken lines (chat answers, scheduled beats) — talked over the
+// bed now, not part of the timeline.
+eventBus.on('say', (s) => sendAll({ type: 'say', ...s }));
+
+// The horizon keeper is wired at startup (station + dj + music recommend).
+let horizonKeeper = null;
 
 export function startServer() {
   return new Promise((resolve, reject) => {
@@ -859,8 +811,20 @@ export function startServer() {
       installSignalHandlers();
       console.log(`\n  Aurio server  →  http://localhost:${config.port}`);
       console.log('  features:', JSON.stringify(summarize()));
+      // The playout timeline is authoritative: restore the log, start the
+      // cursor (it advances whether or not anyone connects), gate spend on the
+      // listener roster, and keep the horizon fed.
+      setListenerGate(() => clientSessionManager.hasActiveSession());
+      station.start();
+      horizonKeeper = wireHorizonKeeper({
+        station,
+        runSegment,
+        recommend: music.recommend,
+        playbackUrl: music.playbackUrl,
+        hasListener: () => clientSessionManager.hasActiveSession(),
+      });
+      horizonKeeper.poke();
       startScheduler();
-      startRadio();
       startImaging();
       startTtsCacheGc();
       brainAvailable().then((r) =>

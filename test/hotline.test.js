@@ -23,7 +23,7 @@ vi.mock('../server/weather/openweather.js', () => ({
 vi.mock('../server/calendar/index.js', () => ({ todayEvents: async () => [] }));
 
 // No real library: resolveQueue simply materialises whatever the brain asked
-// to play, so an enqueue-intent action yields real tracks for the queue.
+// to play, so an enqueue-intent action yields real tracks for the log.
 vi.mock('../server/music/index.js', () => ({
   resolveQueue: async (play = []) => play.map((p, i) => ({
     source: 'navidrome', id: `req-${i}`, title: p.title || p.query || `T${i}`, artist: p.artist || 'A',
@@ -36,7 +36,8 @@ vi.mock('../server/music/index.js', () => ({
   candidatesToText: () => '',
   recommend: async () => [],
   rankTracks: (tracks = []) => tracks,
-  dedupeTracks: (tracks = []) => tracks, // queue-controller passthrough
+  dedupeTracks: (tracks = []) => tracks,
+  lyricsFor: async () => '', // station → music/cue.js pulls this
 }));
 
 // Real store/shows/judge/dj against a temp data dir. The fixture show covers
@@ -55,6 +56,7 @@ const dj = await import('../server/dj.js');
 const shows = await import('../server/shows.js');
 const { _resetLedger } = await import('../server/agent/judge.js');
 const { db } = await import('../server/store.js');
+const { initStation, station } = await import('../server/playout/station.js');
 
 afterAll(() => {
   delete process.env.AURIO_DATA_DIR;
@@ -86,7 +88,8 @@ beforeEach(() => {
   db.setPref(shows.TALK_LEDGER_KEY, []);
   db.setPref(dj.SHOUTOUT_KEY, []);
   db.setPref('segmentMemory', []);
-  db.setQueueImmediate([]);
+  db.setPref('programmeLog', null);
+  initStation(); // fresh programme log per test
   // Hotline tests pin brain-call arithmetic; the LLM judge layer is unit- and
   // wiring-tested elsewhere (judge-llm.test.js, show-segment.test.js).
   process.env.AURIO_LLM_JUDGE = 'off';
@@ -123,10 +126,13 @@ describe('hotline default placement (auto mode)', () => {
   it('a non-urgent request appends to the show and records a shoutout', async () => {
     think.mockResolvedValue(requestAction('晴天记下了，待会儿放给你。'));
     const b = await dj.runSegment({ kind: 'chat', text: '来一首周杰伦的晴天' }, { mode: 'auto' });
-    expect(b.mode).toBe('insert');
+    expect(b.op).toBe('insert');
     expect(b.placement).toBe('append');
     expect(b.queue).toHaveLength(1);
     expect(b.say).toBe('晴天记下了，待会儿放给你。');
+    // The song landed at the TAIL of the programme log.
+    const items = station.items();
+    expect(items[items.length - 1].track.title).toBe('晴天');
     // The pending shoutout landed in the ledger with the caller's words.
     expect(ledger()).toHaveLength(1);
     expect(ledger()[0]).toMatchObject({ text: '来一首周杰伦的晴天', tracks: ['周杰伦 — 晴天'] });
@@ -137,11 +143,27 @@ describe('hotline default placement (auto mode)', () => {
   it('explicit urgency in the text keeps insert-next, no shoutout', async () => {
     think.mockResolvedValue(requestAction('那首歌接在这首后面。'));
     const b = await dj.runSegment({ kind: 'chat', text: '现在放周杰伦的晴天' }, { mode: 'auto' });
-    expect(b.mode).toBe('insert');
+    expect(b.op).toBe('insert');
     expect(b.placement).toBe('next');
     expect(ledger()).toEqual([]);
     // No hotline-confirmation nudge for the 插播 channel.
     expect(lastPrompt()).not.toContain('点歌确认');
+  });
+
+  it("an urgent request lands right after the on-air item in the log", async () => {
+    // Seed a programme in progress: two songs, the first on air.
+    station.appendTracks([
+      { source: 'navidrome', id: 'on-air', title: 'Playing', artist: 'A', duration: 300 },
+      { source: 'navidrome', id: 'later', title: 'Later', artist: 'A', duration: 300 },
+    ]);
+    station.start();
+    think.mockResolvedValue(requestAction('那首歌接在这首后面。'));
+    const b = await dj.runSegment({ kind: 'chat', text: '现在放周杰伦的晴天' }, { mode: 'auto' });
+    expect(b.op).toBe('insert');
+    expect(b.placement).toBe('next');
+    const ids = station.items().map((it) => it.track.id);
+    expect(ids).toEqual(['on-air', 'req-0', 'later']);
+    station.stop();
   });
 
   it("the model's explicit placement 'next' also keeps insert-next", async () => {
@@ -151,10 +173,11 @@ describe('hotline default placement (auto mode)', () => {
     expect(ledger()).toEqual([]);
   });
 
-  it('a pure chat without music words gets no hotline nudge', async () => {
+  it('a pure chat without music words gets no hotline nudge and leaves the log alone', async () => {
     think.mockResolvedValue(action('在呢，你说。', { intent: 'chat' }));
     const b = await dj.runSegment({ kind: 'chat', text: '在吗' }, { mode: 'auto' });
-    expect(b.mode).toBe('chat');
+    expect(b.op).toBe('chat');
+    expect(station.items()).toEqual([]);
     expect(ledger()).toEqual([]);
     expect(lastPrompt()).not.toContain('点歌确认');
   });

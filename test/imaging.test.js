@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { makeClock, memStore } from './helpers/clock.js';
 
 const hasActiveSession = vi.fn(() => true);
-const currentIndex = vi.fn(() => 0);
-vi.mock('../server/radio.js', () => ({ hasActiveSession, currentIndex }));
+vi.mock('../server/radio.js', () => ({ hasActiveSession, currentIndex: () => 0 }));
 
 // Immediate "cache hit": synthesizeBackground returns a url synchronously and
 // never invokes onDone (mirrors the real contract for cached texts).
@@ -11,25 +11,46 @@ vi.mock('../server/tts/index.js', () => ({ synthesizeBackground }));
 
 const { config } = await import('../server/config.js');
 const { db } = await import('../server/store.js');
-const { queueController } = await import('../server/runtime/queue-controller.js');
-const { eventBus } = await import('../server/runtime/event-bus.js');
+const { initStation, station } = await import('../server/playout/station.js');
 const imaging = await import('../server/imaging.js');
 
 const track = (id, extra = {}) => ({
-  source: 'netease', id: String(id), title: `Song ${id}`, artist: 'Artist', ...extra,
+  source: 'netease', id: String(id), title: `Song ${id}`, artist: 'Artist',
+  duration: 240, ...extra,
 });
 
+// Seed a programme in progress: first item on air, the rest upcoming. `voiced`
+// ids get a pre-existing voice (the DJ's own words — imaging must not touch).
+let clock;
+function seedProgramme(tracks, { voiced = [] } = {}) {
+  clock = makeClock(0);
+  initStation({
+    store: memStore(), cue: null,
+    now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer,
+  });
+  station.appendTracks(tracks);
+  for (const it of station.items()) {
+    if (voiced.includes(it.track.id)) {
+      station.updateItem(it.id, { voice: { text: 'DJ 的话', ttsUrl: '/tts/dj.mp3' } });
+    }
+  }
+  station.start();
+}
+
+const upNextVoices = () => station.join({ upNext: 10 }).upNext.map((it) => it.voice?.ttsUrl ?? null);
+
 beforeEach(() => {
-  synthesizeBackground.mockClear();
+  synthesizeBackground.mockReset();
+  synthesizeBackground.mockImplementation((text) => ({ url: `/tts/${Buffer.from(text).length}.mp3`, cached: true }));
   hasActiveSession.mockReturnValue(true);
-  currentIndex.mockReturnValue(0);
   config.imaging = { enabled: true, linerIntervalMin: 25 };
-  db.setQueueImmediate([]);
   db.setPref('imagingRecentLiners', []);
+  seedProgramme([]);
 });
 
 afterEach(() => {
   imaging.stopImaging();
+  station.stop();
   vi.restoreAllMocks();
 });
 
@@ -107,71 +128,71 @@ describe('time call', () => {
 });
 
 describe('delivery', () => {
-  it('patches the first upcoming track without a segue and emits a tts event', () => {
-    db.setQueueImmediate([track(1), track(2, { segueTtsUrl: '/tts/dj.mp3' }), track(3)]);
-    const events = [];
-    const onTts = (e) => events.push(e);
-    eventBus.on('tts', onTts);
-    try {
-      expect(imaging.deliverLiner(Date.now())).toBe(true);
-    } finally {
-      eventBus.off('tts', onTts);
-    }
-    const q = db.getQueue();
-    expect(q[1].segueTtsUrl).toBe('/tts/dj.mp3');    // DJ's own segue untouched
-    expect(q[2].segueTtsUrl).toMatch(/^\/tts\//);     // liner landed on the free slot
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ kind: 'liner', mode: 'append', track: { id: '3' } });
+  it('patches the first upcoming item without a voice — the DJ\'s own words win', () => {
+    seedProgramme([track(1), track(2), track(3)], { voiced: ['2'] });
+    expect(imaging.deliverLiner(Date.now())).toBe(true);
+    const voices = upNextVoices();
+    expect(voices[0]).toBe('/tts/dj.mp3');   // DJ's own voice untouched
+    expect(voices[1]).toMatch(/^\/tts\//);    // liner landed on the free slot
+    const patched = station.join({ upNext: 10 }).upNext[1];
+    expect(patched.voice.kind).toBe('liner');
   });
 
-  it('never patches when every upcoming track already has a segue', () => {
-    db.setQueueImmediate([
-      track(1),
-      track(2, { segueTtsUrl: '/tts/a.mp3' }),
-      track(3, { segueTtsUrl: '/tts/b.mp3' }),
-      track(4, { segueTtsUrl: '/tts/c.mp3' }),
-    ]);
+  it('never patches when every upcoming item already has a voice', () => {
+    seedProgramme([track(1), track(2), track(3), track(4)], { voiced: ['2', '3', '4'] });
     expect(imaging.deliverLiner(Date.now())).toBe(false);
     expect(synthesizeBackground).not.toHaveBeenCalled();
-    expect(db.getQueue()[1].segueTtsUrl).toBe('/tts/a.mp3');
+    expect(upNextVoices()[0]).toBe('/tts/dj.mp3');
   });
 
-  it('never targets the currently-playing track', () => {
-    db.setQueueImmediate([track(1), track(2)]);
-    currentIndex.mockReturnValue(0);
+  it('never targets the on-air item', () => {
+    seedProgramme([track(1), track(2)]);
     imaging.deliverLiner(Date.now());
-    const q = db.getQueue();
-    expect(q[0].segueTtsUrl).toBeUndefined();
-    expect(q[1].segueTtsUrl).toMatch(/^\/tts\//);
+    expect(station.current()?.voice).toBeNull();
+    expect(upNextVoices()[0]).toMatch(/^\/tts\//);
   });
 
   it('respects the off switch', () => {
+    seedProgramme([track(1), track(2)]);
     config.imaging = { enabled: false, linerIntervalMin: 25 };
-    db.setQueueImmediate([track(1), track(2)]);
     expect(imaging.deliverLiner(Date.now())).toBe(false);
     expect(synthesizeBackground).not.toHaveBeenCalled();
   });
 
   it('stays silent without an active session', () => {
     hasActiveSession.mockReturnValue(false);
-    db.setQueueImmediate([track(1), track(2)]);
+    seedProgramme([track(1), track(2)]);
     expect(imaging.deliverLiner(Date.now())).toBe(false);
     expect(synthesizeBackground).not.toHaveBeenCalled();
+  });
+
+  it('a slow synthesis re-checks the slot before patching', () => {
+    seedProgramme([track(1), track(2)]);
+    // Slow path: capture onDone instead of resolving immediately.
+    let onDone;
+    synthesizeBackground.mockImplementation((text, cb) => { onDone = cb; return null; });
+    expect(imaging.deliverLiner(Date.now())).toBe(true);
+    // Meanwhile the DJ claims the slot…
+    const target = station.join({ upNext: 10 }).upNext[0];
+    station.updateItem(target.id, { voice: { text: 'DJ 的话', ttsUrl: '/tts/dj.mp3' } });
+    onDone({ url: '/tts/late-liner.mp3' });
+    // …and the late liner does not overwrite it.
+    expect(station.getItem(target.id).voice.ttsUrl).toBe('/tts/dj.mp3');
   });
 });
 
 describe('hourly station ID', () => {
   it('delivers the templated time call for the hour', () => {
-    db.setQueueImmediate([track(1), track(2)]);
+    seedProgramme([track(1), track(2)]);
     const date = new Date();
     date.setHours(23, 0, 0, 0);
     expect(imaging.hourlyStationId(date)).toBe(true);
     expect(synthesizeBackground).toHaveBeenCalledWith('晚上十一点整，Aurio。', expect.any(Function));
-    expect(db.getQueue()[1].segueTtsUrl).toMatch(/^\/tts\//);
+    expect(upNextVoices()[0]).toMatch(/^\/tts\//);
   });
 
   it('respects the off switch and session gate', () => {
-    db.setQueueImmediate([track(1), track(2)]);
+    seedProgramme([track(1), track(2)]);
     config.imaging = { enabled: false, linerIntervalMin: 25 };
     expect(imaging.hourlyStationId(new Date())).toBe(false);
     config.imaging = { enabled: true, linerIntervalMin: 25 };
@@ -193,7 +214,7 @@ describe('rotation interval', () => {
   });
 
   it('delivers one liner per interval, not before, and not while disabled', () => {
-    db.setQueueImmediate([track(1), track(2), track(3), track(4)]);
+    seedProgramme([track(1), track(2), track(3), track(4)]);
     imaging.startImaging();
 
     vi.advanceTimersByTime(24 * 60000);
@@ -213,7 +234,7 @@ describe('rotation interval', () => {
 
   it('the off switch silences the running rotation', () => {
     config.imaging = { enabled: false, linerIntervalMin: 25 };
-    db.setQueueImmediate([track(1), track(2)]);
+    seedProgramme([track(1), track(2)]);
     imaging.startImaging();
     vi.advanceTimersByTime(60 * 60000);
     expect(synthesizeBackground).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-// The DJ orchestrator — composes one segment and applies it via QueueController.
+// The DJ orchestrator — composes one segment and lands it on the programme log.
 import { assemble } from './context.js';
 import { think } from './brain/index.js';
 import { buildObservation, executeSearchLoop } from './agent/loop.js';
@@ -12,8 +12,7 @@ import { judgeSay, rememberSaid } from './agent/judge.js';
 import { judgeLikeHuman } from './agent/judge-llm.js';
 import { consultTalkBudget, recordSpokenBreak } from './shows.js';
 import { db } from './store.js';
-import { queueController } from './runtime/queue-controller.js';
-import { clientSessionManager } from './runtime/client-session-manager.js';
+import { station } from './playout/station.js';
 import { eventBus } from './runtime/event-bus.js';
 
 const PRIORITY = { refill: 0, system: 1, feedback: 1, user: 2 };
@@ -51,12 +50,6 @@ function enqueueSegment(fn, priority) {
     jobQueue.push({ run: fn, priority, resolve, reject });
     pumpQueue();
   });
-}
-
-function freshPlayIndex(fallback = -1) {
-  const fresh = clientSessionManager.currentIndex(15000);
-  if (fresh >= 0) return fresh;
-  return fallback >= 0 ? fallback : -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -343,47 +336,38 @@ export async function composeSegment(trigger = {}) {
   };
 }
 
-function trackRef(track) {
-  if (!track) return null;
-  return { source: track.source, id: track.id, title: track.title, artist: track.artist };
-}
-
-function queueTtsPatch(seg, broadcast, playIdx) {
-  if (!seg.say || seg.ttsUrl) return;
-  const upcoming = playIdx >= 0
-    ? broadcast.queue?.[playIdx + 1]
-    : broadcast.queue?.[0];
-  const firstTrack = trackRef(upcoming);
+// Spoken lines are transient — the host talks over the bed NOW; only segues
+// attached to log items ride the timeline. A cached synthesis goes out with
+// the result; a cache miss synthesizes in the background and the 'say' event
+// carries the voice to every connected client when it lands.
+function deliverSay(base, seg) {
+  if (!seg.say) return;
+  if (seg.ttsUrl) {
+    eventBus.emit('say', { ts: base.ts, kind: base.kind, text: seg.say, ttsUrl: seg.ttsUrl });
+    return;
+  }
   synthesizeBackground(seg.say, (tts) => {
-    const ref = firstTrack || trackRef(broadcast.queue?.[playIdx + 1] || broadcast.queue?.[0]);
-    if (ref) queueController.patchSegueTts(ref, tts.url);
-    eventBus.emit('tts', {
-      ts: broadcast.ts,
-      kind: broadcast.kind,
-      mode: broadcast.mode,
-      ttsUrl: tts.url,
-      track: ref,
-    });
+    eventBus.emit('say', { ts: base.ts, kind: base.kind, text: seg.say, ttsUrl: tts.url });
   });
+  // No cached voice yet: push the text so every client can at least show it.
+  eventBus.emit('say', { ts: base.ts, kind: base.kind, text: seg.say, ttsUrl: null });
 }
 
-function revisionNow() {
-  return queueController.peekSnapshot().revision;
-}
-
-async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: playIdx = -1 } = {}, priority = PRIORITY.system) {
+async function runSegmentInner(trigger = {}, { mode = 'replace' } = {}, priority = PRIORITY.system) {
   try {
     if (priority < PRIORITY.user && pendingHighPriority > 0) {
-      return { error: 'superseded', revision: revisionNow() };
+      return { error: 'superseded' };
     }
     if (trigger.kind === 'chat' && trigger.text) db.addMessage('user', trigger.text, { kind: 'chat' });
 
     const seg = await composeSegment(trigger);
     if (priority < PRIORITY.user && pendingHighPriority > 0) {
-      return { error: 'superseded', revision: revisionNow() };
+      return { error: 'superseded' };
     }
 
-    let eff = mode;
+    // The old 'replace' mode (wipe the queue) maps to steer in the log world:
+    // aired history is immutable, the on-air item finishes, the future changes.
+    let eff = mode === 'replace' ? 'steer' : mode;
     let placement = 'next';
     if (mode === 'auto') {
       const wantsMusic = looksLikeMusicRequest(trigger.text);
@@ -401,7 +385,7 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       }
     }
 
-    if (['append', 'insert', 'replace'].includes(eff) && !seg.tracks.length) {
+    if (['append', 'insert'].includes(eff) && !seg.tracks.length) {
       const filled = await fillTracks(seg, trigger, seg.candidateTracks || []);
       if (filled.length) {
         seg.tracks = filled;
@@ -419,7 +403,6 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
         : '这会儿连不上，先陪你安静待一会儿。';
     }
 
-    const idxNow = freshPlayIndex(playIdx);
     const base = {
       ts: Date.now(),
       kind: trigger.kind || 'chat',
@@ -427,23 +410,26 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       segue: seg.segue,
       reason: seg.reason,
       talk: seg.talk,
-      revision: revisionNow(),
     };
-    let broadcast;
+    let result;
 
     if (eff === 'append') {
-      const { added } = queueController.append(seg.tracks);
-      broadcast = { ...base, mode: 'append', ttsUrl: null, queue: added, revision: revisionNow() };
+      // A refill's spoken line (if any) rides the first new item as its intro
+      // voice — pre-synthesized by the station before it airs, never late.
+      const voice = seg.say ? { text: seg.say, ttsUrl: seg.ttsUrl || null } : null;
+      const items = station.appendTracks(seg.tracks, { voice });
+      result = { ...base, op: 'append', ttsUrl: null, queue: items.map((it) => it.track) };
     } else if (eff === 'insert') {
-      const snap = queueController.peekSnapshot();
-      const at = placement === 'next' ? Math.max(0, idxNow + 1) : snap.queue.length;
-      const { added } = queueController.insert(seg.tracks, { at, dedupeAgainst: snap.queue });
+      const items = placement === 'next'
+        ? station.insertNextTracks(seg.tracks)
+        : station.appendTracks(seg.tracks);
+      const added = items.map((it) => it.track);
       // A non-urgent hotline request joined the show: remember the caller so
       // the host can acknowledge them at the next spoken break.
       if (trigger.kind === 'chat' && placement === 'append' && added.length) {
         recordShoutout(trigger.text, added);
       }
-      broadcast = { ...base, mode: 'insert', placement, ttsUrl: seg.ttsUrl, queue: added, revision: revisionNow() };
+      result = { ...base, op: 'insert', placement, ttsUrl: seg.ttsUrl, queue: added };
     } else if (eff === 'steer') {
       db.setStation({ mood: seg.mood || '', lastSteer: trigger.text || '' });
       let steerTracks = seg.tracks;
@@ -453,16 +439,13 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
           for (const t of steerTracks) t.url = await playbackUrl(t);
         } catch (e) { console.error('[dj] steer refill:', e.message); }
       }
-      const { snapshot } = queueController.steerAndAppend(idxNow, steerTracks);
-      broadcast = {
-        ...base, mode: 'steer', mood: seg.mood || '', ttsUrl: seg.ttsUrl,
-        queue: snapshot.queue, revision: snapshot.revision,
+      const items = station.steerTracks(steerTracks);
+      result = {
+        ...base, op: 'steer', mood: seg.mood || '', ttsUrl: seg.ttsUrl,
+        queue: items.map((it) => it.track),
       };
-    } else if (eff === 'chat') {
-      broadcast = { ...base, mode: 'chat', ttsUrl: seg.ttsUrl, queue: [], revision: revisionNow() };
     } else {
-      const { snapshot } = queueController.replace(seg.tracks);
-      broadcast = { ...base, mode: 'replace', ttsUrl: seg.ttsUrl, queue: snapshot.queue, revision: snapshot.revision };
+      result = { ...base, op: 'chat', ttsUrl: seg.ttsUrl, queue: [] };
     }
 
     if (seg.say && eff !== 'append') {
@@ -475,29 +458,28 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       // judge-silenced break falls outside this branch and keeps it pending;
       // a degraded fallback line never saw the prompt, so it doesn't count.
       if (seg.shoutout && !seg.degraded) consumeShoutout(seg.shoutout.ts);
+      deliverSay(base, seg);
     }
     if (trigger.kind === 'plan' && seg.mood) {
       db.setPlan({ date: new Date().toISOString().slice(0, 10), mood: seg.mood, note: seg.say || seg.reason });
     }
-    recordSegmentMemory(trigger, seg, broadcast);
-    eventBus.emit('broadcast', broadcast);
-    queueTtsPatch(seg, broadcast, idxNow);
-    return broadcast;
+    recordSegmentMemory(trigger, seg, result);
+    return result;
   } catch (e) {
     console.error('[dj] run failed:', e.message);
     const fail = {
       ts: Date.now(), error: e.message,
       say: '刚才卡了一下，再说一次？',
-      queue: [], revision: revisionNow(),
+      queue: [],
     };
-    eventBus.emit('broadcast', fail);
+    eventBus.emit('say', { ts: fail.ts, kind: trigger.kind || 'chat', text: fail.say, ttsUrl: null });
     return fail;
   }
 }
 
-function recordSegmentMemory(trigger, seg, broadcast) {
+function recordSegmentMemory(trigger, seg, result) {
   const buf = db.getPref('segmentMemory', []);
-  const tracks = (broadcast?.queue?.length ? broadcast.queue : seg.tracks || [])
+  const tracks = (result?.queue?.length ? result.queue : seg.tracks || [])
     .slice(0, 6)
     .map((t) => `${t.artist} — ${t.title}`);
   buf.push({
@@ -522,8 +504,4 @@ export async function runSegment(trigger = {}, opts = {}) {
   } finally {
     if (priority >= PRIORITY.user) pendingHighPriority--;
   }
-}
-
-export function run(trigger = {}) {
-  return runSegment(trigger, { mode: 'replace' });
 }

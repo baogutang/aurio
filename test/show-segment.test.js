@@ -32,7 +32,8 @@ vi.mock('../server/music/index.js', () => ({
   candidatesToText: () => '',
   recommend: async () => [],
   rankTracks: (tracks = []) => tracks,
-  dedupeTracks: (tracks = []) => tracks, // queue-controller passthrough
+  dedupeTracks: (tracks = []) => tracks,
+  lyricsFor: async () => '', // station → music/cue.js pulls this
 }));
 
 // Real store/shows/judge/dj against a temp data dir. The fixture show covers
@@ -53,6 +54,7 @@ const dj = await import('../server/dj.js');
 const shows = await import('../server/shows.js');
 const { _resetLedger } = await import('../server/agent/judge.js');
 const { db } = await import('../server/store.js');
+const { initStation, station } = await import('../server/playout/station.js');
 
 afterAll(() => {
   delete process.env.AURIO_DATA_DIR;
@@ -69,7 +71,8 @@ beforeEach(() => {
   _resetLedger();
   db.setPref(shows.TALK_LEDGER_KEY, []);
   db.setPref('segmentMemory', []);
-  db.setQueueImmediate([]);
+  db.setPref('programmeLog', null);
+  initStation(); // fresh programme log per test
   // These tests pin the RULE judge's call arithmetic; the LLM judge layer has
   // its own wiring test below and unit tests in judge-llm.test.js.
   process.env.AURIO_LLM_JUDGE = 'off';
@@ -144,13 +147,13 @@ describe('runSegment × airing', () => {
     { source: 'navidrome', id: 'u3', title: 'Mine 3', artist: 'Me' },
   ];
 
-  it('a show-open speaks without clobbering a user-curated queue', async () => {
-    db.setQueueImmediate(userQueue);
+  it('a show-open speaks without clobbering the programme log', async () => {
+    station.appendTracks(userQueue.map((t) => ({ ...t, duration: 240 })));
     think.mockResolvedValue(action('晚上好，交给我。'));
     const b = await dj.runSegment({ kind: 'show-open' }, { mode: 'chat' });
     expect(b.say).toBe('晚上好，交给我。');
-    expect(b.mode).toBe('chat');
-    expect(db.getQueue().map((t) => t.id)).toEqual(['u1', 'u2', 'u3']); // untouched
+    expect(b.op).toBe('chat');
+    expect(station.items().map((it) => it.track.id)).toEqual(['u1', 'u2', 'u3']); // untouched
     // The aired break spent the budget.
     expect(db.getPref(shows.TALK_LEDGER_KEY, [])).toHaveLength(1);
     expect(b.talk).toMatchObject({ allowed: true, show: '测试台' });

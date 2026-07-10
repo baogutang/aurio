@@ -368,6 +368,16 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     port = config.port;
     await startServer();
     serverStarted = true;
+    // OS resume (lid opened after an hour): resync the playout cursor to
+    // wherever the wall clock says it should be, instead of waiting for the
+    // suspended timer to fire late.
+    try {
+      const { powerMonitor } = await import('electron');
+      const { station } = await import('../server/playout/station.js');
+      powerMonitor.on('resume', () => station.wake());
+    } catch (e) {
+      console.error('[Aurio] powerMonitor wiring failed:', describeRuntimeError(e));
+    }
   } catch (e) {
     startupError = e;
     console.error('Failed to start Aurio server:', e);

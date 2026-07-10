@@ -1,6 +1,7 @@
 // Tiny JSON-backed state store. Personal-scale; swap for SQLite later if needed.
 // Holds: messages (DJ + user turns), plays (scrobble-ish history), plan (today),
-// prefs (key/value), queue (current playlist).
+// prefs (key/value — including the persisted programme log under
+// prefs.programmeLog, see server/playout/station.js).
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_ROOT } from './config.js';
@@ -13,8 +14,6 @@ const DEFAULT = {
   plays: [],    // { id, title, artist, source, ts }
   plan: null,   // { date, segments: [...] }
   prefs: {},    // arbitrary
-  queue: [],    // resolved tracks
-  queueRevision: 0,
 };
 
 let state = structuredClone(DEFAULT);
@@ -116,16 +115,6 @@ export const db = {
 
   setPlan(plan) { state.plan = plan; scheduleSave(); },
   getPlan() { return state.plan; },
-
-  setQueue(q) { state.queue = q; scheduleSave(); },
-  setQueueImmediate(q) { state.queue = q; scheduleSave(); },
-  getQueue() { return state.queue; },
-  getQueueRevision() { return Number(state.queueRevision) || 0; },
-  bumpQueueRevision() {
-    state.queueRevision = (Number(state.queueRevision) || 0) + 1;
-    scheduleSave();
-    return state.queueRevision;
-  },
 
   setPref(k, v) { state.prefs[k] = v; scheduleSave(); },
   getPref(k, d = null) { return k in state.prefs ? state.prefs[k] : d; },

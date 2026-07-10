@@ -1,5 +1,5 @@
 import { flushSave } from './store.js';
-import { stopRadio } from './radio.js';
+import { station } from './playout/station.js';
 import { stopScheduler } from './scheduler.js';
 import { drainDj } from './dj.js';
 
@@ -16,7 +16,7 @@ export async function stopServer({ timeoutMs = 8000 } = {}) {
   if (shuttingDown) return;
   shuttingDown = true;
   try {
-    stopRadio();
+    station.stop();
     stopScheduler();
     await drainDj(timeoutMs);
     flushSave();

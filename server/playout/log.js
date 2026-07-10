@@ -259,5 +259,24 @@ export function createProgrammeLog({ store = null, data = null } = {}) {
       if (!last) return 0;
       return Math.max(0, audibleEndOf(last) - t);
     },
+
+    /**
+     * Drop aired history beyond the most recent `keep` aired items, so the
+     * persisted log stays bounded across weeks of unattended playout. Never
+     * touches unaired items, and always keeps the newest aired item (the
+     * on-air anchor the chain retimes from).
+     */
+    pruneHistory({ keep = 40 } = {}) {
+      const airedIdx = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].airStart != null) airedIdx.push(i);
+      }
+      const excess = airedIdx.length - Math.max(1, keep);
+      if (excess <= 0) return 0;
+      const dropIds = new Set(airedIdx.slice(0, excess).map((i) => items[i].id));
+      items = items.filter((it) => !dropIds.has(it.id));
+      persist();
+      return dropIds.size;
+    },
   };
 }
