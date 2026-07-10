@@ -48,13 +48,32 @@ function buildFish(s) {
     apiBaseUrl: (s.FISH_API_BASE_URL || 'https://api.fish.audio').replace(/\/+$/, ''),
   };
 }
+// 豆包语音（火山引擎大模型语音合成）：情感中文音色的可选云端 provider。
+// Defaults target the late-night radio break — a warm 深夜播客 voice, slightly
+// slower than neutral — because the DJ speaks 1–2 short sentences between songs.
+function buildDoubao(s) {
+  const speed = Number(s.DOUBAO_TTS_SPEED);
+  return {
+    enabled: bool(s.DOUBAO_TTS_APPID) && bool(s.DOUBAO_TTS_TOKEN),
+    appid: s.DOUBAO_TTS_APPID || '',
+    token: s.DOUBAO_TTS_TOKEN || '',
+    cluster: s.DOUBAO_TTS_CLUSTER || 'volcano_tts',
+    voiceType: s.DOUBAO_TTS_VOICE_TYPE || 'zh_male_shenyeboke_emo_v2_mars_bigtts',
+    speed: Number.isFinite(speed) && speed > 0 ? speed : 0.9, // API 范围 0.8–2.0
+    emotion: s.DOUBAO_TTS_EMOTION || '', // 留空 = 音色本身的电台语气
+  };
+}
 function buildVoice(s) {
   const tencentReady = bool(s.TENCENT_SECRET_ID || s.TENCENTCLOUD_SECRET_ID)
     && bool(s.TENCENT_SECRET_KEY || s.TENCENTCLOUD_SECRET_KEY);
+  const doubaoReady = bool(s.DOUBAO_TTS_APPID) && bool(s.DOUBAO_TTS_TOKEN);
   const provider = s.VOICE_PROVIDER || s.TTS_PROVIDER || 'system';
   return {
     provider,
-    enabled: provider === 'system' || (provider === 'tencent' && tencentReady) || (provider === 'fish' && bool(s.FISH_API_KEY)),
+    enabled: provider === 'system'
+      || (provider === 'tencent' && tencentReady)
+      || (provider === 'fish' && bool(s.FISH_API_KEY))
+      || (provider === 'doubao' && doubaoReady),
     system: {
       voice: s.SYSTEM_TTS_VOICE || 'Tingting',
     },
@@ -155,6 +174,7 @@ export const config = {
   netease: buildNetease(process.env),
   qq: buildQQ(process.env),
   fish: buildFish(process.env),
+  doubao: buildDoubao(process.env),
   voice: buildVoice(process.env),
   weather: buildWeather(process.env),
   imaging: buildImaging(process.env),
@@ -171,6 +191,7 @@ export function applyOverrides(overrides = {}) {
   config.netease = buildNetease(s);
   config.qq = buildQQ(s);
   config.fish = buildFish(s);
+  config.doubao = buildDoubao(s);
   config.voice = buildVoice(s);
   config.weather = buildWeather(s);
   config.imaging = buildImaging(s);
@@ -186,6 +207,7 @@ export function summarize() {
     netease: config.netease.loggedIn,
     qqmusic: config.qq.enabled,
     fish: config.fish.enabled,
+    doubao: config.doubao.enabled,
     voice: config.voice.enabled,
     weather: config.weather.enabled,
     imaging: config.imaging.enabled,

@@ -1,6 +1,7 @@
 // Voice/TTS facade. Defaults to local macOS speech so Aurio can speak without
 // depending on Fish Audio's overseas endpoint. Tencent Cloud TTS is available
-// as a domestic cloud option; Fish remains as an explicit fallback provider.
+// as a domestic cloud option, 豆包语音 (Doubao) as the emotional radio-voice
+// option; Fish remains as an explicit fallback provider.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { config, DATA_ROOT } from '../config.js';
 import * as fish from './fish.js';
+import * as doubao from './doubao.js';
 
 const CACHE_DIR = path.join(DATA_ROOT, 'cache', 'tts');
 const DEFAULT_TTS_TEXT = '你好，我是 Aurio，你的私人电台主播。';
@@ -240,6 +242,7 @@ async function synthesizeTencent(text, cfg = voiceConfig()) {
 export function cachedSynthesis(text) {
   const cfg = voiceConfig();
   if (cfg.provider === 'fish') return fish.cachedSynthesis(text);
+  if (cfg.provider === 'doubao') return doubao.cachedSynthesis(text);
   return cachedLocal(text, cfg);
 }
 
@@ -248,6 +251,7 @@ export async function synthesize(text) {
   try {
     if (cfg.provider === 'tencent') return await synthesizeTencent(text, cfg);
     if (cfg.provider === 'fish') return await fish.synthesize(text);
+    if (cfg.provider === 'doubao') return await doubao.synthesize(text);
     return await synthesizeSystem(text, cfg);
   } catch (e) {
     console.error(`[tts:${cfg.provider}]`, e.message);
@@ -281,6 +285,16 @@ export async function testVoice(body = {}) {
   try {
     if (cfg.provider === 'fish') {
       return fish.testVoice({ apiKey: body.FISH_API_KEY, referenceId: body.FISH_REFERENCE_ID, text });
+    }
+    if (cfg.provider === 'doubao') {
+      return doubao.testVoice({
+        appid: body.DOUBAO_TTS_APPID,
+        token: body.DOUBAO_TTS_TOKEN,
+        voiceType: body.DOUBAO_TTS_VOICE_TYPE,
+        emotion: body.DOUBAO_TTS_EMOTION,
+        speed: body.DOUBAO_TTS_SPEED,
+        text,
+      });
     }
     const tts = cfg.provider === 'tencent'
       ? await synthesizeTencent(text, cfg)
