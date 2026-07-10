@@ -298,6 +298,30 @@ export function resumeMixer(): void {
   mixer.ac.resume().catch(() => {});
 }
 
+// --- master fade (sleep timer) ----------------------------------------------
+// The sleep timer dims THIS DEVICE only — the station keeps running. A linear
+// ramp on masterGain over the final window, then playback pauses locally and
+// the gain is restored so the next wake is audible. No mixer → no fade, the
+// timer still pauses (graceful).
+
+export function fadeMasterTo(target: number, seconds: number): void {
+  if (!mixer) return;
+  const p = mixer.masterGain.gain;
+  const now = mixer.ac.currentTime;
+  p.cancelScheduledValues(now);
+  p.setValueAtTime(p.value, now);
+  p.linearRampToValueAtTime(Math.max(0, target), now + Math.max(0.01, seconds));
+}
+
+/** Hard-set the master gain (cancels any in-flight sleep fade). */
+export function setMasterGain(value: number): void {
+  if (!mixer) return;
+  const p = mixer.masterGain.gain;
+  const now = mixer.ac.currentTime;
+  p.cancelScheduledValues(now);
+  p.setValueAtTime(Math.max(0, value), now);
+}
+
 // --- UI sounds (retune) ------------------------------------------------------
 // A dedicated small gain straight into masterGain: UI sounds must not ride the
 // voice booth chain (the compressor would pump under them) and must not sit on

@@ -38,6 +38,10 @@ export interface ProgrammeSnapshot {
   offsetMs: number;
   ending: (ProgrammeItem & { offsetMs: number }) | null;
   upNext: ProgrammeItem[];
+  /** Optional (newer servers): honest count of fresh-heartbeat listeners, self included. */
+  listeners?: number;
+  /** Optional (newer servers): ms epoch when the current station uptime started. */
+  stationStartedAt?: number;
 }
 
 export interface SayEvent {

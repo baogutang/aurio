@@ -1,13 +1,4 @@
 import { motion } from 'framer-motion';
-import { usePreferences } from '../context/PreferencesContext';
-
-interface Props {
-  time: string;
-  weekday: string;
-  dateLine: string;
-  airLabel: string;
-  live: boolean;
-}
 
 /* 5×7 dot-matrix font — rounded, hardware-LED style (clean '0'). */
 const GLYPHS: Record<string, string[]> = {
@@ -55,37 +46,20 @@ function Colon({ still }: { still: boolean }) {
   );
 }
 
-/** LED dot-matrix hardware clock — each digit is a real 5×7 grid of dots. */
-export default function DotMatrixClock({ time, weekday, dateLine, airLabel, live }: Props) {
-  const { reducedMotion } = usePreferences();
+/**
+ * The LED dot-matrix time row — each digit a real 5×7 grid of dots. Kept as
+ * the ONE clock face of the product (RADIO_AUDIT: five clocks → one); it now
+ * lives at the center of the hot clock's dial (HotClock.tsx).
+ */
+export function MatrixTime({ time, still }: { time: string; still: boolean }) {
   const safe = /^\d{2}:\d{2}$/.test(time) ? time : '--:--';
   const [hh, mm] = safe.split(':');
-
   return (
-    <div className="matrix-display">
-      <div className="matrix-time-row" aria-label={time}>
-        <div className="matrix-grid">
-          {hh.split('').map((d, i) => <Digit key={`h${i}`} char={d} />)}
-          <Colon still={reducedMotion} />
-          {mm.split('').map((d, i) => <Digit key={`m${i}`} char={d} />)}
-        </div>
-      </div>
-
-      <p className="matrix-weekday">{weekday}</p>
-      <p className="matrix-date">{dateLine}</p>
-
-      <div className="matrix-status">
-        <motion.span
-          className="matrix-live-dot"
-          style={{ background: live ? 'rgb(var(--hi-rgb))' : 'var(--text-muted)' }}
-          animate={live && !reducedMotion
-            ? { opacity: [1, 0.45, 1], scale: [1, 1.15, 1] }
-            : { opacity: live ? 1 : 0.35 }}
-          transition={live && !reducedMotion
-            ? { duration: 2.2, repeat: Infinity, ease: 'easeInOut' }
-            : { duration: 0 }}
-        />
-        <span className="matrix-status-text">{airLabel}</span>
+    <div className="matrix-time-row" aria-label={time}>
+      <div className="matrix-grid">
+        {hh.split('').map((d, i) => <Digit key={`h${i}`} char={d} />)}
+        <Colon still={still} />
+        {mm.split('').map((d, i) => <Digit key={`m${i}`} char={d} />)}
       </div>
     </div>
   );

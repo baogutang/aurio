@@ -2,11 +2,13 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MainCard from './components/MainCard';
 import ChatSheet from './components/ChatSheet';
+import TapeSheet from './components/TapeSheet';
 import SettingsModal from './components/SettingsModal';
 import Onboarding, { type OnboardGroup } from './components/Onboarding';
 import WidgetShell from './components/WidgetShell';
 import StatusStrip from './components/StatusStrip';
 import PressButton from './components/PressButton';
+import SleepTimerButton from './components/SleepTimerButton';
 import PixelPet, { type PetState } from './components/PixelPet';
 import HeaderWeather from './components/HeaderWeather';
 import { IconChat, IconSettings, IconNext, IconPlay, IconPause, IconHeart, IconDislike } from './components/icons';
@@ -27,7 +29,9 @@ import {
   gainFactorOf, crossfadeSecOf, audibleEndOf, startOf,
   type ProgrammeItem, type ProgrammeSnapshot, type SayEvent,
 } from './lib/programme';
-import { tuneStation, type StationMood } from './lib/station';
+import { tapePlayUrl, nextPlayable, tapeDisplayTrack, type TapeItem } from './lib/tape';
+import { airPositionMs, formatWallClock, fillTemplate } from './lib/live';
+import { tuneStation, CALL_SIGN, type StationMood } from './lib/station';
 import { useI18n, usePreferences } from './context/PreferencesContext';
 import type { Track, SegmentResult, ChatMsg } from './lib/types';
 
@@ -97,6 +101,12 @@ export default function App() {
   const playedSayRef = useRef<Set<string>>(new Set());
   const skipPendingRef = useRef(false);
   const deadAirTimerRef = useRef<number | undefined>(undefined);
+  // --- 磁带 (time-shift): while true the player is OFF the live edge and no
+  // programme push may touch the media. LIVE stays the default; 「回到直播」
+  // (and the play button from a stop) is always one tap away.
+  const tapeModeRef = useRef(false);
+  const tapeItemRef = useRef<TapeItem | null>(null);
+  const tapeItemsRef = useRef<TapeItem[]>([]);
 
   const [current, setCurrent] = useState<Track | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -130,6 +140,19 @@ export default function App() {
   const [steerMood, setSteerMood] = useState<StationMood | null>(null);
   const [upNext, setUpNext] = useState<Track[]>([]);
   const [programmeTotal, setProgrammeTotal] = useState(0);
+  // The raw programme slice, mirrored into state for the hot clock's arcs.
+  const [programmeItems, setProgrammeItems] = useState<ProgrammeItem[]>([]);
+  // 直播感: honest listener count and station sign-on time (newer servers).
+  const [listeners, setListeners] = useState(0);
+  const [stationStartedAt, setStationStartedAt] = useState<number | null>(null);
+  // hh:mm:ss wall clock of the broadcast position (the LIVE timeline).
+  const [airClock, setAirClock] = useState<string | null>(null);
+  // 磁带 UI state (mirrors tapeModeRef / tapeItemRef for rendering).
+  const [tapeMode, setTapeMode] = useState(false);
+  const [tapeItem, setTapeItem] = useState<TapeItem | null>(null);
+  const [tapeOpen, setTapeOpen] = useState(false);
+  // Pending hotline ledger size (shown as a quiet line in the chat sheet).
+  const [hotlinePending, setHotlinePending] = useState(0);
   // 0..1 fraction of the say text revealed while the DJ voice plays (null = whole).
   const [sayReveal, setSayReveal] = useState<number | null>(null);
   const revealRafRef = useRef(0);
@@ -167,6 +190,7 @@ export default function App() {
     const { items } = programmeRef.current;
     setUpNext(upNextTracks(items, playingItemIdRef.current));
     setProgrammeTotal(items.length);
+    setProgrammeItems(items);
   }, []);
 
   const reportState = useCallback(() => {
@@ -540,7 +564,17 @@ export default function App() {
       items: itemsFrom(snap),
       skewMs: skewFrom(snap, Date.now()),
     };
+    // Station meta rides every snapshot on newer servers; absent = hidden.
+    if (typeof snap.listeners === 'number') setListeners(snap.listeners);
+    if (Number.isFinite(snap.stationStartedAt)) setStationStartedAt(snap.stationStartedAt as number);
     clearDeadAirTimer();
+
+    if (tapeModeRef.current) {
+      // Time-shifted: the timeline keeps mirroring the station, but nothing
+      // may yank the tape playback. The display shows the tape item.
+      refreshUpNext();
+      return;
+    }
     const cur = snap.current;
 
     if (!cur) {
@@ -637,7 +671,9 @@ export default function App() {
     } else if (text && !s.ts) {
       setSay(text);
     }
-    if (s.ttsUrl) {
+    // While time-shifted the live DJ does not talk over your tape — the text
+    // still lands in the chat log, the voice stays on the live edge.
+    if (s.ttsUrl && !tapeModeRef.current) {
       const key = `${s.ts ?? 0}:${s.ttsUrl}`;
       if (!playedSayRef.current.has(key)) {
         playedSayRef.current.add(key);
@@ -706,10 +742,86 @@ export default function App() {
     }
   }, []);
 
-  const next = () => {
-    if (current) emitPlaybackEvent('skipped', current);
-    void requestSkip();
-  };
+  /**
+   * 磁带回放 — play one aired item LOCALLY through the normal A/B music
+   * element path. The station keeps broadcasting: entering tape mode only
+   * flips this device off the live edge (programme pushes stop touching the
+   * media until 「回到直播」).
+   */
+  const playTape = useCallback((item: TapeItem) => {
+    const url = tapePlayUrl(item);
+    if (!url) return;
+    primeAudio();
+    clearPlaybackRecovery();
+    clearDeadAirTimer();
+    cancelSegueRef.current?.();
+    // Silence a transient live DJ line — you are listening to the tape now.
+    try { ttsRef.current?.pause(); } catch { /* noop */ }
+    stopSayReveal();
+    playTokenRef.current += 1;
+    tapeModeRef.current = true;
+    setTapeMode(true);
+    tapeItemRef.current = item;
+    setTapeItem(item);
+    userPausedRef.current = false;
+    playingItemIdRef.current = null;
+    prefetchRef.current = null;
+    scrobbled.current = true; // a rewind is not a fresh listen — never scrobble
+
+    const tr = tapeDisplayTrack(item, t('tapeVoiceLabel'), CALL_SIGN);
+    setCurrent(tr);
+    refreshUpNext();
+    if (tr.segue) setSay(tr.segue); // the DJ's actual spoken line, from the log
+
+    if (!getMixer()) {
+      const a = audioRef.current;
+      if (!a) return;
+      a.src = url;
+      resumeMixer();
+      unduck(a);
+      a.play().then(() => reportStateRef.current()).catch(() => {
+        setPlaying(false);
+        setSay(t('sayTapPlay'));
+        reportStateRef.current();
+      });
+      return;
+    }
+
+    const outCh = activeChRef.current;
+    const inCh: MusicChannel = outCh === 0 ? 1 : 0;
+    finalizePendingRetire();
+    const outgoing = musicElsRef.current[outCh];
+    const incoming = musicElsRef.current[inCh];
+    if (!incoming) return;
+    incoming.preload = 'auto';
+    incoming.src = url;
+    const outLive = !!(outgoing && outgoing.getAttribute('src') && !outgoing.paused && !outgoing.ended);
+    activeChRef.current = inCh;
+    audioRef.current = incoming;
+    setActiveElVer((v) => v + 1);
+    segueActiveRef.current = false;
+    setSegueActive(false);
+    resumeMixer();
+    unduck(incoming);
+    setMusicChannelGain(inCh, 1);
+    if (outLive && outgoing) {
+      fadeOutMusic(outCh, MANUAL_FADE_SEC);
+      pendingRetireRef.current = {
+        ch: outCh,
+        timer: window.setTimeout(() => {
+          pendingRetireRef.current = null;
+          retireChannel(outCh);
+        }, MANUAL_FADE_SEC * 1000 + 150),
+      };
+    } else {
+      retireChannel(outCh);
+    }
+    incoming.play().then(() => reportStateRef.current()).catch(() => {
+      setPlaying(false);
+      setSay(t('sayTapPlay'));
+      reportStateRef.current();
+    });
+  }, [t, unduck, retireChannel, finalizePendingRetire, primeAudio, refreshUpNext, stopSayReveal]);
 
   const pauseLocal = () => {
     userPausedRef.current = true;
@@ -733,10 +845,50 @@ export default function App() {
     }).catch(() => {});
   };
 
+  // 回到直播 — the one exit from the tape, back to the join flow.
+  const backToLive = () => {
+    tapeModeRef.current = false;
+    setTapeMode(false);
+    tapeItemRef.current = null;
+    setTapeItem(null);
+    setTapeOpen(false);
+    setAirClock(null);
+    rejoinLive();
+  };
+
+  // The tape runs forward through history; at its end you land on live.
+  const advanceTape = () => {
+    const nxt = nextPlayable(tapeItemsRef.current, tapeItemRef.current?.id ?? null);
+    if (nxt) playTape(nxt);
+    else backToLive();
+  };
+
+  const next = () => {
+    if (tapeModeRef.current) {
+      advanceTape();
+      return;
+    }
+    if (current) emitPlaybackEvent('skipped', current);
+    void requestSkip();
+  };
+
+  // From a stop: resume the tape in place if time-shifted (leaving the tape
+  // is an explicit act), otherwise rejoin the live edge.
+  const resumePlayback = () => {
+    if (tapeModeRef.current) {
+      userPausedRef.current = false;
+      primeAudio();
+      resumeMixer();
+      audioRef.current?.play().catch(() => {});
+      return;
+    }
+    rejoinLive();
+  };
+
   const toggle = () => {
     const a = audioRef.current;
     if (a && !a.paused) pauseLocal();
-    else rejoinLive();
+    else resumePlayback();
   };
 
   const onAudioError = (el: HTMLAudioElement) => {
@@ -748,6 +900,11 @@ export default function App() {
     }
     clearPlaybackRecovery();
     setPlaying(false);
+    if (tapeModeRef.current) {
+      // A dead tape entry is local business — run the tape forward.
+      advanceTape();
+      return;
+    }
     // The media is unplayable: ask the station to move on. The log records an
     // honest short airing and every listener advances together.
     setSay(t('sayTrackFailNext'));
@@ -809,6 +966,7 @@ export default function App() {
             reportStateRef.current();
           }
           if (m.type === 'programme') applyProgrammeRef.current(m as ProgrammeSnapshot);
+          if (m.type === 'listeners' && typeof m.listeners === 'number') setListeners(m.listeners);
           if (m.type === 'say') applySayRef.current(m as SayEvent);
           if (m.type === 'profile') {
             window.dispatchEvent(new CustomEvent('aurio:profile-progress', { detail: m }));
@@ -847,7 +1005,7 @@ export default function App() {
       artwork,
     });
     navigator.mediaSession.playbackState = playing || segueActive ? 'playing' : 'paused';
-    navigator.mediaSession.setActionHandler('play', () => rejoinLive());
+    navigator.mediaSession.setActionHandler('play', () => resumePlayback());
     navigator.mediaSession.setActionHandler('pause', () => pauseLocal());
     // prev is gone: radio does not rewind (the tape feature will, later).
     navigator.mediaSession.setActionHandler('previoustrack', null);
@@ -960,6 +1118,18 @@ export default function App() {
     setCur(fmt(a.currentTime));
     setDur(fmt(a.duration));
     setProgress(a.duration ? (a.currentTime / a.duration) * 100 : 0);
+
+    // The LIVE timeline: the wall clock of what you are HEARING. Live it
+    // tracks now; paused it freezes; on tape it is the original air time.
+    if (tapeModeRef.current) {
+      const it = tapeItemRef.current;
+      setAirClock(it ? formatWallClock(airPositionMs(it.airStart, 0, a.currentTime)) : null);
+    } else {
+      const cur_ = programmeRef.current.items.find((x) => x.id === playingItemIdRef.current);
+      const s = cur_ ? startOf(cur_) : null;
+      setAirClock(cur_ && s != null ? formatWallClock(airPositionMs(s, cur_.cueIn, a.currentTime)) : null);
+    }
+
     if (!scrobbled.current && a.currentTime > 20 && current) {
       scrobbled.current = true;
       api.played({
@@ -974,8 +1144,8 @@ export default function App() {
     // Schedule-driven handoff: the timeline says when the next item starts
     // (the crossfade is IN the schedule — scheduledStart is the previous
     // item's segue point). Prefetch into the standby element as the boundary
-    // approaches, then hand off exactly at it.
-    if (a.paused || userPausedRef.current) return;
+    // approaches, then hand off exactly at it. Never while time-shifted.
+    if (a.paused || userPausedRef.current || tapeModeRef.current) return;
     const { items } = programmeRef.current;
     const playingId = playingItemIdRef.current;
     const idx = items.findIndex((it) => it.id === playingId);
@@ -1012,6 +1182,13 @@ export default function App() {
   // events) and the standby prefetch never disturb playback state.
   const onMusicEnded = (el: HTMLAudioElement) => {
     if (el !== audioRef.current) return;
+    if (tapeModeRef.current) {
+      // The tape keeps rolling forward through history; at the end of the
+      // record it lands back on the live edge. No playback events — a rewind
+      // is not a fresh listen.
+      advanceTape();
+      return;
+    }
     const { items } = programmeRef.current;
     const it = items.find((x) => x.id === playingItemIdRef.current);
     const t_ = serverNow();
@@ -1103,6 +1280,17 @@ export default function App() {
       setHotlineNotice(false);
     }
   }, [chatOpen, cancelChatAutoClose]);
+
+  // The pending hotline ledger (点歌记账) — a quiet line in the chat sheet.
+  // Servers without /api/hotline simply never show it.
+  useEffect(() => {
+    if (!chatOpen) return;
+    let stop = false;
+    api.hotline()
+      .then((r) => { if (!stop) setHotlinePending(Array.isArray(r?.pending) ? r.pending.length : 0); })
+      .catch(() => { if (!stop) setHotlinePending(0); });
+    return () => { stop = true; };
+  }, [chatOpen, hotlineNotice]);
   useEffect(() => cancelChatAutoClose, [cancelChatAutoClose]);
 
   const send = async (text: string) => {
@@ -1266,6 +1454,8 @@ export default function App() {
           queueTotal={programmeTotal}
           queueRemaining={upNext.length}
           station={station}
+          listeners={listeners}
+          tapeMode={tapeMode}
           onCycleSource={cycleSource}
         />
       </motion.div>
@@ -1284,6 +1474,13 @@ export default function App() {
           conn={conn}
           audioRef={mainCardAudioRef}
           upNext={upNext}
+          programme={programmeItems}
+          serverNow={serverNow}
+          airClock={airClock}
+          stationStartedAt={stationStartedAt}
+          tapeMode={tapeMode}
+          onOpenTape={() => setTapeOpen(true)}
+          onBackToLive={backToLive}
           onSteer={steer}
           onTrigger={trig}
           onResume={rejoinLive}
@@ -1301,6 +1498,13 @@ export default function App() {
       )}
 
       <motion.div {...stagger(3)} className="transport-row shrink-0">
+        <SleepTimerButton
+          onSleep={pauseLocal}
+          onHint={(text) => {
+            setFeedbackHint(text);
+            window.setTimeout(() => setFeedbackHint(''), 3000);
+          }}
+        />
         <div className="transport-cluster">
           <PressButton
             variant="ghost"
@@ -1337,7 +1541,10 @@ export default function App() {
           </PressButton>
           <PressButton variant="ghost" ariaLabel={t('ariaDislike')} onClick={() => {
             emitPlaybackEvent('dislike', current);
-            void requestSkip();
+            // A dislike on the tape is honest taste data, but the skip is
+            // local — only a LIVE dislike moves the station's log.
+            if (tapeModeRef.current) advanceTape();
+            else void requestSkip();
           }} disabled={controlsDisabled || !current}>
             <span className="transport-glyph"><IconDislike /></span>
           </PressButton>
@@ -1404,8 +1611,24 @@ export default function App() {
       busy={conn === 'busy'}
       onGoAir={() => trig('station')}
       isObserver={false}
-      notice={hotlineNotice ? t('hotlineAccepted') : null}
+      notice={hotlineNotice
+        ? t('hotlineAccepted')
+        : hotlinePending > 0
+          ? fillTemplate(t('hotlinePendingLine'), { n: hotlinePending })
+          : null}
       onInputActivity={() => { chatActivityRef.current += 1; cancelChatAutoClose(); }}
+    />
+    <TapeSheet
+      open={tapeOpen}
+      onClose={() => setTapeOpen(false)}
+      tapeMode={tapeMode}
+      activeId={tapeItem?.id ?? null}
+      onPlay={(item, items) => {
+        tapeItemsRef.current = items;
+        setTapeOpen(false);
+        playTape(item);
+      }}
+      onBackToLive={backToLive}
     />
     <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} currentTrack={current} initialGroup={settingsGroup} />
     <Onboarding

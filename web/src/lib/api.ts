@@ -99,6 +99,11 @@ export const api = {
   programme: (upNext = 5): Promise<{ ok: boolean } & ProgrammeSnapshot> =>
     get('/api/programme?upNext=' + encodeURIComponent(upNext)),
   skip: (): Promise<{ ok: boolean } & ProgrammeSnapshot> => post('/api/skip', {}),
+  // Aired history (磁带). Servers without the endpoint 404 — callers treat any
+  // failure as "tape deck offline" and degrade to an honest empty state.
+  tape: (hours = 6): Promise<unknown> => get('/api/tape?hours=' + encodeURIComponent(hours)),
+  hotline: (): Promise<{ ok: boolean; pending: { text: string; tracks?: unknown[]; ts: number }[] }> =>
+    get('/api/hotline'),
   testNavidrome: (b: { url: string; user: string; pass?: string }): Promise<{ ok: boolean; detail: string }> =>
     post('/api/settings/test-navidrome', b),
   testQQ: (b: Record<string, string>): Promise<TestResult> => post('/api/settings/test-qq', b),

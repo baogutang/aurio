@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useI18n, usePreferences } from '../context/PreferencesContext';
 import { labelForSource, availableSourceModes, hintForSources, type MusicSourceMode, type MusicServices } from '../lib/musicSource';
 import { spring } from '../lib/motion';
+import { fillTemplate } from '../lib/live';
 import type { StationTuning } from '../lib/station';
 
 export interface StatusStripProps {
@@ -13,6 +14,10 @@ export interface StatusStripProps {
   queueTotal: number;
   queueRemaining: number;
   station: StationTuning;
+  /** Honest listener count (self included); shown only when > 1. */
+  listeners?: number;
+  /** Time-shifted: the tuning line dims — this device is off the live dial. */
+  tapeMode?: boolean;
   onCycleSource?: () => void;
 }
 
@@ -32,10 +37,10 @@ function Dot({ live }: { live: boolean }) {
 // The station line: `AURIO 88.7 FM`. The frequency digits slide like a dial
 // when the tuning changes (a real user action drives every change); under
 // reduced motion the number swaps in place.
-function StationLine({ station }: { station: StationTuning }) {
+function StationLine({ station, dimmed }: { station: StationTuning; dimmed?: boolean }) {
   const { reducedMotion } = usePreferences();
   return (
-    <div className="station-line" aria-label={`${station.line} FM`}>
+    <div className={`station-line${dimmed ? ' is-tape' : ''}`} aria-label={`${station.line} FM`}>
       <span className="station-call">AURIO</span>
       <span className="station-freq-window">
         {reducedMotion ? (
@@ -61,7 +66,8 @@ function StationLine({ station }: { station: StationTuning }) {
 }
 
 export default function StatusStrip({
-  conn, playing, hasTrack, services, musicSource, queueTotal, queueRemaining, station, onCycleSource,
+  conn, playing, hasTrack, services, musicSource, queueTotal, queueRemaining, station,
+  listeners = 0, tapeMode = false, onCycleSource,
 }: StatusStripProps) {
   const { t } = useI18n();
 
@@ -72,7 +78,9 @@ export default function StatusStrip({
 
   let airValue = t('connOff');
   let airLive = false;
-  if (conn === 'busy') {
+  if (tapeMode) {
+    airValue = t('tapeMode');
+  } else if (conn === 'busy') {
     airValue = t('statusArranging');
   } else if (conn === '') {
     airValue = t('connOff');
@@ -120,7 +128,15 @@ export default function StatusStrip({
 
   return (
     <div>
-      <StationLine station={station} />
+      <div className="flex items-baseline justify-between">
+        <StationLine station={station} dimmed={tapeMode} />
+        {/* Honest 听众数 — only when another device really is tuned in. */}
+        {listeners > 1 && (
+          <span className="font-mono text-[9px] text-[var(--text-muted)] tracking-[0.08em] pr-1 pb-1.5 shrink-0">
+            {fillTemplate(t('listenersLine'), { n: listeners })}
+          </span>
+        )}
+      </div>
       <div className="status-strip">
         {items.map((item, i) => {
           const Tag = item.clickable ? 'button' : 'div';

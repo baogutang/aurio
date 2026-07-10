@@ -236,6 +236,55 @@ html[data-electron][data-platform="darwin"] .widget-drag {
   background: var(--matrix-fg);
 }
 
+/* ── 播出钟 (hot clock) — the standby centerpiece ── */
+.hot-clock-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 1rem 0.9rem;
+}
+
+.hot-clock {
+  position: relative;
+  width: clamp(208px, 60vw, 252px);
+  aspect-ratio: 1;
+}
+
+.hot-clock-dial {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hot-clock-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* Smaller LED dots so HH:MM fits inside the dial's inner circle. */
+.hot-clock-center .matrix-grid {
+  --md: clamp(3.2px, 1vw, 4.2px);
+}
+
+.hot-clock-center .matrix-time-row {
+  min-height: 0;
+}
+
+.hot-clock-rewind {
+  margin-top: 0.7rem;
+  font-size: 0.56rem;
+}
+
+@keyframes hotClockAir {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 .matrix-weekday {
   margin: 0.85rem 0 0.2rem;
   font-size: 0.8rem;
@@ -548,6 +597,50 @@ html[data-electron][data-platform="darwin"] .widget-drag {
 .main-card--clock {
   padding-right: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.clock-card-scroll {
+  flex: 1;
+  min-height: 0;
+  padding-right: 0.12rem;
+}
+
+/* ── 磁带 (tape) rows ── */
+.tape-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--inset-bg);
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.tape-row:not(:disabled):hover {
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+
+.tape-row-time {
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+.tape-row-say {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* While time-shifted the tuning line dims — you are off the live dial. */
+.station-line.is-tape {
+  opacity: 0.4;
 }
 
 .play-card-scroll {

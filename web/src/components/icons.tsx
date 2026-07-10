@@ -139,6 +139,16 @@ export function IconDislike({ className, size }: IconProps) {
   );
 }
 
+/** Sleep timer: a crescent — same single stroke weight as the transport row. */
+export function IconMoon({ className, size }: IconProps) {
+  const dim = size ?? TRANSPORT_GHOST_SIZE;
+  return (
+    <svg className={className} width={dim} height={dim} viewBox="0 0 24 24" aria-hidden>
+      <path d="M20 13.5A8.5 8.5 0 0 1 10.5 4 8.5 8.5 0 1 0 20 13.5z" {...strokeProps} />
+    </svg>
+  );
+}
+
 export function IconClose({ className, size = 20 }: IconProps) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

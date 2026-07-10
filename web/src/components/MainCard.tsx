@@ -1,14 +1,16 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import DotMatrixClock from './DotMatrixClock';
+import HotClock from './HotClock';
 import Spectrum from './Spectrum';
 import Lyrics from './Lyrics';
 import UpNext from './UpNext';
 import { renderSay } from '../lib/highlight';
 import { spring } from '../lib/motion';
+import { uptimeParts, fillTemplate } from '../lib/live';
 import { usePreferences } from '../context/PreferencesContext';
 import type { NowDisplay } from '../lib/dateFormat';
 import type { Track } from '../lib/types';
 import type { StationMood } from '../lib/station';
+import type { ProgrammeItem } from '../lib/programme';
 
 interface Props {
   track: Track | null;
@@ -25,6 +27,18 @@ interface Props {
   audioRef: React.RefObject<HTMLAudioElement>;
   /** The station's upcoming programme — read-only (the timeline is server-side). */
   upNext?: Track[];
+  /** The raw programme slice for the hot clock's forward arcs. */
+  programme?: ProgrammeItem[];
+  /** Station wall clock (Date.now() + skew). */
+  serverNow?: () => number;
+  /** hh:mm:ss wall-clock of the broadcast position; null falls back to media time. */
+  airClock?: string | null;
+  /** ms epoch of station sign-on (newer servers); null hides the uptime line. */
+  stationStartedAt?: number | null;
+  /** True while the player is time-shifted onto the tape. */
+  tapeMode?: boolean;
+  onOpenTape?: () => void;
+  onBackToLive?: () => void;
   onSteer?: (text: string, mood: StationMood) => void;
   onTrigger?: (kind: string) => void;
   onResume?: () => void;
@@ -36,14 +50,18 @@ interface Props {
 
 export default function MainCard({
   track, progress, cur, dur, say, sayReveal = null, now, playing, talking = false,
-  conn, audioRef, upNext = [],
+  conn, audioRef, upNext = [], programme = [], serverNow,
+  airClock = null, stationStartedAt = null, tapeMode = false, onOpenTape, onBackToLive,
   onSteer, onTrigger, onResume, controlsDisabled = false,
   tasteLine = '', planNote = '', queueTotal = 0,
 }: Props) {
   const { tr: t, resolved, reducedMotion } = usePreferences();
   const sayTheme = resolved === 'light' ? 'card' : 'dark';
-  const live = conn === 'on' || conn === 'busy';
-  const airLabel = conn === 'on' ? t('onAir') : conn === 'busy' ? t('busy') : t('standby');
+  const airLabel = tapeMode
+    ? t('tapeMode')
+    : conn === 'on' ? t('onAir') : conn === 'busy' ? t('busy') : t('standby');
+  const stationNow = serverNow ?? Date.now;
+  const uptime = !tapeMode ? uptimeParts(stationStartedAt, stationNow()) : null;
   const sourceLabel = track?.source === 'navidrome'
     ? t('sourceNas')
     : track?.source === 'qqmusic'
@@ -88,8 +106,35 @@ export default function MainCard({
             <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
               {sourceLabel}
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-[rgb(var(--hi-rgb))]">
-              {airLabel}
+            <span className="flex items-center gap-2">
+              {!tapeMode && onOpenTape && (
+                <button
+                  type="button"
+                  className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  onClick={onOpenTape}
+                  aria-label={t('tapeTitle')}
+                >
+                  ◂◂ {t('tapeRewind')}
+                </button>
+              )}
+              {tapeMode && onOpenTape ? (
+                <button
+                  type="button"
+                  className="font-mono text-[9px] uppercase tracking-[0.2em]"
+                  style={{ color: 'rgb(var(--accent-rgb))' }}
+                  onClick={onOpenTape}
+                  aria-label={t('tapeTitle')}
+                >
+                  ◂◂ {airLabel}
+                </button>
+              ) : (
+                <span
+                  className="font-mono text-[9px] uppercase tracking-[0.2em]"
+                  style={{ color: 'rgb(var(--hi-rgb))' }}
+                >
+                  {airLabel}
+                </span>
+              )}
             </span>
           </div>
 
@@ -122,14 +167,33 @@ export default function MainCard({
 
             <div className="mt-3">
               {/* LIVE: the bar shows where the broadcast is — it is not a
-                  scrubber. The station's clock cannot be dragged. */}
+                  scrubber. The station's clock cannot be dragged. The left
+                  time is the wall clock of what you are HEARING: live it is
+                  now, paused it freezes, on tape it is the original air time. */}
               <div className="progress-track" role="progressbar" aria-valuenow={progress}>
                 <div className="progress-fill" style={{ width: `${progress}%` }} />
               </div>
               <div className="flex justify-between mt-1.5 font-mono text-[10px] text-[var(--text-muted)] tabular-nums">
-                <span>{cur}</span>
+                <span style={tapeMode ? { color: 'rgb(var(--accent-rgb))' } : undefined}>
+                  {airClock ?? cur}
+                </span>
                 <span>{dur}</span>
               </div>
+              {!tapeMode && uptime && (
+                <p className="mt-1 font-mono text-[9px] text-[var(--text-muted)] tracking-[0.08em]">
+                  {fillTemplate(t('uptimeLine'), { h: uptime.hours, m: uptime.minutes })}
+                </p>
+              )}
+              {tapeMode && onBackToLive && (
+                <button
+                  type="button"
+                  className="mt-2 w-full rounded-xl py-2 text-[12px] font-medium"
+                  style={{ background: 'rgba(var(--hi-rgb), 0.14)', color: 'rgb(var(--hi-rgb))' }}
+                  onClick={onBackToLive}
+                >
+                  ● {t('backToLive')}
+                </button>
+              )}
             </div>
 
             <div className="mt-2.5">
@@ -165,12 +229,16 @@ export default function MainCard({
           transition={spring.gentle}
           className="main-card main-card--clock"
         >
-          <DotMatrixClock
+          <div className="clock-card-scroll scroll-panel">
+          <HotClock
             time={now.time}
             weekday={now.weekday}
             dateLine={now.dateLine}
             airLabel={airLabel}
-            live={live && conn === 'on'}
+            live={conn === 'on'}
+            serverNow={stationNow}
+            programme={programme}
+            onOpenTape={onOpenTape}
           />
 
           <div className="panel-dot p-3.5 mt-2.5">
@@ -195,6 +263,7 @@ export default function MainCard({
                 {queueTotal > 0 ? t('resumePlay') : t('goOnAir')}
               </button>
             )}
+          </div>
           </div>
         </motion.div>
       )}

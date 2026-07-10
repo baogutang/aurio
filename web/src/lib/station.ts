@@ -16,7 +16,7 @@ export interface StationTuning {
   line: string;
 }
 
-const CALL_SIGN = 'AURIO';
+export const CALL_SIGN = 'AURIO';
 
 // Base frequency per music source — each source is its own band on the dial.
 const SOURCE_FREQ: Record<MusicSourceMode, number> = {
