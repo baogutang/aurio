@@ -1,6 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import ClockDisplay from './ClockDisplay';
-import BootLog from './BootLog';
+import DotMatrixClock from './DotMatrixClock';
 import Spectrum from './Spectrum';
 import Lyrics from './Lyrics';
 import UpNext from './UpNext';
@@ -9,7 +8,7 @@ import { spring } from '../lib/motion';
 import { usePreferences } from '../context/PreferencesContext';
 import type { NowDisplay } from '../lib/dateFormat';
 import type { Track } from '../lib/types';
-import type { MusicServices } from '../lib/musicSource';
+import type { StationMood } from '../lib/station';
 
 interface Props {
   track: Track | null;
@@ -17,19 +16,21 @@ interface Props {
   cur: string;
   dur: string;
   say: string;
+  /** 0..1 fraction of the say text revealed while the DJ voice plays; null shows it whole. */
+  sayReveal?: number | null;
   now: NowDisplay;
   playing: boolean;
+  talking?: boolean;
   conn: 'on' | 'busy' | '';
   onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
   audioRef: React.RefObject<HTMLAudioElement>;
-  services?: MusicServices & { weather: boolean };
   queue?: Track[];
   queueIndex?: number;
   onPick?: (index: number) => void;
   onReorder?: (next: Track[]) => void;
   onRemove?: (index: number) => void;
   onClear?: () => void;
-  onSteer?: (text: string) => void;
+  onSteer?: (text: string, mood: StationMood) => void;
   onTrigger?: (kind: string) => void;
   onResume?: () => void;
   isObserver?: boolean;
@@ -40,12 +41,13 @@ interface Props {
 }
 
 export default function MainCard({
-  track, progress, cur, dur, say, now, playing, conn, onSeek, audioRef, services,
+  track, progress, cur, dur, say, sayReveal = null, now, playing, talking = false,
+  conn, onSeek, audioRef,
   queue = [], queueIndex = -1, onPick, onReorder, onRemove, onClear,
   onSteer, onTrigger, onResume, isObserver = false, controlsDisabled = false,
   tasteLine = '', planNote = '', queueTotal = 0,
 }: Props) {
-  const { clock, tr: t, resolved } = usePreferences();
+  const { tr: t, resolved, reducedMotion } = usePreferences();
   const sayTheme = resolved === 'light' ? 'card' : 'dark';
   const live = conn === 'on' || conn === 'busy';
   const airLabel = conn === 'on' ? t('onAir') : conn === 'busy' ? t('busy') : t('standby');
@@ -55,6 +57,29 @@ export default function MainCard({
     : track?.source === 'qqmusic'
       ? t('sourceQQ')
       : t('sourceNetease');
+
+  const steerChips: { mood: StationMood; label: string; text: string }[] = [
+    { mood: 'calm', label: t('steerCalm'), text: t('steerPayloadCalm') },
+    { mood: 'energy', label: t('steerEnergy'), text: t('steerPayloadEnergy') },
+    { mood: 'similar', label: t('steerSimilar'), text: t('steerPayloadSimilar') },
+    { mood: 'ban', label: t('steerBan'), text: t('steerPayloadBan') },
+  ];
+
+  const steerRow = onSteer && !isObserver && (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {steerChips.map((chip) => (
+        <button
+          key={chip.mood}
+          type="button"
+          className="header-pill text-[10px] disabled:opacity-40"
+          disabled={controlsDisabled}
+          onClick={() => onSteer(chip.text, chip.mood)}
+        >
+          {chip.label}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <AnimatePresence mode="wait">
@@ -89,7 +114,7 @@ export default function MainCard({
                 {t('observerBanner')}
               </p>
             )}
-            <Spectrum audioRef={audioRef} height={108} />
+            <Spectrum audioRef={audioRef} height={108} dimmed={talking} />
 
             <motion.h1
               key={track.title}
@@ -126,38 +151,19 @@ export default function MainCard({
             <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
               <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)] mb-1.5">{t('djSay')}</p>
               <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]" aria-live="polite">
-                {renderSay(say, sayTheme)}
+                {renderSay(say, sayTheme, sayReveal)}
                 {conn === 'busy' && (
                   <motion.span
                     className="inline-block w-1 h-3.5 ml-1 rounded-sm align-middle"
                     style={{ background: 'rgb(var(--accent-rgb))' }}
-                    animate={{ opacity: [1, 0.2, 1] }}
-                    transition={{ duration: 0.9, repeat: Infinity }}
+                    animate={reducedMotion ? { opacity: 1 } : { opacity: [1, 0.2, 1] }}
+                    transition={reducedMotion ? { duration: 0 } : { duration: 0.9, repeat: Infinity }}
                   />
                 )}
               </p>
             </div>
 
-            {onSteer && !isObserver && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {[
-                  { label: t('steerCalm'), text: t('steerPayloadCalm') },
-                  { label: t('steerEnergy'), text: t('steerPayloadEnergy') },
-                  { label: t('steerSimilar'), text: t('steerPayloadSimilar') },
-                  { label: t('steerBan'), text: t('steerPayloadBan') },
-                ].map((chip) => (
-                  <button
-                    key={chip.label}
-                    type="button"
-                    className="header-pill text-[10px] disabled:opacity-40"
-                    disabled={controlsDisabled}
-                    onClick={() => onSteer(chip.text)}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            {steerRow}
 
             {onPick && onReorder && onRemove && onClear && (
               <UpNext
@@ -181,24 +187,13 @@ export default function MainCard({
           transition={spring.gentle}
           className="main-card main-card--clock"
         >
-          <ClockDisplay
+          <DotMatrixClock
             time={now.time}
             weekday={now.weekday}
             dateLine={now.dateLine}
             airLabel={airLabel}
             live={live && conn === 'on'}
-            style={clock}
           />
-
-          <div className="panel-dot p-3.5 mt-2.5 max-h-[156px] min-h-[84px] scroll-panel">
-            <BootLog
-              netease={services?.netease}
-              navidrome={services?.navidrome}
-              qqmusic={services?.qqmusic}
-              weather={services?.weather}
-              connected={live}
-            />
-          </div>
 
           <div className="panel-dot p-3.5 mt-2.5">
             {planNote && (
@@ -208,28 +203,9 @@ export default function MainCard({
             )}
             <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)] mb-1.5">{t('djSay')}</p>
             <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]" aria-live="polite">
-              {renderSay(say, sayTheme)}
+              {renderSay(say, sayTheme, sayReveal)}
             </p>
-            {onSteer && !isObserver && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {[
-                  { label: t('steerCalm'), text: t('steerPayloadCalm') },
-                  { label: t('steerEnergy'), text: t('steerPayloadEnergy') },
-                  { label: t('steerSimilar'), text: t('steerPayloadSimilar') },
-                  { label: t('steerBan'), text: t('steerPayloadBan') },
-                ].map((chip) => (
-                  <button
-                    key={chip.label}
-                    type="button"
-                    className="header-pill text-[10px] disabled:opacity-40"
-                    disabled={controlsDisabled}
-                    onClick={() => onSteer(chip.text)}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            {steerRow}
             {onTrigger && !isObserver && (
               <button
                 type="button"

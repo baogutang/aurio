@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { usePreferences } from '../context/PreferencesContext';
 
 interface Props {
   time: string;
@@ -39,13 +40,13 @@ function Digit({ char }: { char: string }) {
   );
 }
 
-function Colon() {
+function Colon({ still }: { still: boolean }) {
   return (
     <motion.div
       className="matrix-colon"
       style={{ display: 'grid', gridTemplateRows: 'repeat(7, var(--md))', gap: 'var(--mg)' }}
-      animate={{ opacity: [1, 0.25, 1] }}
-      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', times: [0, 0.5, 1] }}
+      animate={still ? { opacity: 1 } : { opacity: [1, 0.25, 1] }}
+      transition={still ? { duration: 0 } : { duration: 2, repeat: Infinity, ease: 'easeInOut', times: [0, 0.5, 1] }}
     >
       {Array.from({ length: 7 }, (_, r) => (
         <span key={r} className={`matrix-pixel${r === 2 || r === 4 ? ' on' : ''}`} />
@@ -56,6 +57,7 @@ function Colon() {
 
 /** LED dot-matrix hardware clock — each digit is a real 5×7 grid of dots. */
 export default function DotMatrixClock({ time, weekday, dateLine, airLabel, live }: Props) {
+  const { reducedMotion } = usePreferences();
   const safe = /^\d{2}:\d{2}$/.test(time) ? time : '--:--';
   const [hh, mm] = safe.split(':');
 
@@ -64,7 +66,7 @@ export default function DotMatrixClock({ time, weekday, dateLine, airLabel, live
       <div className="matrix-time-row" aria-label={time}>
         <div className="matrix-grid">
           {hh.split('').map((d, i) => <Digit key={`h${i}`} char={d} />)}
-          <Colon />
+          <Colon still={reducedMotion} />
           {mm.split('').map((d, i) => <Digit key={`m${i}`} char={d} />)}
         </div>
       </div>
@@ -76,8 +78,12 @@ export default function DotMatrixClock({ time, weekday, dateLine, airLabel, live
         <motion.span
           className="matrix-live-dot"
           style={{ background: live ? 'rgb(var(--hi-rgb))' : 'var(--text-muted)' }}
-          animate={live ? { opacity: [1, 0.45, 1], scale: [1, 1.15, 1] } : { opacity: 0.35 }}
-          transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+          animate={live && !reducedMotion
+            ? { opacity: [1, 0.45, 1], scale: [1, 1.15, 1] }
+            : { opacity: live ? 1 : 0.35 }}
+          transition={live && !reducedMotion
+            ? { duration: 2.2, repeat: Infinity, ease: 'easeInOut' }
+            : { duration: 0 }}
         />
         <span className="matrix-status-text">{airLabel}</span>
       </div>

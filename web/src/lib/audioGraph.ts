@@ -281,6 +281,86 @@ export function resumeMixer(): void {
   mixer.ac.resume().catch(() => {});
 }
 
+// --- UI sounds (retune) ------------------------------------------------------
+// A dedicated small gain straight into masterGain: UI sounds must not ride the
+// voice booth chain (the compressor would pump under them) and must not sit on
+// the ducked music bus. No mixer → no sound, no crash.
+
+let uiGain: GainNode | null = null;
+let retuneNoise: AudioBuffer | null = null;
+
+function uiBus(m: Mixer): GainNode {
+  if (!uiGain) {
+    uiGain = m.ac.createGain();
+    uiGain.gain.value = 1;
+    uiGain.connect(m.masterGain);
+  }
+  return uiGain;
+}
+
+/**
+ * ~0.3s procedural retune: a band-passed white-noise burst sweeping up the
+ * dial plus a short heterodyne-style whistle falling into place. Same
+ * generated-not-sampled approach as makeImpulse above.
+ */
+export function playRetuneSound(): void {
+  const m = mixer;
+  if (!m) return;
+  try {
+    const ac = m.ac;
+    ac.resume().catch(() => {});
+    const out = uiBus(m);
+    const t0 = ac.currentTime + 0.02;
+    const dur = 0.3;
+
+    if (!retuneNoise) {
+      const n = Math.max(1, Math.floor(ac.sampleRate * dur));
+      retuneNoise = ac.createBuffer(1, n, ac.sampleRate);
+      const d = retuneNoise.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    }
+
+    // Static burst: noise through a band-pass whose center sweeps upward,
+    // like scrubbing across stations.
+    const noise = ac.createBufferSource();
+    noise.buffer = retuneNoise;
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(700, t0);
+    bp.frequency.exponentialRampToValueAtTime(2600, t0 + dur * 0.8);
+    const nGain = ac.createGain();
+    nGain.gain.setValueAtTime(0, t0);
+    nGain.gain.linearRampToValueAtTime(0.14, t0 + 0.03);
+    nGain.gain.setTargetAtTime(0, t0 + 0.16, 0.05);
+    noise.connect(bp);
+    bp.connect(nGain);
+    nGain.connect(out);
+
+    // The whistle: a quick downward chirp locking onto the new frequency.
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1500, t0);
+    osc.frequency.exponentialRampToValueAtTime(320, t0 + 0.22);
+    const oGain = ac.createGain();
+    oGain.gain.setValueAtTime(0, t0);
+    oGain.gain.linearRampToValueAtTime(0.045, t0 + 0.04);
+    oGain.gain.setTargetAtTime(0, t0 + 0.18, 0.04);
+    osc.connect(oGain);
+    oGain.connect(out);
+
+    const tEnd = t0 + dur + 0.15;
+    noise.start(t0);
+    noise.stop(tEnd);
+    osc.start(t0);
+    osc.stop(tEnd);
+    noise.onended = () => { noise.disconnect(); bp.disconnect(); nGain.disconnect(); };
+    osc.onended = () => { osc.disconnect(); oGain.disconnect(); };
+  } catch {
+    // UI sound is best-effort; never let it break playback.
+  }
+}
+
 // 0..1 RMS-ish level off the voice bus, for driving the UI.
 export function voiceLevel(): number {
   if (!mixer) return 0;

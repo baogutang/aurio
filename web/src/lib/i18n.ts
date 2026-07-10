@@ -74,20 +74,10 @@ const zh = {
   tasteDisliked: '你不喜欢',
   tasteAvoid: '尽量避开',
 
-  // BootLog
-  bootReady: 'Aurio 已就绪',
-  bootSync: '正在同步音乐源…',
-  bootWaiting: '等待你的第一句话',
-  serviceNetease: '网易云音乐',
-  serviceNavidrome: 'NAS · Navidrome',
-  serviceQQ: 'QQ 音乐',
-  serviceWeather: '天气服务',
   contextEmpty: '在设置中配置天气或日历，Aurio 会据此调节节目',
   lyricsLoading: '歌词加载中…',
   lyricsEmpty: '暂无歌词',
   lyricsSynced: '同步歌词',
-  bootConnected: '● 已连接 · 可以开台了',
-  bootConnecting: '○ 正在连接服务器…',
 
   // App messages (dynamic)
   sayDefault: '和 Aurio 说句话，让它为你开台。',
@@ -132,13 +122,6 @@ const zh = {
   localeSystem: '跟随系统',
   localeZh: '中文',
   localeEn: 'English',
-  clockLabel: '时钟样式',
-  clockMatrix: '点阵 LED',
-  clockMatrixDesc: '硬件屏点阵时钟（默认）',
-  clockFlip: '经典翻页',
-  clockFlipDesc: '翻页卡片样式',
-  clockNeon: '赛博辉光',
-  clockNeonDesc: '霓虹辉光 · 赛博朋克风',
   ncmHint: '扫码登录网易云账号，即可播放每日推荐、歌单与搜索。',
   ncmQrPlaceholder: '二维码',
   ncmStart: '生成登录二维码',
@@ -162,9 +145,6 @@ const zh = {
   nasSaved: '✓ 已保存并连接',
   nasSaveFail: '✗ 保存失败',
   nasReqFail: '✗ 请求失败',
-
-  // Clock
-  temporalSync: '时间同步',
 
   // ErrorBoundary
   errorTitle: '界面运行时错误',
@@ -395,19 +375,10 @@ const en: Record<MessageKey, string> = {
   tasteDisliked: 'You dislike',
   tasteAvoid: 'Try to avoid',
 
-  bootReady: 'Aurio is ready',
-  bootSync: 'Syncing music sources…',
-  bootWaiting: 'Waiting for your first message',
-  serviceNetease: 'Netease Cloud Music',
-  serviceNavidrome: 'NAS · Navidrome',
-  serviceQQ: 'QQ Music',
-  serviceWeather: 'Weather service',
   contextEmpty: 'Configure weather or calendar in Settings — Aurio uses them for programming',
   lyricsLoading: 'Loading lyrics…',
   lyricsEmpty: 'No lyrics',
   lyricsSynced: 'Synced lyrics',
-  bootConnected: '● Connected · Ready to go live',
-  bootConnecting: '○ Connecting to server…',
 
   sayDefault: 'Say something to Aurio and let it start the show.',
   sayNoSource: 'No music source yet — open Settings to log in to Netease or add your NAS.',
@@ -449,13 +420,6 @@ const en: Record<MessageKey, string> = {
   localeSystem: 'System',
   localeZh: '中文',
   localeEn: 'English',
-  clockLabel: 'Clock style',
-  clockMatrix: 'Dot matrix',
-  clockMatrixDesc: 'Hardware LED dot-matrix display (default)',
-  clockFlip: 'Classic flip',
-  clockFlipDesc: 'Flip-card clock',
-  clockNeon: 'Neon glow',
-  clockNeonDesc: 'Cyberpunk neon-glow display',
   ncmHint: 'Scan to log in with Netease Cloud Music for recommendations, playlists, and search.',
   ncmQrPlaceholder: 'QR code',
   ncmStart: 'Generate login QR',
@@ -479,8 +443,6 @@ const en: Record<MessageKey, string> = {
   nasSaved: '✓ Saved and connected',
   nasSaveFail: '✗ Save failed',
   nasReqFail: '✗ Request failed',
-
-  temporalSync: 'Temporal sync',
 
   errorTitle: 'UI Runtime Error',
   errorRetry: 'Retry',

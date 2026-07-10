@@ -5,6 +5,8 @@ import { usePreferences } from '../context/PreferencesContext';
 interface Props {
   audioRef: React.RefObject<HTMLAudioElement>;
   height?: number;
+  /** Eases the display down while the DJ voice speaks. */
+  dimmed?: boolean;
 }
 
 type RGB = [number, number, number];
@@ -25,11 +27,11 @@ function cssRGB(name: string, fallback: RGB): RGB {
  * part of the same hardware display. Columns light bottom-up by band energy,
  * each topped with a slowly-falling peak-hold dot in the brand accent.
  */
-export default function Spectrum({ audioRef, height = 104 }: Props) {
+export default function Spectrum({ audioRef, height = 104, dimmed = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const valRef = useRef<number[]>([]);
   const peakRef = useRef<number[]>([]);
-  const { resolved } = usePreferences();
+  const { resolved, reducedMotion } = usePreferences();
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -78,8 +80,12 @@ export default function Spectrum({ audioRef, height = 104 }: Props) {
     };
 
     let raf = 0;
+    let slowTimer = 0;
     const draw = () => {
-      raf = requestAnimationFrame(draw);
+      // Under reduced motion the display refreshes once a second instead of
+      // animating — still honest (real analyser data), no longer in motion.
+      if (reducedMotion) slowTimer = window.setTimeout(draw, 1000);
+      else raf = requestAnimationFrame(draw);
       const w = canvas.width;
       const h = canvas.height;
       if (!w || !h) return;
@@ -125,8 +131,11 @@ export default function Spectrum({ audioRef, height = 104 }: Props) {
       }
     };
 
-    const start = () => { if (!raf) draw(); };
-    const stop = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } };
+    const stop = () => {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (slowTimer) { window.clearTimeout(slowTimer); slowTimer = 0; }
+    };
+    const start = () => { if (!raf && !slowTimer) draw(); };
     const onVisibility = () => { if (document.hidden) stop(); else start(); };
     document.addEventListener('visibilitychange', onVisibility);
     if (!document.hidden) start();
@@ -137,7 +146,14 @@ export default function Spectrum({ audioRef, height = 104 }: Props) {
       ro?.disconnect();
       window.removeEventListener('resize', resize);
     };
-  }, [audioRef, height, resolved]);
+  }, [audioRef, height, resolved, reducedMotion]);
 
-  return <canvas ref={canvasRef} className="w-full block" style={{ height }} aria-hidden />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="w-full block"
+      style={{ height, opacity: dimmed ? 0.45 : 1, transition: 'opacity 0.25s ease' }}
+      aria-hidden
+    />
+  );
 }

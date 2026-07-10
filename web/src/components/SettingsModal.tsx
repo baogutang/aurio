@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
 import { spring } from '../lib/motion';
 import { usePreferences } from '../context/PreferencesContext';
-import type { ThemeMode, ClockStyle, LocaleMode } from '../lib/preferences';
+import type { ThemeMode, LocaleMode } from '../lib/preferences';
 import type { MessageKey } from '../lib/i18n';
 import type { SettingsResp, AiProvidersResp, CastDevice, Track, ProfileResp, TasteResp } from '../lib/types';
 import { IconClose } from './icons';
@@ -80,17 +80,12 @@ function Guide({ t, body, links }: { t: T; body: string; links?: { label: string
 // =====================================================================
 
 function AppearancePanel({ t }: { t: T }) {
-  const { theme, clock, locale, setTheme, setClock, setLocale } = usePreferences();
+  const { theme, locale, setTheme, setLocale } = usePreferences();
   const themeOpts: { id: ThemeMode; label: string }[] = [
     { id: 'system', label: t('themeSystem') }, { id: 'dark', label: t('themeDark') }, { id: 'light', label: t('themeLight') },
   ];
   const localeOpts: { id: LocaleMode; label: string }[] = [
     { id: 'system', label: t('localeSystem') }, { id: 'zh', label: t('localeZh') }, { id: 'en', label: t('localeEn') },
-  ];
-  const clockOpts: { id: ClockStyle; label: string; desc: string }[] = [
-    { id: 'matrix', label: t('clockMatrix'), desc: t('clockMatrixDesc') },
-    { id: 'flip', label: t('clockFlip'), desc: t('clockFlipDesc') },
-    { id: 'neon', label: t('clockNeon'), desc: t('clockNeonDesc') },
   ];
   return (
     <div className="space-y-5">
@@ -104,18 +99,6 @@ function AppearancePanel({ t }: { t: T }) {
         <p className="text-[11px] font-mono uppercase tracking-widest text-[var(--text-muted)] mb-2">{t('themeLabel')}</p>
         <div className="flex gap-1.5">
           {themeOpts.map((o) => <button key={o.id} onClick={() => setTheme(o.id)} className={`option-chip ${theme === o.id ? 'is-active' : ''}`}>{o.label}</button>)}
-        </div>
-      </div>
-      <div>
-        <p className="text-[11px] font-mono uppercase tracking-widest text-[var(--text-muted)] mb-2">{t('clockLabel')}</p>
-        <div className="space-y-2">
-          {clockOpts.map((o) => (
-            <button key={o.id} onClick={() => setClock(o.id)} className="w-full text-left px-4 py-3 rounded-2xl transition-all"
-              style={{ background: 'var(--inset-bg)', border: `1px solid ${clock === o.id ? 'rgba(var(--sci-cyan-rgb), 0.4)' : 'var(--glass-border)'}`, boxShadow: clock === o.id ? '0 0 20px rgba(var(--sci-cyan-rgb), 0.1)' : undefined }}>
-              <p className="text-[13px] font-medium text-[var(--text-primary)]">{o.label}</p>
-              <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{o.desc}</p>
-            </button>
-          ))}
         </div>
       </div>
     </div>

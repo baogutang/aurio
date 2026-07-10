@@ -21,13 +21,35 @@ export function cleanSayText(text: string): string {
 }
 
 // Aurio patter may wrap keywords in *asterisks*; render those highlighted.
-export function renderSay(text: string, variant: 'card' | 'dark' = 'card'): React.ReactNode {
+// `reveal` (0..1) paces a per-code-point reveal while the DJ voice plays —
+// slicing happens inside the parsed segments so a half-revealed highlight
+// never leaks its raw `*` markers. null/undefined renders the whole text.
+export function renderSay(
+  text: string,
+  variant: 'card' | 'dark' = 'card',
+  reveal?: number | null,
+): React.ReactNode {
   text = cleanSayText(text);
   if (!text) return '…';
   const hiCls = variant === 'dark' ? 'say-highlight-dark' : 'say-highlight-card';
-  return text.split(/(\*[^*]+\*)/g).map((p, i) =>
-    p.startsWith('*') && p.endsWith('*')
-      ? <span key={i} className={hiCls}>{p.slice(1, -1)}</span>
-      : <React.Fragment key={i}>{p}</React.Fragment>
-  );
+  const parts = text.split(/(\*[^*]+\*)/g).map((p) => {
+    const hi = p.startsWith('*') && p.endsWith('*');
+    return { hi, chars: Array.from(hi ? p.slice(1, -1) : p) };
+  });
+
+  let quota = Infinity;
+  if (reveal != null) {
+    const total = parts.reduce((n, p) => n + p.chars.length, 0);
+    quota = Math.ceil(total * Math.min(1, Math.max(0, reveal)));
+  }
+
+  return parts.map((p, i) => {
+    if (quota <= 0) return null;
+    const shown = p.chars.length <= quota ? p.chars : p.chars.slice(0, quota);
+    quota -= shown.length;
+    const body = shown.join('');
+    return p.hi
+      ? <span key={i} className={hiCls}>{body}</span>
+      : <React.Fragment key={i}>{body}</React.Fragment>;
+  });
 }

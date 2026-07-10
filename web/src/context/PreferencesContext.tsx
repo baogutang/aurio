@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode, useCallback } from 'react';
 import {
-  loadPreferences, savePreferences, resolveTheme, resolveLocale, localeTag,
-  type ThemeMode, type ClockStyle, type LocaleMode, type Locale, type UiPreferences,
+  loadPreferences, savePreferences, resolveTheme, resolveLocale, localeTag, resolveReducedMotion,
+  type ThemeMode, type LocaleMode, type Locale, type UiPreferences,
 } from '../lib/preferences';
 import { t, type MessageKey } from '../lib/i18n';
 
@@ -9,8 +9,9 @@ interface Ctx extends UiPreferences {
   resolved: 'light' | 'dark';
   localeResolved: Locale;
   localeTag: string;
+  /** System prefers-reduced-motion (live). Honor it: no infinite loops, static canvases, whole-sentence subtitles. */
+  reducedMotion: boolean;
   setTheme: (t: ThemeMode) => void;
-  setClock: (c: ClockStyle) => void;
   setLocale: (l: LocaleMode) => void;
   tr: (key: MessageKey) => string;
 }
@@ -21,6 +22,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [prefs, setPrefs] = useState(loadPreferences);
   const [resolved, setResolved] = useState<'light' | 'dark'>(() => resolveTheme(prefs.theme));
   const [localeResolved, setLocaleResolved] = useState<Locale>(() => resolveLocale(prefs.locale));
+  const [reducedMotion, setReducedMotion] = useState(resolveReducedMotion);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', resolved);
@@ -48,6 +50,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('languagechange', apply);
   }, [prefs.locale]);
 
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const apply = () => setReducedMotion(mq.matches);
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+
   const tr = useCallback((key: MessageKey) => t(localeResolved, key), [localeResolved]);
 
   const value = useMemo<Ctx>(() => ({
@@ -55,17 +65,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     resolved,
     localeResolved,
     localeTag: localeTag(localeResolved),
+    reducedMotion,
     tr,
     setTheme: (theme) => {
       setPrefs((p) => {
         const next = { ...p, theme };
-        savePreferences(next);
-        return next;
-      });
-    },
-    setClock: (clock) => {
-      setPrefs((p) => {
-        const next = { ...p, clock };
         savePreferences(next);
         return next;
       });
@@ -77,7 +81,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         return next;
       });
     },
-  }), [prefs, resolved, localeResolved, tr]);
+  }), [prefs, resolved, localeResolved, reducedMotion, tr]);
 
   return (
     <PreferencesContext.Provider value={value}>

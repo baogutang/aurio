@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getMixer, voiceLevel } from '../lib/audioGraph';
+import { usePreferences } from '../context/PreferencesContext';
 
 export type PetState = 'idle' | 'playing' | 'talking';
 
@@ -52,8 +54,10 @@ function buildFrame(eyesClosed: boolean, mouthOpen: boolean): string[] {
 }
 
 export default function PixelPet({ state, cell = 3 }: Props) {
+  const { reducedMotion } = usePreferences();
   const [eyesClosed, setEyesClosed] = useState(false);
   const [mouthOpen, setMouthOpen] = useState(false);
+  const voiceBobRef = useRef<HTMLDivElement | null>(null);
 
   // Occasional blink (paused while talking).
   useEffect(() => {
@@ -80,12 +84,42 @@ export default function PixelPet({ state, cell = 3 }: Props) {
     };
   }, [state]);
 
-  // Mouth chatter while talking.
+  // While talking, the mouth and a small bob follow the actual voice level off
+  // the mixer's voice bus — the pet moves because she is speaking, not on a
+  // timer. Without a mixer (Web Audio unavailable) fall back to a slow chatter.
   useEffect(() => {
-    if (state !== 'talking') { setMouthOpen(false); return; }
-    const id = window.setInterval(() => setMouthOpen((m) => !m), 190);
-    return () => clearInterval(id);
-  }, [state]);
+    const el = voiceBobRef.current;
+    if (state !== 'talking') {
+      setMouthOpen(false);
+      if (el) el.style.transform = '';
+      return;
+    }
+    if (reducedMotion) {
+      // Static open mouth signals "speaking" without any motion.
+      setMouthOpen(true);
+      return () => setMouthOpen(false);
+    }
+    if (!getMixer()) {
+      const id = window.setInterval(() => setMouthOpen((m) => !m), 190);
+      return () => { clearInterval(id); setMouthOpen(false); };
+    }
+    let raf = 0;
+    let mouth = false;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const lvl = voiceLevel();
+      // Hysteresis keeps the mouth from strobing on the RMS noise floor.
+      if (!mouth && lvl > 0.13) { mouth = true; setMouthOpen(true); }
+      else if (mouth && lvl < 0.06) { mouth = false; setMouthOpen(false); }
+      if (el) el.style.transform = `translateY(${(-lvl * cell * 1.6).toFixed(2)}px)`;
+    };
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      setMouthOpen(false);
+      if (el) el.style.transform = '';
+    };
+  }, [state, cell, reducedMotion]);
 
   const frame = buildFrame(eyesClosed, mouthOpen);
 
@@ -100,18 +134,19 @@ export default function PixelPet({ state, cell = 3 }: Props) {
   const w = 12 * cell;
   const h = 13 * cell;
 
-  const bob =
-    state === 'playing'
+  // Ambient bob for idle/playing; while talking the voice level drives motion
+  // instead. All loops stop under reduced motion.
+  const bob = reducedMotion || state === 'talking'
+    ? { animate: { y: 0 }, transition: { duration: 0 } }
+    : state === 'playing'
       ? { animate: { y: [0, -cell * 1.8, 0], scaleY: [1, 0.9, 1] }, transition: { duration: 0.5, repeat: Infinity, ease: 'easeInOut' as const } }
-      : state === 'talking'
-        ? { animate: { rotate: [-3, 3, -3], y: [0, -cell * 0.5, 0] }, transition: { duration: 0.6, repeat: Infinity, ease: 'easeInOut' as const } }
-        : { animate: { y: [0, -cell * 0.9, 0] }, transition: { duration: 2.8, repeat: Infinity, ease: 'easeInOut' as const } };
+      : { animate: { y: [0, -cell * 0.9, 0] }, transition: { duration: 2.8, repeat: Infinity, ease: 'easeInOut' as const } };
 
   return (
     <div style={{ position: 'relative', width: w, height: h }} aria-hidden>
       {/* Sound rings while on air */}
       <AnimatePresence>
-        {state === 'talking' && (
+        {state === 'talking' && !reducedMotion && (
           <>
             {[0, 0.5].map((delay) => (
               <motion.span
@@ -138,7 +173,7 @@ export default function PixelPet({ state, cell = 3 }: Props) {
 
       {/* Floating note while music plays */}
       <AnimatePresence>
-        {state === 'playing' && (
+        {state === 'playing' && !reducedMotion && (
           <motion.span
             style={{
               position: 'absolute',
@@ -162,23 +197,25 @@ export default function PixelPet({ state, cell = 3 }: Props) {
         animate={bob.animate}
         transition={bob.transition}
       >
-        {cells.map(({ x, y, ch }) => (
-          <span
-            key={`${x}-${y}`}
-            style={{
-              position: 'absolute',
-              left: x * cell,
-              top: y * cell,
-              width: cell + 0.5,
-              height: cell + 0.5,
-              background: COLORS[ch],
-              boxShadow:
-                ch === 'T'
-                  ? `0 0 ${cell * 1.1}px rgba(var(--hi-rgb),0.85)`
-                  : undefined,
-            }}
-          />
-        ))}
+        <div ref={voiceBobRef} style={{ position: 'absolute', inset: 0 }}>
+          {cells.map(({ x, y, ch }) => (
+            <span
+              key={`${x}-${y}`}
+              style={{
+                position: 'absolute',
+                left: x * cell,
+                top: y * cell,
+                width: cell + 0.5,
+                height: cell + 0.5,
+                background: COLORS[ch],
+                boxShadow:
+                  ch === 'T'
+                    ? `0 0 ${cell * 1.1}px rgba(var(--hi-rgb),0.85)`
+                    : undefined,
+              }}
+            />
+          ))}
+        </div>
       </motion.div>
     </div>
   );

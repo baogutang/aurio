@@ -20,8 +20,9 @@ import { dedupeQueue } from './lib/queue';
 import { coverUrl } from './lib/cover';
 import {
   initMixer, resumeMixer, duckMusic, unduckMusic, getMixer,
-  setMusicChannelGain, crossfadeMusic, fadeOutMusic, type MusicChannel,
+  setMusicChannelGain, crossfadeMusic, fadeOutMusic, playRetuneSound, type MusicChannel,
 } from './lib/audioGraph';
+import { tuneStation, type StationMood } from './lib/station';
 import { useI18n, usePreferences } from './context/PreferencesContext';
 import type { Track, Broadcast, ChatMsg, TtsPatch } from './lib/types';
 
@@ -37,7 +38,7 @@ const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAI
 
 export default function App() {
   const { t, localeTag, locale } = useI18n();
-  const { resolved, setTheme } = usePreferences();
+  const { resolved, setTheme, reducedMotion } = usePreferences();
   // audioRef is the stable accessor for THE ACTIVE music element. Two music
   // elements (A/B) alternate underneath so the next track can be prefetched
   // and crossfaded in; everything that asks "what is playing" (heartbeat,
@@ -90,9 +91,14 @@ export default function App() {
   const [onboard, setOnboard] = useState(false);
   const [services, setServices] = useState<MusicServices & { weather: boolean }>({ netease: false, navidrome: false, qqmusic: false, weather: false });
   const [musicSource, setMusicSource] = useState<MusicSourceMode>('combined');
+  const [steerMood, setSteerMood] = useState<StationMood | null>(null);
   const [queueTotal, setQueueTotal] = useState(0);
   const [queueIndex, setQueueIndex] = useState(-1);
   const [queue, setQueue] = useState<Track[]>([]);
+  // 0..1 fraction of the say text revealed while the DJ voice plays (null = whole).
+  const [sayReveal, setSayReveal] = useState<number | null>(null);
+  const revealRafRef = useRef(0);
+  const revealValRef = useRef<number | null>(null);
   // Bumped whenever audioRef.current points at a different element.
   const [activeElVer, setActiveElVer] = useState(0);
 
@@ -227,6 +233,56 @@ export default function App() {
     else if (music) music.volume = 1;
   }, []);
 
+  // --- Voice conductor: the say text reveals per code point, paced by the TTS
+  // audio clock (fraction = currentTime / duration once loadedmetadata gives a
+  // duration; CJK ≈ one syllable per character, so proportional allocation is
+  // accurate enough). Any interruption — skip cancels the segue, pause, error —
+  // rolls back to the whole sentence at once. A say without TTS audio never
+  // enters here and shows whole, as before.
+  const stopSayReveal = useCallback(() => {
+    if (revealRafRef.current) {
+      cancelAnimationFrame(revealRafRef.current);
+      revealRafRef.current = 0;
+    }
+    revealValRef.current = null;
+    setSayReveal(null);
+  }, []);
+
+  const startSayReveal = useCallback((tts: HTMLAudioElement) => {
+    if (revealRafRef.current) cancelAnimationFrame(revealRafRef.current);
+    if (reducedMotion) {
+      // Whole-sentence subtitles under reduced motion.
+      revealValRef.current = null;
+      setSayReveal(null);
+      revealRafRef.current = 0;
+      return;
+    }
+    revealValRef.current = 0;
+    setSayReveal(0);
+    const tick = () => {
+      const d = tts.duration;
+      if (Number.isFinite(d) && d > 0) {
+        const f = Math.min(1, tts.currentTime / d);
+        if (f >= 1) {
+          stopSayReveal();
+          return;
+        }
+        // Quantize to ~1% steps so the reveal does not re-render at 60fps.
+        const q = Math.floor(f * 100) / 100;
+        if (q !== revealValRef.current) {
+          revealValRef.current = q;
+          setSayReveal(q);
+        }
+      }
+      revealRafRef.current = requestAnimationFrame(tick);
+    };
+    revealRafRef.current = requestAnimationFrame(tick);
+  }, [reducedMotion, stopSayReveal]);
+
+  useEffect(() => () => {
+    if (revealRafRef.current) cancelAnimationFrame(revealRafRef.current);
+  }, []);
+
   const primeAudio = useCallback(() => {
     resumeMixer();
     if (audioPrimed.current) return;
@@ -353,6 +409,7 @@ export default function App() {
           if (guard) window.clearTimeout(guard);
           tts.onended = null;
           tts.onerror = null;
+          stopSayReveal();
           startSong();
         };
         tts.onended = finish;
@@ -360,6 +417,7 @@ export default function App() {
         guard = window.setTimeout(finish, 15000);
         tts.src = tr.segueTtsUrl!;
         tts.play().catch(finish);
+        if (tr.segue) startSayReveal(tts);
       } else {
         startSong();
       }
@@ -453,6 +511,7 @@ export default function App() {
         if (cancelSegueRef.current === cancel) cancelSegueRef.current = null;
         segueActiveRef.current = false;
         setSegueActive(false);
+        stopSayReveal();
         unduck(audioRef.current);
       };
       const finish = () => settle(false);
@@ -464,11 +523,12 @@ export default function App() {
       resumeMixer();
       tts.src = tr.segueTtsUrl!;
       tts.play().catch(finish);
+      if (tr.segue) startSayReveal(tts);
       startCrossfaded(true);
     } else {
       startCrossfaded(false);
     }
-  }, [reportState, t, duck, unduck, retireChannel, finalizePendingRetire]);
+  }, [reportState, t, duck, unduck, retireChannel, finalizePendingRetire, startSayReveal, stopSayReveal]);
 
   const startQueue = useCallback((q: Track[], startAt = 0) => {
     if (!q.length) return;
@@ -492,7 +552,7 @@ export default function App() {
     playTrack(q[index], index, { transition });
   }, [applyQueueEdit, playTrack, isController]);
 
-  const playTtsUrl = useCallback((url?: string | null, after?: () => void) => {
+  const playTtsUrl = useCallback((url?: string | null, after?: () => void, opts?: { reveal?: boolean }) => {
     if (!url || !ttsRef.current) {
       after?.();
       return;
@@ -510,6 +570,7 @@ export default function App() {
       unduck(a);
       tts.onended = null;
       tts.onerror = null;
+      stopSayReveal();
       after?.();
     };
     guard = window.setTimeout(finish, 15000);
@@ -518,7 +579,8 @@ export default function App() {
     tts.onended = finish;
     tts.onerror = finish;
     tts.play().catch(finish);
-  }, [duck, unduck]);
+    if (opts?.reveal) startSayReveal(tts);
+  }, [duck, unduck, startSayReveal, stopSayReveal]);
 
   const stampReason = (tracks: Track[], reason?: string) => (
     reason ? tracks.map((tr) => ({ ...tr, reason: tr.reason || reason })) : tracks
@@ -546,7 +608,8 @@ export default function App() {
         after();
         return;
       }
-      playTtsUrl(b.ttsUrl, after);
+      // Only pace the subtitle when this voice actually voices a fresh say.
+      playTtsUrl(b.ttsUrl, after, { reveal: !!cleanSay });
     };
 
     try {
@@ -1107,9 +1170,16 @@ export default function App() {
     a.currentTime = ((e.clientX - r.left) / r.width) * a.duration;
   };
 
-  const steer = async (text: string) => {
+  // Steering the programming is turning the dial: nudge the pseudo-FM
+  // frequency and play the retune burst. Only user-initiated switches sound —
+  // this runs from chip clicks, never on mount or on server pushes.
+  const steer = async (text: string, mood?: StationMood) => {
     if (!isController) return;
     primeAudio();
+    if (mood) {
+      setSteerMood(mood);
+      playRetuneSound();
+    }
     autoPlayUserInitRef.current = true;
     setConn('busy');
     try {
@@ -1155,6 +1225,8 @@ export default function App() {
 
   const cycleSource = async () => {
     const next = nextMusicSource(musicSource, services);
+    if (next === musicSource) return;
+    playRetuneSound();
     setMusicSource(next);
     try {
       const r = await postMusicSource(next);
@@ -1165,6 +1237,8 @@ export default function App() {
       }).catch(() => {});
     }
   };
+
+  const station = useMemo(() => tuneStation(musicSource, steerMood), [musicSource, steerMood]);
 
   const petState: PetState = talking
     ? 'talking'
@@ -1179,7 +1253,7 @@ export default function App() {
 
   return (
     <>
-    <WidgetShell playing={playing || segueActive}>
+    <WidgetShell voiceDim={talking}>
       <motion.header {...stagger(0)} className="app-header shrink-0">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <div className={`header-avatar ${petState !== 'idle' ? 'is-live' : ''}`} aria-hidden>
@@ -1227,6 +1301,7 @@ export default function App() {
           musicSource={musicSource}
           queueTotal={queueTotal}
           queueRemaining={queueRemaining}
+          station={station}
           onCycleSource={cycleSource}
         />
       </motion.div>
@@ -1238,12 +1313,13 @@ export default function App() {
           cur={cur}
           dur={dur}
           say={say}
+          sayReveal={sayReveal}
           now={now}
           playing={playing}
+          talking={talking}
           conn={conn}
           onSeek={onSeek}
           audioRef={mainCardAudioRef}
-          services={services}
           queue={queue}
           queueIndex={queueIndex}
           onPick={(i) => playQueueIndex(i, true)}
@@ -1268,18 +1344,6 @@ export default function App() {
       )}
 
       <motion.div {...stagger(3)} className="transport-row shrink-0">
-        <AnimatePresence>
-          {playing && (
-            <motion.span
-              className="transport-ring"
-              initial={{ scale: 0.85, opacity: 0.5 }}
-              animate={{ scale: [1, 1.28, 1], opacity: [0.4, 0, 0.4] }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut' }}
-            />
-          )}
-        </AnimatePresence>
-
         <PressButton variant="ghost" ariaLabel={t('ariaPrev')} onClick={prev} disabled={controlsDisabled || queueIndex <= 0}>
           <span className="transport-glyph"><IconPrev /></span>
         </PressButton>
@@ -1369,12 +1433,15 @@ export default function App() {
         onPlay={(e) => onMusicPlay(e.currentTarget)}
         onPause={(e) => onMusicPause(e.currentTarget)}
       />
+      {/* Any way the voice stops — natural end, a skip cancelling the segue
+          (pause), or an error — rolls the conductor back: full sentence shows,
+          dims release, the pet settles. */}
       <audio
         ref={ttsRef}
         onPlay={() => setTalking(true)}
-        onPause={() => setTalking(false)}
-        onEnded={() => setTalking(false)}
-        onError={() => setTalking(false)}
+        onPause={() => { setTalking(false); stopSayReveal(); }}
+        onEnded={() => { setTalking(false); stopSayReveal(); }}
+        onError={() => { setTalking(false); stopSayReveal(); }}
       />
     </WidgetShell>
 

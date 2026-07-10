@@ -1,18 +1,19 @@
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type ClockStyle = 'matrix' | 'flip' | 'neon';
 export type LocaleMode = 'system' | 'zh' | 'en';
 export type Locale = 'zh' | 'en';
 
 export interface UiPreferences {
   theme: ThemeMode;
-  clock: ClockStyle;
   locale: LocaleMode;
 }
 
 const KEY = 'aurio.ui';
 
-const defaults: UiPreferences = { theme: 'system', clock: 'matrix', locale: 'system' };
+const defaults: UiPreferences = { theme: 'system', locale: 'system' };
 
+// The 0.4.x `clock` style preference was removed when the UI converged on the
+// single dot-matrix clock. Stored legacy values (`clock: 'flip' | 'neon' | …`)
+// are silently ignored here and dropped on the next save.
 export function loadPreferences(): UiPreferences {
   try {
     const raw = localStorage.getItem(KEY);
@@ -20,7 +21,6 @@ export function loadPreferences(): UiPreferences {
     const p = JSON.parse(raw) as Partial<UiPreferences>;
     return {
       theme: p.theme === 'light' || p.theme === 'dark' ? p.theme : 'system',
-      clock: p.clock === 'flip' || p.clock === 'neon' ? p.clock : 'matrix',
       locale: p.locale === 'zh' || p.locale === 'en' ? p.locale : 'system',
     };
   } catch {
@@ -45,4 +45,12 @@ export function resolveLocale(mode: LocaleMode): Locale {
 
 export function localeTag(locale: Locale): string {
   return locale === 'zh' ? 'zh-CN' : 'en-US';
+}
+
+// There is no manual reduced-motion setting yet; the flag follows the system.
+// Exposed here (not inline in the context) so it stays testable and so a
+// future stored override has one obvious place to compose in.
+export function resolveReducedMotion(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
