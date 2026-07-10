@@ -4,6 +4,8 @@ import { tasteSummary, recentFeedback } from './preferences.js';
 import { clientSessionManager } from '../runtime/client-session-manager.js';
 import { queueController } from '../runtime/queue-controller.js';
 import { db } from '../store.js';
+import { detectFacts, factsPromptLine, recordWeatherObservation } from './detectors.js';
+import { weather } from '../weather/openweather.js';
 
 export const AGENT_TOOLS = [
   { name: 'search', desc: 'Search the user music library for candidate tracks' },
@@ -26,6 +28,14 @@ export function buildObservation(trigger = {}) {
   const remainingSec = positionSec != null && durationSec != null && durationSec > 0
     ? Math.max(0, Math.round(durationSec - positionSec))
     : null;
+  // Deterministic detectors (server/agent/detectors.js): code hands the DJ a
+  // verified fact instead of hoping the model notices. Weather snapshots ride
+  // on the observation rhythm — weather.current() is memory-cached for 30 min,
+  // so this is nearly free. Fire-and-forget: a flip surfaces next observation.
+  if (weather.enabled()) {
+    weather.current().then((w) => { if (w) recordWeatherObservation(w); }).catch(() => {});
+  }
+  const fact = detectFacts({ now: Date.now(), nowPlaying });
   return {
     version: '1.1',
     trigger: {
@@ -54,6 +64,12 @@ export function buildObservation(trigger = {}) {
       position_sec: e.position_sec,
     })),
     plan: plan?.date === new Date().toISOString().slice(0, 10) ? plan : null,
+    // At most one verified fact per observation (see detectors.js). factsLine
+    // is the ready-to-render prompt line; context.js's observation block
+    // renders a fixed field list, so surfacing it there is one line:
+    //   if (o.factsLine) lines.push(o.factsLine);
+    facts: fact ? [fact.fact] : [],
+    factsLine: fact ? factsPromptLine([fact.fact]) : '',
     ts: Date.now(),
   };
 }
