@@ -18,6 +18,7 @@ let tmpDir;
 let db;
 let det;
 let loop;
+let rollups;
 
 beforeAll(async () => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aurio-detectors-'));
@@ -26,6 +27,7 @@ beforeAll(async () => {
   det = await import('../server/agent/detectors.js');
   ({ db } = await import('../server/store.js'));
   loop = await import('../server/agent/loop.js');
+  rollups = await import('../server/agent/rollups.js');
 });
 
 afterAll(() => {
@@ -44,6 +46,19 @@ const other = { id: 'o1', title: '晴天', artist: '周杰伦', source: 'netease
 
 function addPlay(track, ts) {
   db.state.plays.push({ id: track.id, title: track.title, artist: track.artist, source: track.source, ts });
+}
+
+// Seed a frozen monthly rollup (server/agent/rollups.js shape) for long_memory.
+function seedRollup(month, tracks) {
+  const cur = db.getPref(rollups.ROLLUP_KEY, {}) || {};
+  cur[month] = {
+    topTracks: tracks.map((t) => ({
+      key: `${t.artist} — ${t.title}`, artist: t.artist, title: t.title, count: t.count,
+    })),
+    topArtists: [],
+    totalPlays: tracks.reduce((s, t) => s + t.count, 0),
+  };
+  db.setPref(rollups.ROLLUP_KEY, cur);
 }
 
 describe('return_after_absence', () => {
@@ -148,6 +163,63 @@ describe('shelf_track', () => {
   });
 });
 
+// NOW is 2026-07 local time — rollup month keys below are relative to that.
+describe('long_memory', () => {
+  it('fires when the current track was prominent in a rollup ≥2 months back', () => {
+    seedRollup('2025-11', [{ ...nocturne, count: 14 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })).toEqual({
+      code: 'long_memory',
+      fact: '《夜曲》去年 11 月你听了 14 遍',
+    });
+  });
+
+  it('cools down per track per quarter, then may speak again', () => {
+    seedRollup('2025-11', [{ ...nocturne, count: 14 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.code).toBe('long_memory');
+    expect(det.detectFacts({ now: NOW + MIN, nowPlaying: nocturne })).toBeNull();
+    expect(det.detectFacts({ now: NOW + 89 * DAY, nowPlaying: nocturne })).toBeNull();
+    expect(det.detectFacts({ now: NOW + 91 * DAY, nowPlaying: nocturne })?.code).toBe('long_memory');
+  });
+
+  it('never fires for a track absent from every rollup', () => {
+    seedRollup('2025-11', [{ ...nocturne, count: 14 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: other })).toBeNull();
+    // …and with no rollups at all
+    db.setPref(rollups.ROLLUP_KEY, {});
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })).toBeNull();
+  });
+
+  it('this month and last month are replay territory, not memories', () => {
+    seedRollup('2026-07', [{ ...nocturne, count: 20 }]);
+    seedRollup('2026-06', [{ ...nocturne, count: 20 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })).toBeNull();
+    seedRollup('2026-05', [{ ...nocturne, count: 20 }]); // exactly 2 months back
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.fact)
+      .toBe('《夜曲》今年 5 月你听了 20 遍');
+  });
+
+  it('a couple of plays in a thin month is not a memory', () => {
+    seedRollup('2025-11', [{ ...nocturne, count: 2 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })).toBeNull();
+  });
+
+  it('when a track charted in several old months, the heaviest one speaks', () => {
+    seedRollup('2026-01', [{ ...nocturne, count: 5 }]);
+    seedRollup('2025-11', [{ ...nocturne, count: 14 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.fact)
+      .toBe('《夜曲》去年 11 月你听了 14 遍');
+  });
+
+  it('names years honestly: 今年 / 去年 / explicit year', () => {
+    seedRollup('2026-03', [{ ...nocturne, count: 9 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.fact)
+      .toBe('《夜曲》今年 3 月你听了 9 遍');
+    seedRollup('2024-05', [{ ...other, count: 11 }]);
+    expect(det.detectFacts({ now: NOW + MIN, nowPlaying: other })?.fact)
+      .toBe('《晴天》2024 年 5 月你听了 11 遍');
+  });
+});
+
 describe('weather_flip', () => {
   it('detects rain starting, once per flip', () => {
     det.recordWeatherObservation({ desc: '晴' }, NOW - 40 * MIN);
@@ -225,6 +297,40 @@ describe('one fact max + priority', () => {
     det.recordWeatherObservation({ desc: '多云' }, NOW - 60 * MIN);
     det.recordWeatherObservation({ desc: '小雨' }, NOW - 5 * MIN);
     expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.code).toBe('weather_flip');
+    expect(det.detectFacts({ now: NOW + MIN, nowPlaying: nocturne })?.code).toBe('replay_obsession');
+  });
+
+  it('absence beats long_memory', () => {
+    addPlay(other, NOW - 30 * DAY);
+    seedRollup('2025-11', [{ ...nocturne, count: 14 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.code).toBe('return_after_absence');
+    expect(det.detectFacts({ now: NOW + MIN, nowPlaying: nocturne })?.code).toBe('long_memory');
+  });
+
+  it('weather_flip beats long_memory (the flip is stale news in two hours)', () => {
+    seedRollup('2025-11', [{ ...nocturne, count: 14 }]);
+    det.recordWeatherObservation({ desc: '晴' }, NOW - 60 * MIN);
+    det.recordWeatherObservation({ desc: '小雨' }, NOW - 5 * MIN);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.code).toBe('weather_flip');
+    expect(det.detectFacts({ now: NOW + MIN, nowPlaying: nocturne })?.code).toBe('long_memory');
+  });
+
+  it('long_memory beats shelf_track, and the shelf find keeps its fact', () => {
+    // shelf: 夜曲's previous spin was over a year back; long_memory: it also
+    // charted in a frozen rollup. One track, two facts — the richer one first.
+    addPlay(nocturne, NOW - 400 * DAY);
+    addPlay(nocturne, NOW - 2 * MIN);  // the spin airing right now
+    addPlay(other, NOW - 1 * DAY);     // recent activity keeps absence quiet
+    seedRollup('2024-05', [{ ...nocturne, count: 14 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.code).toBe('long_memory');
+    expect(det.detectFacts({ now: NOW + MIN, nowPlaying: nocturne })?.code).toBe('shelf_track');
+  });
+
+  it('long_memory beats replay_obsession', () => {
+    for (const ts of [NOW - 5 * DAY, NOW - 2 * DAY, NOW - 2 * MIN]) addPlay(nocturne, ts);
+    addPlay(other, NOW - 1 * DAY);
+    seedRollup('2025-11', [{ ...nocturne, count: 14 }]);
+    expect(det.detectFacts({ now: NOW, nowPlaying: nocturne })?.code).toBe('long_memory');
     expect(det.detectFacts({ now: NOW + MIN, nowPlaying: nocturne })?.code).toBe('replay_obsession');
   });
 });

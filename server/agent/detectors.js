@@ -6,15 +6,17 @@
 // Contract: every detector returns { code, fact, commit } or null, where
 // `fact` is a short neutral Chinese fact string (never a suggested script).
 // detectFacts() surfaces AT MOST ONE fact per observation, in priority order
-// absence > weather_flip > shelf > replay, and commits only the winner's
-// cooldown — losers keep their fact for a later observation. Cooldowns are
-// the soul of this feature: a repeated fact is worse than no fact.
+// absence > weather_flip > long_memory > shelf > replay, and commits only the
+// winner's cooldown — losers keep their fact for a later observation.
+// Cooldowns are the soul of this feature: a repeated fact is worse than no
+// fact.
 //
 // Deliberately absent: skip streaks. feedback-reaction.js already reacts to
 // skips in real time; a second voice on the same event would double-speak.
 //
 // No LLM calls. Everything here is arithmetic + db prefs.
 import { db } from '../store.js';
+import { getRollups, monthKey } from './rollups.js';
 
 const MIN = 60 * 1000;
 const DAY = 24 * 60 * MIN;
@@ -32,6 +34,10 @@ const REPLAY_COOLDOWN = 7 * DAY;      // once per track per week
 
 const SHELF_MIN_GAP = 365 * DAY;      // a shelf track slept for over a year
 const SHELF_COOLDOWN = 30 * DAY;      // once per track per month
+
+const LONG_MEMORY_MIN_AGE_MONTHS = 2; // this month and last month are replay territory
+const LONG_MEMORY_MIN_PLAYS = 3;      // top-20 of a three-play month is not a memory
+const LONG_MEMORY_COOLDOWN = 90 * DAY; // once per track per quarter
 
 const WEATHER_FLIP_MAX_AGE = 2 * 60 * MIN;  // a flip older than ~2h is stale news
 const WEATHER_MAX_OBS_GAP = 2 * 60 * MIN;   // observations too far apart can't date the flip
@@ -202,6 +208,54 @@ export function detectShelfTrack(now = Date.now(), nowPlaying = null) {
   };
 }
 
+// ---- long_memory ----
+
+// How many calendar months `b` ('YYYY-MM') is after `a`.
+function monthsApart(a, b) {
+  const [ay, am] = a.split('-').map(Number);
+  const [by, bm] = b.split('-').map(Number);
+  return (by - ay) * 12 + (bm - am);
+}
+
+// Honest month naming from the rollup key: 今年 N 月 / 去年 N 月 / YYYY 年 N 月.
+function monthPhrase(month, now) {
+  const [y, m] = month.split('-').map(Number);
+  const nowYear = new Date(now).getFullYear();
+  if (y === nowYear) return `今年 ${m} 月`;
+  if (y === nowYear - 1) return `去年 ${m} 月`;
+  return `${y} 年 ${m} 月`;
+}
+
+// The current track was prominent in a monthly rollup at least two months back
+// (server/agent/rollups.js):「《X》去年 11 月你听了 14 遍」. Month name and
+// count both come straight from the frozen rollup — never an estimate. When a
+// track charted in several old months, the heaviest one speaks.
+export function detectLongMemory(now = Date.now(), nowPlaying = null) {
+  if (!nowPlaying || !nowPlaying.title) return null;
+  const key = trackKey(nowPlaying);
+  const state = detectorState();
+  if (now - (state.longMemory?.[key] || 0) < LONG_MEMORY_COOLDOWN) return null;
+  const current = monthKey(now);
+  let best = null;
+  for (const [month, r] of Object.entries(getRollups())) {
+    if (monthsApart(month, current) < LONG_MEMORY_MIN_AGE_MONTHS) continue;
+    const hit = (r?.topTracks || []).find((t) => t && t.key === key);
+    if (!hit || !(hit.count >= LONG_MEMORY_MIN_PLAYS)) continue;
+    if (!best || hit.count > best.count) best = { month, count: hit.count };
+  }
+  if (!best) return null;
+  return {
+    code: 'long_memory',
+    fact: `《${nowPlaying.title}》${monthPhrase(best.month, now)}你听了 ${best.count} 遍`,
+    commit: () => {
+      const st = detectorState();
+      patchDetectorState({
+        longMemory: { ...pruneLedger(st.longMemory, now, LONG_MEMORY_COOLDOWN), [key]: now },
+      });
+    },
+  };
+}
+
 // ---- replay_obsession ----
 
 export function detectReplayObsession(now = Date.now(), nowPlaying = null) {
@@ -230,13 +284,18 @@ export function detectReplayObsession(now = Date.now(), nowPlaying = null) {
 
 // ---- entry point ----
 
-// At most ONE fact per observation. Priority: a return trumps weather, weather
-// trumps a shelf find, a shelf find trumps replay trivia. Only the surfaced
-// fact's cooldown is committed.
+// At most ONE fact per observation. Priority: a return trumps weather; weather
+// trumps a long memory (a flip is stale news in two hours, the memory can wait
+// for this track's next spin); a long memory trumps a shelf find (when both
+// speak about the same track,「去年 11 月你听了 14 遍」subsumes the bare gap —
+// it names when AND how much — while shelf still covers tracks that never
+// charted in any rollup month); a shelf find trumps replay trivia. Only the
+// surfaced fact's cooldown is committed.
 export function detectFacts({ now = Date.now(), nowPlaying = null } = {}) {
   const probes = [
     () => detectReturnAfterAbsence(now),
     () => detectWeatherFlip(now),
+    () => detectLongMemory(now, nowPlaying),
     () => detectShelfTrack(now, nowPlaying),
     () => detectReplayObsession(now, nowPlaying),
   ];
