@@ -14,12 +14,14 @@
 // empty studio (hasActiveSession()).
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { config, DATA_ROOT } from './config.js';
 import { db } from './store.js';
 import { queueController } from './runtime/queue-controller.js';
 import { eventBus } from './runtime/event-bus.js';
-import { synthesizeBackground } from './tts/index.js';
+import { synthesizeBackground, TTS_CACHE_DIR } from './tts/index.js';
 import { hasActiveSession, currentIndex } from './radio.js';
+import { runFfmpeg, ffmpegBin, ffmpegAvailable, FFMPEG_RUN_TIMEOUT_MS } from './music/ffmpeg.js';
 
 export const IMAGING_CACHE_DIR = path.join(DATA_ROOT, 'cache', 'imaging');
 export const SONIC_LOGO_FILE = 'sonic-logo.wav';
@@ -161,10 +163,13 @@ export function pickLiner(hour, recentIds = []) {
 
 // ---------------------------------------------------------------------------
 // Hourly station ID — time call from a template.「晚上十一点整，Aurio。」
-// TODO(imaging): prepend the sonic logo to the voice server-side. The TTS
-// output format varies by provider (wav at assorted sample rates, or mp3), so
-// a correct concat needs decode + resample. Until then the ID ships voice-only
-// and the logo stays a served asset at /imaging/sonic-logo.wav.
+// With ffmpeg on the machine (shared front-end: server/music/ffmpeg.js) the
+// aired clip is the full ID: sonic logo → a 0.3s breath → the voice, both
+// decoded and resampled to one rate (TTS output varies by provider — mp3 or
+// wav at assorted sample rates), re-encoded as mp3 and cached per hour keyed
+// by the voice clip's identity, so a text/voice/provider change regenerates.
+// Without ffmpeg the ID ships voice-only, exactly as before, and the logo
+// stays a served asset at /imaging/sonic-logo.wav.
 // ---------------------------------------------------------------------------
 
 const HOUR_WORDS = ['十二', '一', '两', '三', '四', '五', '六', '七', '八', '九', '十', '十一'];
@@ -185,6 +190,85 @@ export function timeCallText(hour) {
   else if (h < 18) period = '下午';
   else period = '晚上';
   return `${period}${hourWord(h)}点整，Aurio。`;
+}
+
+export const ID_GAP_SEC = 0.3;
+
+// The stitched ID's cache name: hour first so the 24 files read as a clock,
+// then a hash of everything that shapes the audio. The voice file's own name
+// already encodes provider/voice/text (tts/index.js hashFor), so keying on it
+// makes a voice or provider change regenerate the clip.
+export function stationIdFileName(hour, text, voiceFileName) {
+  const h = String(((hour % 24) + 24) % 24).padStart(2, '0');
+  const hash = crypto.createHash('sha1').update(`${text}::${voiceFileName}`).digest('hex').slice(0, 12);
+  return `id-${h}-${hash}.mp3`;
+}
+
+// One ffmpeg pass: decode both inputs, resample everything to 44.1kHz mono
+// s16, insert an ID_GAP_SEC breath of true silence, concat logo → gap →
+// voice, encode mp3. `-f mp3` is explicit because the output lands in a .tmp
+// file first (rename-on-success keeps a killed run from caching a torso).
+export function concatIdArgs(logoFile, voiceFile, outFile) {
+  const fmt = 'aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono';
+  return [
+    '-hide_banner', '-nostats', '-nostdin', '-v', 'error', '-y',
+    '-i', logoFile,
+    '-f', 'lavfi', '-t', String(ID_GAP_SEC), '-i', 'anullsrc=r=44100:cl=mono',
+    '-i', voiceFile,
+    '-filter_complex',
+    `[0:a]${fmt}[logo];[1:a]${fmt}[gap];[2:a]${fmt}[voice];[logo][gap][voice]concat=n=3:v=0:a=1[id]`,
+    '-map', '[id]', '-codec:a', 'libmp3lame', '-q:a', '4', '-f', 'mp3',
+    outFile,
+  ];
+}
+
+// A cached clip is trusted only if it has bytes — a crash mid-write or a
+// truncated disk leaves an empty file, which must regenerate, not air.
+function usableClip(file) {
+  try { return fs.statSync(file).size > 0; } catch { return false; }
+}
+
+// Map a /tts/<name> URL back to its file in the TTS cache; anything else
+// (remote, traversal, unexpected shape) is not ours to read.
+function ttsFileFor(url) {
+  const name = typeof url === 'string' && url.startsWith('/tts/') ? url.slice('/tts/'.length) : '';
+  if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) return null;
+  return path.join(TTS_CACHE_DIR, name);
+}
+
+/**
+ * URL of the full hourly ID (logo + gap + voice) for this hour, stitching and
+ * caching it on first use. Falls back to `voiceUrl` — exactly today's
+ * voice-only behavior — when ffmpeg is missing, the voice clip isn't a local
+ * cache file, or the stitch fails. Never throws.
+ *
+ * opts (test seams): exec — the ffmpeg runner, available — the probe.
+ */
+export async function stationIdClip(hour, text, voiceUrl, opts = {}) {
+  const exec = opts.exec || runFfmpeg;
+  const available = opts.available || ffmpegAvailable;
+  try {
+    if (!(await available({ exec }))) return voiceUrl;
+    const voiceFile = ttsFileFor(voiceUrl);
+    if (!voiceFile || !usableClip(voiceFile)) return voiceUrl;
+    const logoFile = ensureSonicLogo().file;
+    if (!usableClip(logoFile)) return voiceUrl;
+    const name = stationIdFileName(hour, text, path.basename(voiceFile));
+    const outFile = path.join(IMAGING_CACHE_DIR, name);
+    const url = `/imaging/${name}`;
+    if (usableClip(outFile)) return url;
+    const tmp = `${outFile}.tmp`;
+    const run = await exec(ffmpegBin(), concatIdArgs(logoFile, voiceFile, tmp), FFMPEG_RUN_TIMEOUT_MS);
+    if (run?.code !== 0 || !usableClip(tmp)) {
+      try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+      return voiceUrl;
+    }
+    fs.renameSync(tmp, outFile);
+    return url;
+  } catch (e) {
+    console.error('[imaging] hourly id stitch:', e.message);
+    return voiceUrl;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +316,20 @@ function speakOnTrack(text, ref, kind) {
   if (ready?.url) deliver(ready);
 }
 
+// The hourly-ID variant: same TTS cache, same patch path, but the clip is
+// upgraded to the stitched logo+voice ID when stationIdClip can build one
+// (voice-only otherwise). Still fire-and-forget, like speakOnTrack.
+function speakIdOnTrack(text, ref, hour, opts) {
+  const deliver = (tts) => {
+    if (!tts?.url) return;
+    stationIdClip(hour, text, tts.url, opts)
+      .then((url) => patchIfFree(ref, url || tts.url, 'id'))
+      .catch(() => patchIfFree(ref, tts.url, 'id')); // belt & braces: it never throws
+  };
+  const ready = synthesizeBackground(text, deliver);
+  if (ready?.url) deliver(ready);
+}
+
 // ---------------------------------------------------------------------------
 // Rotation — one liner roughly every config.imaging.linerIntervalMin minutes
 // while somebody is listening. The hourly ID counts as speech too, so a liner
@@ -271,13 +369,14 @@ export function maybeLiner(now = Date.now()) {
   return deliverLiner(now);
 }
 
-// Top-of-hour station ID, called from the scheduler cron.
-export function hourlyStationId(date = new Date()) {
+// Top-of-hour station ID, called from the scheduler cron. `opts` threads the
+// stationIdClip test seams; production callers pass nothing.
+export function hourlyStationId(date = new Date(), opts = undefined) {
   if (!imagingEnabled()) return false;
   if (!hasActiveSession()) return false;
   const ref = upcomingFreeTrack();
   if (!ref) return false;
-  speakOnTrack(timeCallText(date.getHours()), ref, 'id');
+  speakIdOnTrack(timeCallText(date.getHours()), ref, date.getHours(), opts);
   lastSpokeTs = date.getTime();
   return true;
 }

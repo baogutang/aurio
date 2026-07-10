@@ -23,8 +23,10 @@
 //   }
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { DATA_ROOT } from '../config.js';
+import {
+  runFfmpeg, ffmpegBin, ffmpegAvailable, resetFfmpegProbe, FFMPEG_RUN_TIMEOUT_MS,
+} from './ffmpeg.js';
 import { parseLrc } from './lrc.js';
 import { isCreditLine, isBracketHeader } from './lyrics-hooks.js';
 import { lyricsFor } from './index.js';
@@ -41,8 +43,6 @@ const COLD_GAP_SEC = 1.0;     // trailing silence shorter than this = the song j
 const SEGUE_OVERLAP_SEC = 2;  // audit: equal-power crossfade ≈ 2s
 const INTRO_MIN_SEC = 1;      // ≤1s首行时间戳通常是 00:00 的头部/标题行
 const INTRO_MAX_SEC = 60;     // 更晚的"首行"多半是整段前奏被打轴器吞了
-const RUN_TIMEOUT_MS = 10000;
-const VERSION_TIMEOUT_MS = 5000;
 const LYRICS_TIMEOUT_MS = 5000;
 
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -52,60 +52,10 @@ const round1 = (v) => Math.round(v * 10) / 10;
 const num = (s) => Number(String(s).replace(',', '.'));
 
 // --- ffmpeg runner (the test seam) -----------------------------------------
+// Detection + bounded spawn now live in ./ffmpeg.js, shared with imaging.js's
+// hourly-ID stitcher. Re-exported so callers (and tests) keep one import.
 
-// Spawn `bin args…`, capture stderr (where ffmpeg logs everything), resolve
-// { code, stderr }. Kills the child and rejects on timeout — an ffmpeg stuck
-// on a dead stream must never wedge the analysis queue.
-export function runFfmpeg(bin, args, timeoutMs = RUN_TIMEOUT_MS) {
-  return new Promise((resolve, reject) => {
-    let child;
-    try {
-      child = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
-    } catch (e) { reject(e); return; }
-    let stderr = '';
-    let done = false;
-    const killer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      try { child.kill('SIGKILL'); } catch { /* noop */ }
-      reject(new Error(`${bin} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    child.stderr.on('data', (d) => {
-      stderr += d.toString();
-      // silencedetect+summary is tiny; bound memory anyway on pathological logs
-      if (stderr.length > 512 * 1024) stderr = stderr.slice(-256 * 1024);
-    });
-    child.on('error', (e) => {
-      if (done) return;
-      done = true;
-      clearTimeout(killer);
-      reject(e);
-    });
-    child.on('close', (code) => {
-      if (done) return;
-      done = true;
-      clearTimeout(killer);
-      resolve({ code, stderr });
-    });
-  });
-}
-
-export function ffmpegBin() {
-  return process.env.AURIO_FFMPEG || 'ffmpeg';
-}
-
-// Feature detection, cached per process: most users won't have ffmpeg, and the
-// answer doesn't change under us. `AURIO_FFMPEG` overrides the PATH lookup.
-let ffmpegCheck = null;
-export function ffmpegAvailable({ exec = runFfmpeg } = {}) {
-  if (!ffmpegCheck) {
-    ffmpegCheck = Promise.resolve()
-      .then(() => exec(ffmpegBin(), ['-version'], VERSION_TIMEOUT_MS))
-      .then((r) => r?.code === 0)
-      .catch(() => false);
-  }
-  return ffmpegCheck;
-}
+export { runFfmpeg, ffmpegBin, ffmpegAvailable };
 
 // --- stderr parsing ---------------------------------------------------------
 
@@ -280,7 +230,7 @@ const FILTERGRAPH = `silencedetect=noise=${SILENCE_NOISE}:d=${SILENCE_MIN_SEC},e
 export async function analyzeTrack(track = {}, opts = {}) {
   const exec = opts.exec || runFfmpeg;
   const lyrics = opts.lyrics || lyricsFor;
-  const timeoutMs = opts.timeoutMs ?? RUN_TIMEOUT_MS;
+  const timeoutMs = opts.timeoutMs ?? FFMPEG_RUN_TIMEOUT_MS;
   const record = emptyRecord(track);
 
   // introSec comes from lyrics we already fetch elsewhere — free, and
@@ -408,7 +358,7 @@ export function ensureCue(track, opts = {}) {
 
 /** Test helper: forget the ffmpeg probe, the loaded cache, and in-flight work. */
 export function resetCueState() {
-  ffmpegCheck = null;
+  resetFfmpegProbe();
   cueStore = null;
   memory.clear();
   pending.clear();
