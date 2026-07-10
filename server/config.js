@@ -95,6 +95,20 @@ function buildAi(s) {
     },
   };
 }
+// Station imaging (sonic logo / liners / hourly ID). On by default — it costs
+// nothing (no LLM; TTS is cached) and is the station's identity. IMAGING_ENABLED
+// only turns it off when explicitly 'false'.
+function buildImaging(s) {
+  const raw = s.IMAGING_ENABLED;
+  const enabled = raw === undefined || raw === null || raw === ''
+    ? true
+    : String(raw).toLowerCase() !== 'false';
+  const min = Number(s.IMAGING_LINER_INTERVAL_MIN);
+  return {
+    enabled,
+    linerIntervalMin: Number.isFinite(min) && min > 0 ? min : 25,
+  };
+}
 function buildCalendars(s) {
   return {
     feishu: {
@@ -143,6 +157,7 @@ export const config = {
   fish: buildFish(process.env),
   voice: buildVoice(process.env),
   weather: buildWeather(process.env),
+  imaging: buildImaging(process.env),
   calendars: buildCalendars(process.env),
   ai: buildAi(process.env),
 };
@@ -158,6 +173,7 @@ export function applyOverrides(overrides = {}) {
   config.fish = buildFish(s);
   config.voice = buildVoice(s);
   config.weather = buildWeather(s);
+  config.imaging = buildImaging(s);
   config.calendars = buildCalendars(s);
   config.ai = buildAi(s);
 }
@@ -172,6 +188,7 @@ export function summarize() {
     fish: config.fish.enabled,
     voice: config.voice.enabled,
     weather: config.weather.enabled,
+    imaging: config.imaging.enabled,
     calendars: Object.fromEntries(
       Object.entries(config.calendars).map(([k, v]) => [k, v.enabled])
     ),

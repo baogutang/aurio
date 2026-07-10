@@ -18,6 +18,7 @@ import { qqmusic } from './music/qqmusic.js';
 import { buildProfile, getProfile } from './taste-profile.js';
 import { available as brainAvailable, providers as aiProviders, testProvider as aiTest } from './brain/index.js';
 import { TTS_CACHE_DIR, testVoice, startTtsCacheGc } from './tts/index.js';
+import { IMAGING_CACHE_DIR, startImaging } from './imaging.js';
 import { testWeather } from './weather/openweather.js';
 import { testIcs } from './calendar/ics.js';
 import { openCalendarPrivacy, testSystemCalendar } from './calendar/system.js';
@@ -131,7 +132,7 @@ function rejectControl(res, status, error) {
 }
 
 app.use((req, res, next) => {
-  if (!ALLOW_LAN && req.path.startsWith('/tts/') && !isLoopback(req)) {
+  if (!ALLOW_LAN && (req.path.startsWith('/tts/') || req.path.startsWith('/imaging/')) && !isLoopback(req)) {
     return res.status(403).end();
   }
 
@@ -161,6 +162,8 @@ app.use(express.json({ limit: '5mb' }));
 // ---- Static: the PWA player + cached TTS audio ----
 app.use('/', express.static(path.join(ROOT, 'pwa')));
 app.use('/tts', express.static(TTS_CACHE_DIR));
+// Imaging assets (sonic logo etc.) — same pattern as /tts, generated at startup.
+app.use('/imaging', express.static(IMAGING_CACHE_DIR));
 
 // ---- Status / health ----
 app.get('/api/session', (req, res) => {
@@ -282,6 +285,7 @@ app.get('/api/settings', (req, res) => {
     },
     fish: { hasKey: config.fish.enabled, referenceId: config.fish.referenceId },
     weather: { hasKey: !!config.weather.key, city: config.weather.city, lat: config.weather.lat, lon: config.weather.lon, enabled: config.weather.enabled },
+    imaging: { enabled: config.imaging.enabled, linerIntervalMin: config.imaging.linerIntervalMin },
     calendars: {
       system: { enabled: process.platform === 'darwin' },
       ics: { urls: (cal.ics?.urls || []).join('\n'), files: cal.ics?.files || [], enabled: !!cal.ics?.enabled },
@@ -387,6 +391,8 @@ app.post('/api/settings', (req, res) => {
     'FISH_API_KEY', 'FISH_REFERENCE_ID', 'FISH_MODEL', 'FISH_API_BASE_URL',
     // weather
     'OPENWEATHER_KEY', 'WEATHER_LAT', 'WEATHER_LON', 'WEATHER_CITY',
+    // station imaging (sonic logo / liners / hourly ID)
+    'IMAGING_ENABLED', 'IMAGING_LINER_INTERVAL_MIN',
     // calendars
     'CALENDAR_ICS_URLS', 'CALENDAR_ICS_FILES',
     'FEISHU_APP_ID', 'FEISHU_APP_SECRET', 'FEISHU_CALENDAR_ID',
@@ -849,6 +855,7 @@ export function startServer() {
       console.log('  features:', JSON.stringify(summarize()));
       startScheduler();
       startRadio();
+      startImaging();
       startTtsCacheGc();
       brainAvailable().then((r) =>
         console.log(`  brain (${config.ai.provider}):  ${r.ok ? 'ready' : 'unavailable — ' + r.detail}`)
