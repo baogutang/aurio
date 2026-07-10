@@ -56,6 +56,7 @@ const { db } = await import('../server/store.js');
 
 afterAll(() => {
   delete process.env.AURIO_DATA_DIR;
+  delete process.env.AURIO_LLM_JUDGE;
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -69,6 +70,9 @@ beforeEach(() => {
   db.setPref(shows.TALK_LEDGER_KEY, []);
   db.setPref('segmentMemory', []);
   db.setQueueImmediate([]);
+  // These tests pin the RULE judge's call arithmetic; the LLM judge layer has
+  // its own wiring test below and unit tests in judge-llm.test.js.
+  process.env.AURIO_LLM_JUDGE = 'off';
 });
 
 describe('composeSegment × talk budget', () => {
@@ -180,5 +184,41 @@ describe('runSegment × airing', () => {
     expect(b.say).toBe('在的，这就来。');
     // …and an answer is not a break: the ledger did not grow.
     expect(db.getPref(shows.TALK_LEDGER_KEY, [])).toHaveLength(2);
+  });
+});
+
+// The LLM judge layer at the dj seam: a fail verdict spends exactly one
+// corrective regen; verdict machinery never fires for chat.
+describe('composeSegment × LLM judge wiring', () => {
+  it('a human-judge fail regenerates once with the category note', async () => {
+    process.env.AURIO_LLM_JUDGE = 'on';
+    think.mockImplementation(async (prompt) => {
+      if (prompt.includes('质检员')) return '{"pass": false, "problems": ["unnatural"]}';
+      if (prompt.includes('重写要求')) return action('重写后这句。');
+      return action('第一版这句。');
+    });
+    const seg = await dj.composeSegment({ kind: 'mood' });
+    expect(seg.say).toBe('重写后这句。');
+    // gen → judge → regen; the rewrite carried the unnatural correction.
+    expect(think).toHaveBeenCalledTimes(3);
+    expect(think.mock.calls[2][0]).toContain('不像随口说出来');
+  });
+
+  it('a pass verdict costs one judge call and keeps the line', async () => {
+    process.env.AURIO_LLM_JUDGE = 'on';
+    think.mockImplementation(async (prompt) => (
+      prompt.includes('质检员') ? '{"pass": true}' : action('第一版这句。')
+    ));
+    const seg = await dj.composeSegment({ kind: 'mood' });
+    expect(seg.say).toBe('第一版这句。');
+    expect(think).toHaveBeenCalledTimes(2);
+  });
+
+  it('chat never pays for the human judge', async () => {
+    process.env.AURIO_LLM_JUDGE = 'on';
+    think.mockResolvedValue(action('在呢，你说。', { intent: 'chat' }));
+    const seg = await dj.composeSegment({ kind: 'chat', text: '在吗' });
+    expect(seg.say).toBe('在呢，你说。');
+    expect(think).toHaveBeenCalledTimes(1);
   });
 });

@@ -61,8 +61,26 @@ describe('category checks', () => {
   it('flags tech words', () => {
     expect(judgeSay('让我用模型帮你算一下').violations.map((v) => v.code)).toContain('tech_words');
   });
+  it('flags guessing the listener\'s life (fabricated intimacy)', () => {
+    // The real aired line from the first listening test, verbatim.
+    const codes = judgeSay('再过两首就到你这儿——等你手头那阵忙完，富士山下就来。').violations.map((v) => v.code);
+    expect(codes).toContain('fabricated_listener');
+    expect(judgeSay('你现在肯定在加班吧，这首给你。').violations.map((v) => v.code)).toContain('fabricated_listener');
+  });
+  it('flags critic verdicts and queue-revision leaks', () => {
+    // The second aired failure: a verdict on the song plus queue mechanics.
+    const codes = judgeSay('这首唱到「霓虹在雨里慢慢化开」那句就该收了，后面几首我另挑了。').violations.map((v) => v.code);
+    expect(codes).toContain('critic_voice');
+    expect(codes).toContain('meta_narration');
+  });
+  it('flags spoken semicolons as written prose', () => {
+    expect(judgeSay('外面在下雨；歌接着放。').violations.map((v) => v.code)).toContain('written_prose');
+  });
   it('lets a real line through', () => {
     expect(judgeSay('一点十七，这个点还醒着的，都差不多。').ok).toBe(true);
+  });
+  it('lets a proper hotline confirmation through', () => {
+    expect(judgeSay('《假想曲》排上了，前面还有两首，别走开。', { skipRepeat: true }).ok).toBe(true);
   });
 });
 

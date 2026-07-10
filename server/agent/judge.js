@@ -32,15 +32,39 @@ const PHRASE_RULES = [
   },
   {
     // The listener has no idea the host has a queue, a library or a source.
+    // 「另挑」「重新排」 expose that a plan existed and was revised — same leak.
     code: 'meta_narration',
     patterns: [
       /理解(你的)?(意图|需求)/, /选曲/, /编排/, /找接法/, /挑选歌曲/, /安排(这段|这一段|节目)/,
       /队列/, /曲库/, /音源/, /缓存/, /插播/,
+      /另挑/, /重新(挑|排|选)/, /换了几首/, /歌单/,
     ],
   },
   {
     code: 'tech_words',
     patterns: [/\bAI\b/, /人工智能/, /模型/, /大脑/, /系统/, /\bJSON\b/i, /格式/, /设置/],
+  },
+  {
+    // Guessing the listener's life. A detector fact is STATED (「距上次收听
+    // 23 天」); anything guessed — 忙完、手头、想必在… — is fabricated intimacy,
+    // creepier than assistant voice because it impersonates knowing them.
+    code: 'fabricated_listener',
+    patterns: [
+      /等你[^，。！？]{0,8}(忙|回来|回家|睡|醒|下班|吃完|做完)/,
+      /你手头/, /你那边/, /忙完/, /想必/,
+      /你(现在)?(肯定|应该|大概|多半|八成|一定还?)(在|是|还|正)/,
+    ],
+  },
+  {
+    // Verdicts on the song. A host points at a moment; a critic grades.
+    code: 'critic_voice',
+    patterns: [/就该(收|停|结束|完)/, /败笔/, /可惜了/, /一般般/, /这歌(不行|一般|不怎么样)/, /写(崩|砸)/],
+  },
+  {
+    // Nobody speaks a semicolon. The broader balanced-prose disease (对仗、
+    // 破折号长句) is a judgment call and lives in the LLM layer (judge-llm.js).
+    code: 'written_prose',
+    patterns: [/；/],
   },
 ];
 

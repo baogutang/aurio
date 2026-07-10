@@ -9,6 +9,7 @@ import {
 } from './music/index.js';
 import { cachedSynthesis, synthesizeBackground } from './tts/index.js';
 import { judgeSay, rememberSaid } from './agent/judge.js';
+import { judgeLikeHuman } from './agent/judge-llm.js';
 import { consultTalkBudget, recordSpokenBreak } from './shows.js';
 import { db } from './store.js';
 import { queueController } from './runtime/queue-controller.js';
@@ -124,7 +125,7 @@ function consumeShoutout(ts, now = Date.now()) {
 // Prompt suffixes. Both land on the BASE prompt (not a per-call wrapper), so
 // the judge's corrective retry — `${prompt}\n\n${correctiveNote(codes)}` —
 // keeps them on the rewrite.
-const HOTLINE_CONFIRM_NOTE = '（热线点歌）这位听众是打进点歌热线的，没有说要立刻听到。像电台接热线一样处理：把歌排到后面（placement 用 append），让节目自然走到它；say 写一句主播口吻的点歌确认——让听众知道你记下了、稍后就放，一句话以内。不要用「收到」「好的」「明白」开头，不要提队列、歌单或任何后台安排。只有当这首歌和此刻的节目气口特别搭时才用 next。';
+const HOTLINE_CONFIRM_NOTE = '（热线点歌）这位听众是打进点歌热线的，没有说要立刻听到。像电台接热线一样处理：把歌排到后面（placement 用 append），让节目自然走到它；say 写一句主播口吻的点歌确认，报出歌名最自然，20 个字以内，说完就完。不要用「收到」「好的」「明白」开头；不要提队列、歌单或任何后台安排；不要猜这位听众正在做什么，也不要替他安排（不知道他忙不忙、在不在路上，就别说）。只有当这首歌和此刻的节目气口特别搭时才用 next。';
 
 function shoutoutNote(s) {
   const req = s.tracks?.length ? s.tracks.join('、') : s.text;
@@ -190,6 +191,10 @@ const CORRECTION = {
   too_long: '上一版太长了，请压到一句话。',
   repetition: '上一版和最近说过的话太像了，请换一个完全不同的开头和说法。',
   same_angle: '上一版抓的具体细节和最近两段完全重叠（比如又是天气、又是时间）。换一个别的角度：正在播的这首歌本身、歌手、年份、或者听众刚做的事。',
+  fabricated_listener: '上一版在猜听众正在做什么（在忙、快回来了、想必…）。你不知道的不要编：只说你真知道的——这首歌、此刻的时间、天气、他真说过的话。',
+  critic_voice: '上一版在给歌下判断、打分。主播指向歌里的一个瞬间，不评价歌的好坏。',
+  written_prose: '上一版是书面语句式（工整对仗、长句串接）。像随口说话那样：短句，说人话，说完就完。',
+  unnatural: '上一版不像随口说出来的话。想象你正对着麦克风，顺口把这一句说出来，重来。',
 };
 
 // The listener never heard the rejected draft. Without this the model apologises
@@ -275,6 +280,29 @@ export async function composeSegment(trigger = {}) {
         }
       } catch (e) {
         console.error('[dj] judge regen failed, going silent:', e.message);
+        action = { ...action, say: '', segue: '' };
+      }
+    }
+  }
+
+  // Second judge layer (RADIO_AUDIT idea 05): the rules catch diseases we have
+  // named; this asks the one unenumerable question — does it sound like a
+  // person? Scheduled kinds only: chat has a listener waiting on the reply,
+  // refill stays quiet anyway. Fails open inside judgeLikeHuman.
+  if (!degraded && kind !== 'refill' && kind !== 'chat' && (action.say || action.segue)) {
+    const verdict = await judgeLikeHuman({ say: action.say, segue: action.segue }, think);
+    if (!verdict.pass) {
+      try {
+        const raw2 = await think(`${prompt}\n\n${correctiveNote(verdict.problems)}`);
+        const v2 = validateRadioAction(raw2);
+        if (v2.ok && !judgeAction(v2.action, talk.show).length) {
+          action = v2.action;
+        } else {
+          console.error('[dj] human judge failed after retry, going silent:', verdict.problems.join(','));
+          action = { ...action, say: '', segue: '' };
+        }
+      } catch (e) {
+        console.error('[dj] human judge regen failed, going silent:', e.message);
         action = { ...action, say: '', segue: '' };
       }
     }

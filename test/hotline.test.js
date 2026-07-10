@@ -58,6 +58,7 @@ const { db } = await import('../server/store.js');
 
 afterAll(() => {
   delete process.env.AURIO_DATA_DIR;
+  delete process.env.AURIO_LLM_JUDGE;
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -86,6 +87,9 @@ beforeEach(() => {
   db.setPref(dj.SHOUTOUT_KEY, []);
   db.setPref('segmentMemory', []);
   db.setQueueImmediate([]);
+  // Hotline tests pin brain-call arithmetic; the LLM judge layer is unit- and
+  // wiring-tested elsewhere (judge-llm.test.js, show-segment.test.js).
+  process.env.AURIO_LLM_JUDGE = 'off';
 });
 
 describe('urgency detection', () => {
