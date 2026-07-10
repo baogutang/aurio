@@ -1,5 +1,12 @@
 # Playout 切换手册 — P3 THE FIX 的后半程
 
+> **✅ 已执行（2026-07-10）**。六条缝全部切完：`server/playout/station.js`（接线单例）+
+> `server/playout/horizon.js`（ensureHorizon）落地，queue-controller 突变世界 / 控制端
+> 选举 / queueTtsPatch / 五种广播 mode / queueSync.ts 删除，WS 换 join snapshot +
+> programme 推送。与手册的偏差：radio.js 与 queue-controller.js 未整文件删除，而是降级为
+> 花钱闸门 shim / 只读 log 投影 —— scheduler.js、agent/**、context.js 归并行工作流所有，
+> 其 import 面需保持不动。本文余下内容保留作切换期间的决策记录。
+
 > `server/playout/`（`log.js` + `playout.js`，48 个假时钟测试）已落地但**未接线** —— 当前零行为变化。
 > 本文写给那个「删掉 queue-controller 世界」的专门串行轮次。每一条缝都指向今天真实的代码行。
 

@@ -151,18 +151,19 @@
 - [x] **前置（没得商量）**：假时钟 playout 测试夹具已落地（`test/playout-log.test.js` + `playout-engine.test.js`，48 个确定性测试，含合盖快进、边界、崩溃恢复）（2026-07-10）
   - [x] 地基先行：web 侧 vitest 基础设施 + 纯 lib 测试已落地，`queueSync.ts` 的合并行为（含怪癖）已被特征测试钉住，作为替换时的对照规格（2026-07-10）
 - [x] `server/playout/`：`log.js` + `playout.js` **已建成未接线**（纯增量，零行为变化）——墙钟权威 LogItem、segue 递推算术、合盖再开一次 `jumped` 快进、`join()` 中途接入快照、`onHorizonLow` 接缝；切换作战计划见 [PLAYOUT_CUTOVER.md](PLAYOUT_CUTOVER.md)（六个接缝 file:line、删除清单、先影子运行、两个已知风险）（2026-07-10）
-- [ ] 客户端 **join in progress**：在偏移量上接入，不是从索引 0 播队列
-- [ ] `hasActiveSession` 只保留「控制花钱」一个用途（游标推进免费，LLM / TTS 调用要有人听）
-- [ ] 净减法：删 queue-controller / 控制端选举 / queueTtsPatch / 五种广播 mode / queueSync.ts（审计判断：三分之一缺陷靠删除消失）
-- [ ] **Voice tracking**：播 N 时预合成 N+1、N+2 的口播 —— TTS 延迟在结构上消失，慢而好的声音从「定时节目专用」升级为全时段默认
-- [ ] `ensureHorizon()`：队列永不为空，冷启动自开台，大脑不可用时 `recommend()` 接管
+- [x] **切换完成（THE FIX 落地）**：`server/playout/station.js` 接线 log+engine（持久化到 store prefs、restart 恢复中场、aired 历史修剪、旧客户端队列一次性迁入 log）；WS 协议换成 join snapshot + programme 推送（连接即收 current + offsetMs + upNext，之后每次变化推同一形状带 reason）；实测：冷数据目录零客户端自开台、刷新在直播偏移处接入（Δ0.2s）、双客户端同秒（Δ0.06s）、skip 是服务端 log 操作全员重定时（2026-07-10）
+- [x] 客户端 **join in progress**：在偏移量上接入，不是从索引 0 播队列——`web/src/lib/programme.ts` 镜像服务端 snapshotAt 算术（时钟偏移、本地推进、暂停后回直播沿零往返）；PAUSE 本地、PLAY 回到直播沿、prev 死亡、进度条只读（2026-07-10）
+- [x] `hasActiveSession` 只保留「控制花钱」一个用途（游标推进免费，LLM / TTS 调用要有人听）——roster 上「有新鲜心跳且未暂停」即在听；控制端选举删除（2026-07-10）
+- [x] 净减法：删 queue-controller 突变世界 / 控制端选举 / queueTtsPatch / 五种广播 mode / queueSync.ts / POST /api/queue / requireController（queue-controller.js 仅剩只读 log 投影，供 context.js / agent/loop.js 的读路径；radio.js 仅剩花钱闸门 shim）（2026-07-10）
+- [x] **Voice tracking**：item 一进 log 近视界就预合成 voice（station.trackVoices，听众在场才花钱）；imaging 的 liner/整点台呼改 patch 到 upcoming log item 的 voice（2026-07-10）
+- [x] `ensureHorizon()`：`server/playout/horizon.js` 应答引擎 horizon-low；有人听走大脑 refill，没人听 `recommend()` 零 LLM 填灌；失败退避、小池子轮播不 back-to-back、冷启动自开台（2026-07-10）
 - [x] Cue 点与 DSP 收尾：`server/music/cue.js` —— ffmpeg 只跑头尾 40s（对真实 ffmpeg 8.1 验证过解析格式），cueIn/cueOut/冷淡结尾判定/LUFS→−16 增益/LRC 推 introSec（带合理性校验），永久缓存 `cache/cues.json`，无 ffmpeg 优雅降级全空；待切换轮接入 LogItem（2026-07-10）
 
 ### 直播感 UI（依赖时间线，与 playout 同步落地）
 
 - [ ] **播出钟（hot clock）**：一个环 + 真实墙钟扫针 + 接下来一小时的真实节目日志弧段（歌 / 口播 / 台呼）——「你能看见下一个小时」是所有音乐 app 都没有的电台语法
 - [ ] **LIVE 时间线**：进度显示墙钟时刻；join in progress 从中间亮起；「已连续直播 N 小时」
-- [ ] 进度条不可拖拽（或拖拽 = 时移，接 P4 磁带）
+- [x] 进度条不可拖拽（切换轮顺手落地：LIVE 是表针不是划杆；拖拽 = 时移留给 P4 磁带）（2026-07-10）
 - [ ] 诚实的「N 人正在收听」（单一时间线让这个数字第一次是真的）
 
 **验收：README 那句 "Aurio doesn't wait for you to press play" 第一次是真的；两台设备听到同一秒。**

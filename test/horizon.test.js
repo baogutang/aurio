@@ -2,7 +2,7 @@
 // refills, the cost gate decides brain vs recommend, failures back off, and a
 // cold start self-starts the station.
 import { describe, it, expect, vi } from 'vitest';
-import { createHorizonKeeper } from '../server/playout/horizon.js';
+import { createHorizonKeeper, wireHorizonKeeper } from '../server/playout/horizon.js';
 import { makeClock } from './helpers/clock.js';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -98,6 +98,38 @@ describe('horizon keeper', () => {
     // each compose adds 10s; 25s horizon needs three rounds
     expect(r.compose).toHaveBeenCalledTimes(3);
     expect(r.remaining()).toBeGreaterThanOrEqual(25000);
+  });
+
+  it('rotation: a small deterministic pool never starves the station', async () => {
+    // An unconfigured instance sees the same short public chart every call.
+    const pool = ['a', 'b', 'c'].map((id) => ({ source: 'qqmusic', id, title: id }));
+    const appended = [];
+    const fakeStation = {
+      horizonRemaining: () => (appended.length ? 10 * 60000 : 0),
+      items: () => appended.map((t) => ({ track: t })),
+      appendTracks: (tracks) => { appended.push(...tracks); return tracks.map((t) => ({ track: t })); },
+    };
+    const keeper = wireHorizonKeeper({
+      station: fakeStation,
+      runSegment: async () => ({ error: 'no brain' }),
+      recommend: async () => pool.map((t) => ({ ...t })),
+      playbackUrl: async () => '/api/qq/stream/x',
+      hasListener: () => false,
+    });
+    keeper.poke();
+    await flush();
+    expect(appended.map((t) => t.id)).toEqual(['a', 'b', 'c']);
+
+    // The whole pool is now "recent" — the next starvation rotates repeats
+    // back in instead of parking the station in dead air.
+    appended.length = 0;
+    appended.push(...pool.map((t) => ({ ...t }))); // simulate: all aired recently
+    const before = appended.length;
+    fakeStation.horizonRemaining = () => (appended.length > before ? 10 * 60000 : 0);
+    keeper.poke({ reset: true });
+    await flush();
+    expect(appended.length).toBeGreaterThan(before); // repeats rotated in
+    keeper.stop();
   });
 
   it('coalesces concurrent pokes into one running fill', async () => {

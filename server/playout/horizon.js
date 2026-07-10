@@ -120,18 +120,31 @@ export function wireHorizonKeeper({ station, runSegment, recommend, playbackUrl,
       return Array.isArray(b?.queue) ? b.queue.length : 0;
     },
     fallback: async () => {
-      const recent = new Set(
-        station.items().slice(-30)
-          .map((it) => it.track && `${it.track.source}:${it.track.id}`)
-          .filter(Boolean),
-      );
-      let tracks = await recommend(5);
-      tracks = (tracks || []).filter((t) => !recent.has(`${t.source}:${t.id}`));
+      const key = (t) => (t ? `${t.source}:${t.id}` : '');
+      const recentKeys = station.items().slice(-30)
+        .map((it) => key(it.track))
+        .filter(Boolean);
+      const avoid = new Set(recentKeys);
+      // Rotation floor: even when the pool is small enough that repeats are
+      // unavoidable (an unconfigured instance sees a short public chart),
+      // never repeat back-to-back — and never starve the station over déjà vu.
+      const tailAvoid = new Set(recentKeys.slice(-2));
+      const pool = (await recommend(24)) || [];
+      let tracks = pool.filter((t) => !avoid.has(key(t)));
+      if (!tracks.length && pool.length) {
+        tracks = pool.filter((t) => !tailAvoid.has(key(t)));
+        if (!tracks.length) tracks = pool;
+        console.log('[horizon] pool exhausted — rotating repeats back in');
+      }
+      tracks = tracks.slice(0, 5);
       for (const t of tracks) {
         try { t.url = await playbackUrl(t); } catch { t.url = null; }
       }
       tracks = tracks.filter((t) => t.url);
-      if (!tracks.length) return 0;
+      if (!tracks.length) {
+        console.error('[horizon] fallback found nothing playable');
+        return 0;
+      }
       return station.appendTracks(tracks).length;
     },
   });
