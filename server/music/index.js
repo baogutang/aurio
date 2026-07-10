@@ -473,20 +473,35 @@ function sourceLabel(source) {
   return source || 'unknown';
 }
 
+// A dead source must cost at most its deadline, never the whole pool. The
+// adapters' fetches carry no timeout, so an unreachable NAS otherwise HANGS
+// (not rejects) and wedges every recommend() caller — post-cutover that
+// includes the horizon keeper, i.e. the station itself.
+const SOURCE_DEADLINE_MS = 8000;
+export function withDeadline(promise, label, ms = SOURCE_DEADLINE_MS) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      if (t.unref) t.unref();
+    }),
+  ]);
+}
+
 export async function recommend(count = 20, constraints = {}) {
   const pools = [];
   if (shouldUseSource('navidrome', constraints)) {
-    try { pools.push(await navidrome.random(count)); } catch (e) { console.error('[music] recommend:', e.message); }
+    try { pools.push(await withDeadline(navidrome.random(count), 'navidrome recommend')); } catch (e) { console.error('[music] recommend:', e.message); }
   }
   if (shouldUseSource('netease', constraints)) {
     try {
-      const rec = await netease.dailyRecommend();
+      const rec = await withDeadline(netease.dailyRecommend(), 'netease recommend');
       if (rec?.length) pools.push(rec);
     } catch (e) { console.error('[music] netease recommend:', e.message); }
   }
   if (shouldUseSource('qqmusic', constraints)) {
     try {
-      const rec = await qqmusic.recommend(count);
+      const rec = await withDeadline(qqmusic.recommend(count), 'qq recommend');
       if (rec?.length) pools.push(rec);
     } catch (e) { console.error('[music] qq recommend:', e.message); }
   }

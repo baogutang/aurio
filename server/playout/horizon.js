@@ -137,8 +137,15 @@ export function wireHorizonKeeper({ station, runSegment, recommend, playbackUrl,
         console.log('[horizon] pool exhausted — rotating repeats back in');
       }
       tracks = tracks.slice(0, 5);
+      // playbackUrl can HANG on a dead source (no adapter timeouts); a starving
+      // keeper must never wedge on one track's URL.
       for (const t of tracks) {
-        try { t.url = await playbackUrl(t); } catch { t.url = null; }
+        try {
+          t.url = await Promise.race([
+            playbackUrl(t),
+            new Promise((resolve) => { const h = setTimeout(() => resolve(null), 8000); h.unref?.(); }),
+          ]);
+        } catch { t.url = null; }
       }
       tracks = tracks.filter((t) => t.url);
       if (!tracks.length) {
