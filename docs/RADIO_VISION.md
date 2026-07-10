@@ -21,8 +21,8 @@
 | P0 | 收尾与地基 | 本周 | ✅ 代码完成（2026-07-10），待耳测 |
 | P1 | 台的身份（声音包装 + 调台） | 一个周末 | ✅ 代码完成（2026-07-10），待耳测/眼测 |
 | P2 | 节目语法（节目表 + 热线 + 栏目） | 一个月 | ✅ 代码完成（2026-07-10）：节目表 / 话密度 / 周五回顾 / 探测器 / 情感 TTS / 热线化 / 歌词素材；仅剩 liners 用新音色重生成（等豆包凭证） |
-| P3 | 时间线（服务端 playout，THE FIX） | 一个季度 | 🟡 前置的前端测试地基已落地（85 测试 + queueSync 行为规格） |
-| P4 | 灵魂（磁带 / 开台仪式 / 播出钟） | P3 之后 | ☐ 未开始 |
+| P3 | 时间线（服务端 playout，THE FIX） | 一个季度 | 🟡 引擎 + 假时钟夹具 + cue 分析已建成（未接线）；剩切换战役（照 PLAYOUT_CUTOVER.md 串行做）+ 直播感 UI |
+| P4 | 灵魂（磁带 / 开台仪式 / 播出钟） | P3 之后 | 🟡 开台仪式已完成；磁带 / 播出钟等待 P3 切换 |
 
 ---
 
@@ -148,15 +148,15 @@
 目标：合上笔记本一小时后打开，它正在一首歌的中间，正好在它此刻本该在的地方。
 技术方案细节（LogItem 形状、删除清单、cue 点、LUFS）见 [RADIO_AUDIT.md](RADIO_AUDIT.md#一个季度--时间线且它活过标签页--the-fix)，此处只列推进要点：
 
-- [ ] **前置（没得商量）**：先建假时钟 playout 测试夹具，能确定性推进时间线并断言 `scheduledStart` 算术 —— 之后才允许动 `queue-controller.js`
-  - [x] 地基先行：web 侧 vitest 基础设施 + 75 个纯 lib 测试已落地，`queueSync.ts` 的合并行为（含怪癖）已被特征测试钉住，作为替换时的对照规格（2026-07-10）
-- [ ] `server/playout/`：`log.js`（墙钟 `scheduledStart` 的 LogItem[]）+ `playout.js`（真实时间推进游标，不管有没有人听）
+- [x] **前置（没得商量）**：假时钟 playout 测试夹具已落地（`test/playout-log.test.js` + `playout-engine.test.js`，48 个确定性测试，含合盖快进、边界、崩溃恢复）（2026-07-10）
+  - [x] 地基先行：web 侧 vitest 基础设施 + 纯 lib 测试已落地，`queueSync.ts` 的合并行为（含怪癖）已被特征测试钉住，作为替换时的对照规格（2026-07-10）
+- [x] `server/playout/`：`log.js` + `playout.js` **已建成未接线**（纯增量，零行为变化）——墙钟权威 LogItem、segue 递推算术、合盖再开一次 `jumped` 快进、`join()` 中途接入快照、`onHorizonLow` 接缝；切换作战计划见 [PLAYOUT_CUTOVER.md](PLAYOUT_CUTOVER.md)（六个接缝 file:line、删除清单、先影子运行、两个已知风险）（2026-07-10）
 - [ ] 客户端 **join in progress**：在偏移量上接入，不是从索引 0 播队列
 - [ ] `hasActiveSession` 只保留「控制花钱」一个用途（游标推进免费，LLM / TTS 调用要有人听）
 - [ ] 净减法：删 queue-controller / 控制端选举 / queueTtsPatch / 五种广播 mode / queueSync.ts（审计判断：三分之一缺陷靠删除消失）
 - [ ] **Voice tracking**：播 N 时预合成 N+1、N+2 的口播 —— TTS 延迟在结构上消失，慢而好的声音从「定时节目专用」升级为全时段默认
 - [ ] `ensureHorizon()`：队列永不为空，冷启动自开台，大脑不可用时 `recommend()` 接管
-- [ ] Cue 点与 DSP 收尾：ffmpeg `silencedetect` + `ebur128` 只跑头尾 40s 永久缓存；统一归一 −16 LUFS；cold-end 硬切不淡出
+- [x] Cue 点与 DSP 收尾：`server/music/cue.js` —— ffmpeg 只跑头尾 40s（对真实 ffmpeg 8.1 验证过解析格式），cueIn/cueOut/冷淡结尾判定/LUFS→−16 增益/LRC 推 introSec（带合理性校验），永久缓存 `cache/cues.json`，无 ffmpeg 优雅降级全空；待切换轮接入 LogItem（2026-07-10）
 
 ### 直播感 UI（依赖时间线，与 playout 同步落地）
 
@@ -172,7 +172,7 @@
 ## 六、P4 · 灵魂（P3 之后，可并行挑选）
 
 - [ ] **磁带回放**：标记时间线版本（口播指向已缓存的 `/tts/<sha1>.mp3`，歌重新流式播放），近零内存；UI 上「倒带」= 时移
-- [ ] **开台仪式**（冷启动）：第一次启动 = 演出 —— Auri 试音（「喂……一、二」）、自我介绍、边扫库边惊叹（「你居然有这张专辑」）、放第一首歌；替代现在只指向设置面板的 Onboarding
+- [x] **开台仪式**（冷启动）：Onboarding 终点从「进设置」变为「开台」——`rituals.firstRunFact()` 便宜地摸真实曲库（「随手翻到：陈奕迅《十年》(2003)」），一次 `kind:'first-run'` 触发让她自己开场并放第一首歌；台词零硬编码（走人设+双层判官），曲库全空时诚实转安静陪伴；防重复 guard 只在真的放出歌后才落账。真机验证：开场词「三点十七，随手翻到这首，就拿它开头了。」（2026-07-10，提前完成）
 - [ ] **睡眠定时器 / 唤醒电台**（若做闹钟：`powerSaveBlocker` + 明确告知，要么老实做要么不做）
 - [ ] 探测器记忆的长期化：跨月 / 跨季的「上次听这首还是……」
 
