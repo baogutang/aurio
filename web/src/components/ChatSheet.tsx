@@ -16,9 +16,13 @@ interface Props {
   busy?: boolean;
   onGoAir?: () => void;
   isObserver?: boolean;
+  /** Hotline state line (点歌已记下) shown under the latest reply. */
+  notice?: string | null;
+  /** Fired when the user focuses or types in the input — cancels auto-close. */
+  onInputActivity?: () => void;
 }
 
-export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, busy = false, onGoAir, isObserver = false }: Props) {
+export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, busy = false, onGoAir, isObserver = false, notice = null, onInputActivity }: Props) {
   const { t } = useI18n();
   const [text, setText] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -35,7 +39,7 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, 
     const el = scrollRef.current;
     if (!open || !el || !stickToBottom.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [open, messages, busy]);
+  }, [open, messages, busy, notice]);
 
   useEffect(() => {
     if (!open) return;
@@ -147,6 +151,18 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, 
                     </span>
                   </motion.div>
                 )}
+                {notice && !busy && (
+                  <motion.p
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={spring.gentle}
+                    className="text-center text-[11px] font-mono py-1"
+                    style={{ color: 'rgb(var(--accent-rgb))' }}
+                    role="status"
+                  >
+                    {notice}
+                  </motion.p>
+                )}
                 </>
               )}
             </div>
@@ -166,7 +182,8 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, 
               <div className="flex gap-2 items-center">
                 <input
                   value={text}
-                  onChange={(e) => setText(e.target.value)}
+                  onChange={(e) => { setText(e.target.value); onInputActivity?.(); }}
+                  onFocus={() => onInputActivity?.()}
                   onKeyDown={(e) => { if (e.key === 'Enter') send(); if (e.key === 'Escape') onClose(); }}
                   placeholder={t('chatPlaceholder')}
                   className="field flex-1"

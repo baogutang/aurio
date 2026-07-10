@@ -58,6 +58,79 @@ function freshPlayIndex(fallback = -1) {
   return fallback >= 0 ? fallback : -1;
 }
 
+// ---------------------------------------------------------------------------
+// Hotline (chat 热线化, RADIO_VISION §四) — a song request behaves like calling
+// in to a radio station. A non-urgent request joins the END of the show (the
+// caller hears a short on-air 点歌确认 now) and leaves a pending shoutout the
+// host weaves into the next spoken break: 「刚才有位听众点了X，这就来」.
+// Explicit urgency — 现在/立刻/马上/… in the user text, or the model choosing
+// placement 'next' — keeps the old insert-next behaviour: the 插播 channel
+// stays open.
+// ---------------------------------------------------------------------------
+
+export const SHOUTOUT_KEY = 'hotlineShoutouts';
+export const SHOUTOUT_TTL_MS = 30 * 60 * 1000; // unspoken shoutouts expire
+const SHOUTOUT_MAX = 8;
+
+const URGENT_RE = /现在|立刻|马上|这就|快点|先放/;
+const MUSIC_REQUEST_RE = /放|听|来(?:点|首|一首)|歌|音乐|排|播|play|song|music/i;
+
+export function isUrgentRequest(text = '') {
+  return URGENT_RE.test(text || '');
+}
+
+export function looksLikeMusicRequest(text = '') {
+  return MUSIC_REQUEST_RE.test(text || '');
+}
+
+// Placement for an enqueue-intent chat: the hotline default is append (the
+// request joins the show) unless the listener or the model asked for right now.
+function hotlinePlacement(text, modelPlacement) {
+  return (isUrgentRequest(text) || modelPlacement === 'next') ? 'next' : 'append';
+}
+
+function readShoutouts(now = Date.now()) {
+  const raw = db.getPref(SHOUTOUT_KEY, []);
+  const list = Array.isArray(raw) ? raw.filter((s) => s && Number.isFinite(s.ts)) : [];
+  return list.filter((s) => now - s.ts < SHOUTOUT_TTL_MS).sort((a, b) => a.ts - b.ts);
+}
+
+// Oldest pending shoutout — never more than one per break — pruning expired
+// entries out of the stored ledger as a side effect.
+function peekShoutout(now = Date.now()) {
+  const raw = db.getPref(SHOUTOUT_KEY, []);
+  const live = readShoutouts(now);
+  if (!Array.isArray(raw) || raw.length !== live.length) db.setPref(SHOUTOUT_KEY, live);
+  return live[0] || null;
+}
+
+function recordShoutout(text, tracks, now = Date.now()) {
+  const list = readShoutouts(now);
+  list.push({
+    text: (text || '').replace(/\s+/g, ' ').trim().slice(0, 60),
+    tracks: tracks.slice(0, 3).map((t) => `${t.artist} — ${t.title}`),
+    ts: now,
+  });
+  if (list.length > SHOUTOUT_MAX) list.splice(0, list.length - SHOUTOUT_MAX);
+  db.setPref(SHOUTOUT_KEY, list);
+}
+
+// Retire one shoutout. Only called when the segment actually aired a say — a
+// break that went silent (budget mute, judge failure) keeps it pending.
+function consumeShoutout(ts, now = Date.now()) {
+  db.setPref(SHOUTOUT_KEY, readShoutouts(now).filter((s) => s.ts !== ts));
+}
+
+// Prompt suffixes. Both land on the BASE prompt (not a per-call wrapper), so
+// the judge's corrective retry — `${prompt}\n\n${correctiveNote(codes)}` —
+// keeps them on the rewrite.
+const HOTLINE_CONFIRM_NOTE = '（热线点歌）这位听众是打进点歌热线的，没有说要立刻听到。像电台接热线一样处理：把歌排到后面（placement 用 append），让节目自然走到它；say 写一句主播口吻的点歌确认——让听众知道你记下了、稍后就放，一句话以内。不要用「收到」「好的」「明白」开头，不要提队列、歌单或任何后台安排。只有当这首歌和此刻的节目气口特别搭时才用 next。';
+
+function shoutoutNote(s) {
+  const req = s.tracks?.length ? s.tracks.join('、') : s.text;
+  return `（热线回应）刚才有位听众打进热线点了：${req}。请在这次口播里自然地带上一句对这位听众的回应——「刚才有位听众点了X，这就来」的口气，但不要照抄；最多一句话，只提这一位，不要罗列，不要提队列或后台。`;
+}
+
 export function isBusy() { return processing; }
 
 export async function drainDj(timeoutMs = 5000) {
@@ -149,7 +222,21 @@ export async function composeSegment(trigger = {}) {
   // music-only — and silence is forced BEFORE the judge, so the retry loop
   // never fires for a muted break (empty lines can't violate anything).
   const talk = consultTalkBudget(trigger.kind || 'chat');
-  const prompt = await assemble({ ...trigger, observation, muted: !talk.allowed });
+  let prompt = await assemble({ ...trigger, observation, muted: !talk.allowed });
+
+  // Hotline seams (chat 热线化). A non-urgent song request gets nudged toward
+  // a one-line on-air 点歌确认; the next spoken non-chat break carries the
+  // oldest pending shoutout. Suffixes join the base prompt, so the corrective
+  // retry below keeps them.
+  const kind = trigger.kind || 'chat';
+  let shoutout = null;
+  if (kind === 'chat' && trigger.text && looksLikeMusicRequest(trigger.text) && !isUrgentRequest(trigger.text)) {
+    prompt += `\n\n${HOTLINE_CONFIRM_NOTE}`;
+  } else if (kind !== 'chat' && kind !== 'refill' && talk.allowed) {
+    shoutout = peekShoutout();
+    if (shoutout) prompt += `\n\n${shoutoutNote(shoutout)}`;
+  }
+
   let action;
   let degraded = false;
   try {
@@ -213,6 +300,9 @@ export async function composeSegment(trigger = {}) {
     intent: action.intent || '', placement: action.placement || '', mood: action.mood || '',
     constraints, hardRequest, requested: describeConstraints(constraints),
     candidateTracks,
+    // The pending hotline shoutout this break was asked to weave in (or null).
+    // Retired by runSegmentInner only when the say actually airs.
+    shoutout,
     // The talk-budget decision, exposed so callers (and tests) can see WHY a
     // break was silent. `show` is the name only — the object stays internal.
     talk: {
@@ -268,18 +358,18 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
     let eff = mode;
     let placement = 'next';
     if (mode === 'auto') {
-      const wantsMusic = /放|听|来(?:点|首|一首)|歌|音乐|排|播|play|song|music/i.test(trigger.text || '');
+      const wantsMusic = looksLikeMusicRequest(trigger.text);
       const intent = seg.intent || (seg.tracks.length || wantsMusic ? 'enqueue' : 'chat');
       if (intent === 'chat' && (seg.tracks.length || wantsMusic)) {
         eff = 'insert';
-        placement = seg.placement === 'append' ? 'append' : 'next';
+        placement = hotlinePlacement(trigger.text, seg.placement);
       } else if (intent === 'chat') {
         eff = 'chat';
       } else if (intent === 'steer') {
         eff = 'steer';
       } else {
         eff = 'insert';
-        placement = seg.placement === 'append' ? 'append' : 'next';
+        placement = hotlinePlacement(trigger.text, seg.placement);
       }
     }
 
@@ -320,6 +410,11 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       const snap = queueController.peekSnapshot();
       const at = placement === 'next' ? Math.max(0, idxNow + 1) : snap.queue.length;
       const { added } = queueController.insert(seg.tracks, { at, dedupeAgainst: snap.queue });
+      // A non-urgent hotline request joined the show: remember the caller so
+      // the host can acknowledge them at the next spoken break.
+      if (trigger.kind === 'chat' && placement === 'append' && added.length) {
+        recordShoutout(trigger.text, added);
+      }
       broadcast = { ...base, mode: 'insert', placement, ttsUrl: seg.ttsUrl, queue: added, revision: revisionNow() };
     } else if (eff === 'steer') {
       db.setStation({ mood: seg.mood || '', lastSteer: trigger.text || '' });
@@ -348,6 +443,10 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       // A break that actually aired spends the show's talk budget. Chat is the
       // hotline — an answer, not a break — so it never spends.
       if ((trigger.kind || 'chat') !== 'chat') recordSpokenBreak();
+      // The shoutout woven into this break went on air — retire it. A muted or
+      // judge-silenced break falls outside this branch and keeps it pending;
+      // a degraded fallback line never saw the prompt, so it doesn't count.
+      if (seg.shoutout && !seg.degraded) consumeShoutout(seg.shoutout.ts);
     }
     if (trigger.kind === 'plan' && seg.mood) {
       db.setPlan({ date: new Date().toISOString().slice(0, 10), mood: seg.mood, note: seg.say || seg.reason });

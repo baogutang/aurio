@@ -16,6 +16,7 @@ import { formatNow, type NowDisplay } from './lib/dateFormat';
 import { nextMusicSource, postMusicSource, servicesFromModes, type MusicSourceMode, type MusicServices } from './lib/musicSource';
 import { spring, stagger } from './lib/motion';
 import { cleanSayText } from './lib/highlight';
+import { isHotlineAccepted, shouldAutoCloseChat } from './lib/chatFlow';
 import { dedupeQueue } from './lib/queue';
 import { coverUrl } from './lib/cover';
 import {
@@ -33,6 +34,11 @@ import type { Track, Broadcast, ChatMsg, TtsPatch } from './lib/types';
 const PREFETCH_WINDOW_SEC = 20;
 const AUTO_CROSSFADE_SEC = 2;
 const MANUAL_FADE_SEC = 0.25;
+
+// After a successful chat reply the sheet lingers this long — enough to see
+// the answer land — then closes itself back to the main card (user feedback
+// 2026-07-10: 「跟Aurio对话后，聊天框应该随着处理完自动关闭显示主界面」).
+const CHAT_AUTOCLOSE_MS = 1000;
 
 const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
 
@@ -86,6 +92,14 @@ export default function App() {
   const [now, setNow] = useState<NowDisplay>({ time: '--:--', weekday: '', dateLine: '' });
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
+  // Hotline state line (点歌已记下) under the latest chat reply — set when the
+  // DJ accepts a non-urgent song request for later, cleared on close/next send.
+  const [hotlineNotice, setHotlineNotice] = useState(false);
+  // Chat auto-close bookkeeping: input-activity counter (focus/typing since a
+  // send cancels the close), in-flight send count, and the linger timer.
+  const chatActivityRef = useRef(0);
+  const chatSendsRef = useRef(0);
+  const chatCloseTimerRef = useRef<number | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsGroup, setSettingsGroup] = useState<OnboardGroup | undefined>(undefined);
   const [onboard, setOnboard] = useState(false);
@@ -1192,35 +1206,92 @@ export default function App() {
     }
   };
 
+  // --- Chat sheet auto-close --------------------------------------------
+  // After a successful reply the sheet lingers CHAT_AUTOCLOSE_MS so the answer
+  // is seen in-sheet, then closes back to the main card (the DJ's say already
+  // lands there). Never when the request errored, when the user focused/typed
+  // in the input since sending, or while another send is still in flight —
+  // the guard (lib/chatFlow.ts) is checked when the reply lands AND again when
+  // the timer fires, so re-engaging during the linger also keeps it open.
+  const cancelChatAutoClose = useCallback(() => {
+    if (chatCloseTimerRef.current !== undefined) {
+      window.clearTimeout(chatCloseTimerRef.current);
+      chatCloseTimerRef.current = undefined;
+    }
+  }, []);
+
+  const scheduleChatAutoClose = useCallback((activityAtSend: number) => {
+    const clear = () => shouldAutoCloseChat({
+      sendsInFlight: chatSendsRef.current,
+      activityAtSend,
+      activityNow: chatActivityRef.current,
+    });
+    if (!clear()) return;
+    cancelChatAutoClose();
+    chatCloseTimerRef.current = window.setTimeout(() => {
+      chatCloseTimerRef.current = undefined;
+      if (clear()) setChatOpen(false);
+    }, CHAT_AUTOCLOSE_MS);
+  }, [cancelChatAutoClose]);
+
+  // Any close path — manual, backdrop, Escape, or the auto-close itself —
+  // clears the pending timer and the hotline notice; unmount clears the timer.
+  useEffect(() => {
+    if (!chatOpen) {
+      cancelChatAutoClose();
+      setHotlineNotice(false);
+    }
+  }, [chatOpen, cancelChatAutoClose]);
+  useEffect(() => cancelChatAutoClose, [cancelChatAutoClose]);
+
   const send = async (text: string) => {
     if (!isController) return;
     primeAudio();
     autoPlayUserInitRef.current = true;
     setMessages((m) => [...m, { role: 'user', text }]);
+    setHotlineNotice(false);
+    cancelChatAutoClose();
+    const activityAtSend = chatActivityRef.current;
+    chatSendsRef.current += 1;
     setConn('busy');
+    let replied = false;
     try {
       const b = (await api.chat(text)) as Broadcast;
       applyBroadcast(b);
+      // 热线接受确认: the DJ queued the request for later — show the state line.
+      if (isHotlineAccepted(b)) setHotlineNotice(true);
+      replied = !b.error;
     } catch {
       setSay(t('sayConnFail'));
       setConn('on');
       autoPlayUserInitRef.current = false;
+    } finally {
+      chatSendsRef.current -= 1;
     }
+    if (replied) scheduleChatAutoClose(activityAtSend);
   };
 
   const trig = async (kind: string) => {
     if (!isController) return;
     primeAudio();
     autoPlayUserInitRef.current = true;
+    cancelChatAutoClose();
+    const activityAtSend = chatActivityRef.current;
+    chatSendsRef.current += 1;
     setConn('busy');
+    let replied = false;
     try {
       const b = (await api.trigger(kind)) as Broadcast;
       applyBroadcast(b);
+      replied = !b.error;
     } catch {
       setSay(t('sayConnFail'));
       setConn('on');
       autoPlayUserInitRef.current = false;
+    } finally {
+      chatSendsRef.current -= 1;
     }
+    if (replied) scheduleChatAutoClose(activityAtSend);
   };
 
   const cycleSource = async () => {
@@ -1445,7 +1516,18 @@ export default function App() {
       />
     </WidgetShell>
 
-    <ChatSheet open={chatOpen} onClose={() => setChatOpen(false)} messages={messages} onSend={send} onTrigger={trig} busy={conn === 'busy'} onGoAir={() => trig('station')} isObserver={!isController} />
+    <ChatSheet
+      open={chatOpen}
+      onClose={() => setChatOpen(false)}
+      messages={messages}
+      onSend={send}
+      onTrigger={trig}
+      busy={conn === 'busy'}
+      onGoAir={() => trig('station')}
+      isObserver={!isController}
+      notice={hotlineNotice ? t('hotlineAccepted') : null}
+      onInputActivity={() => { chatActivityRef.current += 1; cancelChatAutoClose(); }}
+    />
     <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} currentTrack={current} initialGroup={settingsGroup} />
     <Onboarding
       open={onboard}
