@@ -4,15 +4,19 @@
 // The rhythm follows the programme schedule (user/shows.json → server/shows.js):
 //
 //   · 07:00 plan     — unchanged: sketches the day's mood note.
-//   · show starts    — one 'show-open' beat per show boundary: a single spoken
-//                      opening in the incoming show's tone. Delivered in 'chat'
-//                      mode — a spoken line and NOTHING else — because every
-//                      queue-touching alternative is destructive or mute:
-//                      'steer' truncates a user-curated Up Next (the audit's
-//                      steerAndAppend complaint), 'insert' shoves tracks ahead
-//                      of the listener's picks, and 'append' never airs its
-//                      say. The new show's music direction follows organically:
-//                      every refill now reads the show block in the prompt.
+//   · show starts    — one 'show-open' beat per show boundary, hot-reloaded:
+//                      a periodic re-stat of user/shows.json re-derives the
+//                      boundary crons when the file changes (syncShowCrons),
+//                      so editing the schedule needs no restart. Each opening
+//                      is a single spoken line in the incoming show's tone,
+//                      delivered in 'chat' mode — that and NOTHING else —
+//                      because every queue-touching alternative is destructive
+//                      or mute: 'steer' truncates a user-curated Up Next (the
+//                      audit's steerAndAppend complaint), 'insert' shoves
+//                      tracks ahead of the listener's picks, and 'append'
+//                      never airs its say. The new show's music direction
+//                      follows organically: every refill now reads the show
+//                      block in the prompt.
 //   · Friday 21:05   — the weekly recap ritual inside 《深夜航班》: a
 //                      deterministic fact from play history (server/rituals.js),
 //                      silently skipped when there is nothing to count.
@@ -26,10 +30,13 @@ import cron from 'node-cron';
 import { runSegment } from './dj.js';
 import { hasActiveSession, currentIndex } from './radio.js';
 import { hourlyStationId } from './imaging.js';
-import { listShows, currentShow } from './shows.js';
+import { listShows, currentShow, showsFileBroken } from './shows.js';
 import { weeklyRecapFact } from './rituals.js';
 
-const jobs = [];
+const jobs = [];                 // fixed jobs: plan, recap, hourly ID
+const showJobs = new Map();      // "name@expr" → live show-open cron
+let reloadTimer = null;
+const SHOWS_RELOAD_MS = 30000;   // re-stat cadence for user/shows.json
 const RUN_WITHOUT_LISTENER = String(process.env.AURIO_SCHEDULE_WITHOUT_LISTENER || '').toLowerCase() === 'true';
 
 function gate(kind) {
@@ -78,13 +85,48 @@ export function showOpenCrons(shows = listShows()) {
     }));
 }
 
-export function startScheduler() {
-  jobs.push(cron.schedule('0 7 * * *', runPlan));
-  for (const c of showOpenCrons()) {
-    jobs.push(cron.schedule(c.expr, () => {
+// Bring the live show-open crons in line with user/shows.json, without a
+// restart. Diff by "name@expr": untouched shows keep their jobs, removed or
+// re-timed shows have theirs stopped, new boundaries get fresh ones. The
+// plan/recap/hourly-ID jobs live in `jobs` and are never touched here.
+//
+// Change detection is a re-stat, not fs.watch: editors replace files
+// atomically (rename swaps the inode, watchers go stale) and packaged
+// Electron apps miss rename events on some platforms, while listShows()
+// already caches by mtime+size so a no-change pass costs one stat. A
+// malformed edit keeps the previous schedule — better a stale boundary than
+// none, and openShow()'s first-match guard keeps any stale cron from
+// mis-firing. Returns whether anything changed.
+export function syncShowCrons() {
+  if (showsFileBroken()) return false;
+  const desired = new Map(showOpenCrons().map((c) => [`${c.name}@${c.expr}`, c]));
+  let changed = false;
+  for (const [key, job] of showJobs) {
+    if (desired.has(key)) continue;
+    job.stop();
+    showJobs.delete(key);
+    changed = true;
+  }
+  for (const [key, c] of desired) {
+    if (showJobs.has(key)) continue;
+    showJobs.set(key, cron.schedule(c.expr, () => {
       if (gate(`show-open:${c.name}`)) openShow(c.name);
     }));
+    changed = true;
   }
+  if (changed) {
+    console.log('[scheduler] show-open crons:', [...showJobs.keys()].join(', ') || '(none)');
+  }
+  return changed;
+}
+
+/** The installed show-open crons as "name@expr" keys (observability/tests). */
+export function activeShowCrons() {
+  return [...showJobs.keys()];
+}
+
+export function startScheduler() {
+  jobs.push(cron.schedule('0 7 * * *', runPlan));
   jobs.push(cron.schedule('5 21 * * 5', () => {
     if (gate('recap')) fridayRecap();
   }));
@@ -93,10 +135,19 @@ export function startScheduler() {
   jobs.push(cron.schedule('0 * * * *', () => {
     try { hourlyStationId(); } catch (e) { console.error('[scheduler] station-id', e.message); }
   }));
-  console.log('[scheduler] started:', jobs.length, 'jobs');
+  syncShowCrons();
+  reloadTimer = setInterval(() => {
+    try { syncShowCrons(); } catch (e) { console.error('[scheduler] shows reload', e.message); }
+  }, SHOWS_RELOAD_MS);
+  if (reloadTimer.unref) reloadTimer.unref(); // never pin the process for a poll
+  console.log('[scheduler] started:', jobs.length + showJobs.size, 'jobs');
 }
 
 export function stopScheduler() {
   for (const j of jobs) j.stop();
   jobs.length = 0;
+  for (const j of showJobs.values()) j.stop();
+  showJobs.clear();
+  if (reloadTimer) clearInterval(reloadTimer);
+  reloadTimer = null;
 }

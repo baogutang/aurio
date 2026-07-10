@@ -7,7 +7,20 @@ vi.mock('../server/radio.js', () => ({ hasActiveSession, currentIndex: () => 0 }
 // Immediate "cache hit": synthesizeBackground returns a url synchronously and
 // never invokes onDone (mirrors the real contract for cached texts).
 const synthesizeBackground = vi.fn((text) => ({ url: `/tts/${Buffer.from(text).length}.mp3`, cached: true }));
-vi.mock('../server/tts/index.js', () => ({ synthesizeBackground }));
+vi.mock('../server/tts/index.js', () => ({ synthesizeBackground, TTS_CACHE_DIR: '/nonexistent/tts' }));
+
+// No ffmpeg in this file: the hourly ID must ship voice-only (the stitched
+// path is covered by imaging-id.test.js against a temp data dir).
+vi.mock('../server/music/ffmpeg.js', () => ({
+  ffmpegAvailable: vi.fn(async () => false),
+  ffmpegBin: () => 'ffmpeg',
+  runFfmpeg: vi.fn(async () => ({ code: 1, stderr: '' })),
+  FFMPEG_RUN_TIMEOUT_MS: 10000,
+}));
+
+// The hourly ID delivers through an async stitch decision even on the
+// fallback path; one macrotask flushes it.
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
 const { config } = await import('../server/config.js');
 const { db } = await import('../server/store.js');
@@ -182,13 +195,15 @@ describe('delivery', () => {
 });
 
 describe('hourly station ID', () => {
-  it('delivers the templated time call for the hour', () => {
+  it('delivers the templated time call for the hour (voice-only without ffmpeg)', async () => {
     seedProgramme([track(1), track(2)]);
     const date = new Date();
     date.setHours(23, 0, 0, 0);
     expect(imaging.hourlyStationId(date)).toBe(true);
     expect(synthesizeBackground).toHaveBeenCalledWith('晚上十一点整，Aurio。', expect.any(Function));
+    await flush();
     expect(upNextVoices()[0]).toMatch(/^\/tts\//);
+    expect(station.join({ upNext: 10 }).upNext[0].voice.kind).toBe('id');
   });
 
   it('respects the off switch and session gate', () => {

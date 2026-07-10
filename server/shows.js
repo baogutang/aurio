@@ -114,7 +114,7 @@ function validateShow(raw) {
   };
 }
 
-let cache = null;      // { key, shows } — keyed by file mtime+size
+let cache = null;      // { key, shows, broken } — keyed by file mtime+size
 let warnedKey = '';    // warn once per broken file version, not per prompt
 
 /** Test seam: forget the parsed file between cases. */
@@ -142,11 +142,13 @@ export function listShows() {
   } catch {
     // Absent file (e.g. an upgraded install whose user/ predates shows.json):
     // fall back to the built-in seed so the station still has a day shape.
+    cache = null; // absent ≠ broken: a stale broken flag must not linger
     return BUILTIN_SHOWS.map(validateShow).filter(Boolean);
   }
   const key = `${stat.mtimeMs}:${stat.size}`;
   if (cache && cache.key === key) return cache.shows;
   let shows = [];
+  let broken = false;
   try {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
     const list = Array.isArray(parsed) ? parsed
@@ -158,9 +160,22 @@ export function listShows() {
   } catch (e) {
     warnOnce(key, `user/shows.json 无法读取，整天走默认档《${DEFAULT_SHOW.name}》: ${e.message}`);
     shows = [];
+    broken = true;
   }
-  cache = { key, shows };
+  cache = { key, shows, broken };
   return shows;
+}
+
+/**
+ * True when the CURRENT version of user/shows.json fails outright (unparseable
+ * or not a show list). Partial drops don't count — the valid siblings still
+ * air. Prompts degrade to the default show either way; the scheduler uses this
+ * to keep the previous cron set instead of tearing every boundary down over a
+ * typo mid-edit. Re-stats the file, so the verdict tracks the latest edit.
+ */
+export function showsFileBroken() {
+  listShows();
+  return !!(cache && cache.broken);
 }
 
 // ISO weekday: Monday=1 … Sunday=7 (JS getDay has Sunday=0).

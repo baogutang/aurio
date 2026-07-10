@@ -50,8 +50,9 @@ function voiceBible() {
 }
 
 // Which beats to surface first for each trigger kind, so a morning open sees
-// cold opens and a refill sees the quiet ones.
-const BEATS_FOR_KIND = {
+// cold opens and a refill sees the quiet ones. Exported so a test can prove
+// every mapping resolves against the beats that actually exist in the bible.
+export const BEATS_FOR_KIND = {
   morning: ['cold_open', 'time_check', 'weather'],
   station: ['cold_open', 'front_sell', 'back_announce'],
   mood: ['weather', 'time_check', 'callback'],
@@ -60,6 +61,8 @@ const BEATS_FOR_KIND = {
   chat: ['callback', 'back_announce'],
   'show-open': ['cold_open', 'front_sell', 'time_check'],
   recap: ['callback', 'back_announce'],
+  'first-run': ['cold_open', 'front_sell'],   // the station's first minutes
+  feedback: ['silence', 'back_announce'],     // reacting to a skip streak
 };
 
 function formatExemplar(ex) {
@@ -380,6 +383,7 @@ export async function assemble(trigger = {}) {
     refill: '队列快见底了：无缝续播，保持当前电台情绪，追加 3–5 首，口播尽量短或留空',
     'show-open': '节目换档：新一档节目刚开始。用一句符合它气质的话开场，可以顺口报出节目名；play 留空。',
     recap: '周五晚固定栏目：把「刚刚发生的事」里的一周听歌事实自然地念出来，一到两句，像老朋友回顾，不像报表；play 可留空。',
+    'first-run': '首次开台：这台电台第一次亮灯。用一句自然的开场把台开起来，把翻到的那首歌放出去；素材取自「刚刚发生的事」里的扫描事实，别编，也别搞仪式感堆砌。',
   }[trigger.kind] || '触发';
 
   blocks.push(`## 本次触发\n[${triggerLabel}]`);
