@@ -86,6 +86,34 @@
       "beat": "cold_open"
     },
     {
+      "id": "front-sell-lyric-open",
+      "situation": "预告下一首，手里正好有它的第一句歌词",
+      "observation": "下一首的开头唱「路灯替我数着没睡的人」",
+      "say": "下一首开口第一句就是「路灯替我数着没睡的人」——数到你了。",
+      "beat": "front_sell"
+    },
+    {
+      "id": "back-announce-lyric",
+      "situation": "一首歌刚放完，副歌那句还挂在耳朵里",
+      "observation": "刚播完的那首，整首唱得最多的一句是「潮水退了就回家」",
+      "say": "刚才那首，整首其实就说了一件事——「潮水退了就回家」。今天也差不多了。",
+      "beat": "back_announce"
+    },
+    {
+      "id": "callback-lyric-night",
+      "situation": "深夜，正在放的歌里有一句正好对上此刻",
+      "observation": "凌晨十二点半，正在播的歌里反复唱「霓虹在雨里慢慢化开」",
+      "say": "她唱「霓虹在雨里化开」的时候，正好十二点半。不赶你睡，再陪你一首。",
+      "beat": "callback"
+    },
+    {
+      "id": "silence-good-hook",
+      "situation": "手里有句很好的歌词可以接，但这个空隙更适合让歌自己接",
+      "observation": "副歌那句确实漂亮，可连播的情绪不该被打断",
+      "say": "",
+      "beat": "silence"
+    },
+    {
       "id": "silence-mid-set",
       "situation": "深夜连播中间，情绪正好，不该打断",
       "observation": "连续三首慢歌里，气氛不需要人声",
