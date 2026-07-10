@@ -9,6 +9,7 @@ import { todayEvents } from './calendar/index.js';
 import { profileText } from './taste-profile.js';
 import { tasteSummary } from './agent/preferences.js';
 import { recentAngles } from './agent/judge.js';
+import { currentShow } from './shows.js';
 
 function readIfExists(p) {
   try { return fs.readFileSync(p, 'utf8'); } catch { return ''; }
@@ -55,6 +56,8 @@ const BEATS_FOR_KIND = {
   refill: ['silence', 'front_sell', 'back_announce'],
   plan: ['front_sell', 'cold_open'],
   chat: ['callback', 'back_announce'],
+  'show-open': ['cold_open', 'front_sell', 'time_check'],
+  recap: ['callback', 'back_announce'],
 };
 
 function formatExemplar(ex) {
@@ -265,6 +268,19 @@ export async function assemble(trigger = {}) {
     blocks.push(`## 你最近播出的段落\n下面是你自己刚说过的话。它们的作用是让这一段自然接上，**不是**让你照着句式再写一遍。换一个角度、换一种句子结构。\n${recent}`);
   }
 
+  // The programme on air (server/shows.js). Compact on purpose — the prompt is
+  // already long. The show's tone outranks generic daypart instinct: the
+  // persona defers to this block explicitly.
+  const show = currentShow();
+  const showLines = [
+    `《${show.name}》${show.freq ? ` ${show.freq}` : ''} · ${show.isDefault ? '全天档' : `${show.start}–${show.end}`}`,
+    `语气：${show.tone}`,
+    `选曲：${show.musicRules}`,
+  ];
+  if (show.familiarOnly) showLines.push('本档只放听众熟悉的歌，不上生歌。');
+  showLines.push(`本档每小时最多开口 ${show.talkBudget} 次，时段与情绪的判断以本节目为准。`);
+  blocks.push(`## 当前节目\n${showLines.join('\n')}`);
+
   // Continuity: this is an ongoing stream, not a one-shot request. Keep segments
   // flowing into each other instead of re-introducing every time.
   const st = db.getStation();
@@ -292,9 +308,17 @@ export async function assemble(trigger = {}) {
     station: '现在开台：编一段电台节目（一句开场白 + 挑 3–5 首歌）',
     feedback: '听众连着跳过了几首。换个方向，口播最多一句，也可以不说话。',
     refill: '队列快见底了：无缝续播，保持当前电台情绪，追加 3–5 首，口播尽量短或留空',
+    'show-open': '节目换档：新一档节目刚开始。用一句符合它气质的话开场，可以顺口报出节目名；play 留空。',
+    recap: '周五晚固定栏目：把「刚刚发生的事」里的一周听歌事实自然地念出来，一到两句，像老朋友回顾，不像报表；play 可留空。',
   }[trigger.kind] || '触发';
 
   blocks.push(`## 本次触发\n[${triggerLabel}]`);
+  // Talk budget spent (server/shows.js): this break is music-only. Deciding it
+  // here lets the brain pick tracks knowing no one will be talking over them;
+  // dj.js additionally forces say/segue empty after generation.
+  if (trigger.muted) {
+    blocks.push('## 这一段不说话\n这档节目本小时的开口次数已经用完。say 和 segue 都必须留空字符串，只管选歌，让音乐自己接。');
+  }
   if (trigger.fact) blocks.push(`## 刚刚发生的事（由程序观测到的事实）\n${trigger.fact}`);
   if (trigger.text) blocks.push(untrusted('本次用户输入', trigger.text));
 

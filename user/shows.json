@@ -1,0 +1,36 @@
+{
+  "_comment": "Aurio 的节目表（RADIO_VISION §四）。按顺序匹配，时段重叠时排在前面的优先；不在任何节目时段时是默认档《随波》。start/end 用 24 小时制 HH:MM，end 可写 24:00，end 小于 start 表示跨零点；days 用 1–7（周一=1，周日=7），省略表示每天；talkBudget 是每小时最多开口次数（你对她说话不受限）；familiarOnly 表示只放熟歌；sayMax/segueMax 可选，收紧口播与垫话的字数上限。改这个文件就是在改电台的一天。",
+  "shows": [
+    {
+      "name": "早安频率",
+      "freq": "90.2",
+      "start": "07:00",
+      "end": "09:00",
+      "talkBudget": 4,
+      "tone": "清醒、轻快；天气、日程、报时都值得说一句",
+      "musicRules": "轻快有精神，只放听众熟悉的歌，早晨不试新",
+      "familiarOnly": true
+    },
+    {
+      "name": "工作台",
+      "freq": "95.8",
+      "start": "09:00",
+      "end": "18:00",
+      "days": [1, 2, 3, 4, 5],
+      "talkBudget": 1,
+      "tone": "近乎不说话，开口也只一句，不打扰",
+      "musicRules": "适合专注的器乐与听熟的老歌，节奏平稳不突兀"
+    },
+    {
+      "name": "深夜航班",
+      "freq": "88.7",
+      "start": "21:00",
+      "end": "24:00",
+      "talkBudget": 3,
+      "tone": "语速慢、声音轻，一句顶一句，敢留白",
+      "musicRules": "敢放冷门与回忆，慢歌优先，越晚越静",
+      "sayMax": 40,
+      "segueMax": 30
+    }
+  ]
+}

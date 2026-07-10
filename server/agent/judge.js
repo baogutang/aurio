@@ -182,8 +182,13 @@ export function isSameAngle(text) {
 
 // judgeSay(text, opts) -> { ok, violations: [{ code, detail }] }
 //   opts.segue      — apply the shorter segue budget
-//   opts.maxLen     — override the character budget
+//   opts.maxLen     — override the character budget outright
+//   opts.sayMax     — a show's tighter say budget (used when !opts.segue)
+//   opts.segueMax   — a show's tighter segue budget (used when opts.segue)
 //   opts.skipRepeat — don't check the said-before ledger or the angle ledger
+// sayMax/segueMax let a programme (server/shows.js — 深夜航班 wants shorter
+// lines) tighten the defaults without the call site knowing which budget
+// applies; maxLen still wins when given.
 export function judgeSay(text, opts = {}) {
   const violations = [];
   const trimmed = (text || '').toString().trim();
@@ -194,7 +199,8 @@ export function judgeSay(text, opts = {}) {
     if (hit) violations.push({ code: rule.code, detail: hit.source });
   }
 
-  const max = opts.maxLen || (opts.segue ? SEGUE_MAX : SAY_MAX);
+  const max = opts.maxLen
+    || (opts.segue ? (opts.segueMax || SEGUE_MAX) : (opts.sayMax || SAY_MAX));
   const len = codePoints(trimmed).length;
   if (len > max) violations.push({ code: 'too_long', detail: `${len}/${max}` });
 

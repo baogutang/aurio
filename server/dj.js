@@ -9,6 +9,7 @@ import {
 } from './music/index.js';
 import { cachedSynthesis, synthesizeBackground } from './tts/index.js';
 import { judgeSay, rememberSaid } from './agent/judge.js';
+import { consultTalkBudget, recordSpokenBreak } from './shows.js';
 import { db } from './store.js';
 import { queueController } from './runtime/queue-controller.js';
 import { clientSessionManager } from './runtime/client-session-manager.js';
@@ -98,10 +99,11 @@ async function fillTracks(seg, trigger, candidateTracks) {
 
 // Run the (rule-based, deterministic) judge over an action's spoken lines.
 // Returns the deduped set of violated category codes — never the phrases.
-function judgeAction(action) {
+// `show` may carry tighter per-programme length budgets (深夜航班: shorter).
+function judgeAction(action, show = null) {
   const codes = [];
-  if (action.say) codes.push(...judgeSay(action.say).violations.map((v) => v.code));
-  if (action.segue) codes.push(...judgeSay(action.segue, { segue: true, skipRepeat: true }).violations.map((v) => v.code));
+  if (action.say) codes.push(...judgeSay(action.say, { sayMax: show?.sayMax }).violations.map((v) => v.code));
+  if (action.segue) codes.push(...judgeSay(action.segue, { segue: true, skipRepeat: true, segueMax: show?.segueMax }).violations.map((v) => v.code));
   return [...new Set(codes)];
 }
 
@@ -140,7 +142,14 @@ export async function composeSegment(trigger = {}) {
   }
 
   const observation = buildObservation(trigger);
-  const prompt = await assemble({ ...trigger, observation });
+
+  // Talk budget (server/shows.js): scheduled beats spend from the current
+  // show's hourly allowance; the hotline (chat) always may speak. The decision
+  // lands BEFORE the prompt — so the brain picks tracks knowing the break is
+  // music-only — and silence is forced BEFORE the judge, so the retry loop
+  // never fires for a muted break (empty lines can't violate anything).
+  const talk = consultTalkBudget(trigger.kind || 'chat');
+  const prompt = await assemble({ ...trigger, observation, muted: !talk.allowed });
   let action;
   let degraded = false;
   try {
@@ -154,20 +163,26 @@ export async function composeSegment(trigger = {}) {
     degraded = true;
   }
 
+  // Budget spent: this break is music-only. Silence is a decision, not a
+  // failure (dj-persona / RADIO_AUDIT「沉默的勇气」).
+  if (!talk.allowed) {
+    action = { ...action, say: '', segue: '' };
+  }
+
   // Judge the spoken lines. On a violation, regenerate ONCE with a category-only
   // corrective note (never the offending phrase); if it still fails, drop the
   // say and keep the track selection. Refill lines are meant to be short/empty,
   // so we don't spend a retry on them.
   if (!degraded && trigger.kind !== 'refill') {
-    const codes = judgeAction(action);
+    const codes = judgeAction(action, talk.show);
     if (codes.length) {
       try {
         const raw2 = await think(`${prompt}\n\n${correctiveNote(codes)}`);
         const v2 = validateRadioAction(raw2);
-        if (v2.ok && !judgeAction(v2.action).length) {
+        if (v2.ok && !judgeAction(v2.action, talk.show).length) {
           action = v2.action;
         } else {
-          const codes2 = v2.ok ? judgeAction(v2.action) : codes;
+          const codes2 = v2.ok ? judgeAction(v2.action, talk.show) : codes;
           console.error('[dj] judge failed after retry, going silent:', codes2.join(','));
           action = { ...action, say: '', segue: '' };
         }
@@ -198,6 +213,15 @@ export async function composeSegment(trigger = {}) {
     intent: action.intent || '', placement: action.placement || '', mood: action.mood || '',
     constraints, hardRequest, requested: describeConstraints(constraints),
     candidateTracks,
+    // The talk-budget decision, exposed so callers (and tests) can see WHY a
+    // break was silent. `show` is the name only — the object stays internal.
+    talk: {
+      allowed: talk.allowed,
+      exempt: talk.exempt,
+      show: talk.show.name,
+      spent: talk.spent,
+      budget: talk.budget,
+    },
   };
 }
 
@@ -269,7 +293,9 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       }
     }
 
-    if (seg.degraded && !seg.say && eff !== 'append') {
+    // Degraded fallback line — but never for a budget-muted break: the show
+    // said quiet, and a signal apology is still a break.
+    if (seg.degraded && !seg.say && eff !== 'append' && seg.talk?.allowed !== false) {
       seg.say = seg.tracks.length
         ? '信号有点飘，我先放几首你常听的垫一下。'
         : '这会儿连不上，先陪你安静待一会儿。';
@@ -282,6 +308,7 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
       say: eff === 'append' ? '' : seg.say,
       segue: seg.segue,
       reason: seg.reason,
+      talk: seg.talk,
       revision: revisionNow(),
     };
     let broadcast;
@@ -318,6 +345,9 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
     if (seg.say && eff !== 'append') {
       db.addMessage('dj', seg.say, { kind: trigger.kind || 'chat', reason: seg.reason });
       rememberSaid(seg.say);
+      // A break that actually aired spends the show's talk budget. Chat is the
+      // hotline — an answer, not a break — so it never spends.
+      if ((trigger.kind || 'chat') !== 'chat') recordSpokenBreak();
     }
     if (trigger.kind === 'plan' && seg.mood) {
       db.setPlan({ date: new Date().toISOString().slice(0, 10), mood: seg.mood, note: seg.say || seg.reason });
