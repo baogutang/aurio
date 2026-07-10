@@ -3,13 +3,17 @@ import { spring } from '../lib/motion';
 import { usePreferences } from '../context/PreferencesContext';
 
 // Lightweight first-run guide. Each step opens the settings center directly to
-// the relevant panel; "完成/跳过" persists the ONBOARDED flag and dismisses.
+// the relevant panel. The final step is the 开台仪式 (RADIO_VISION §六): 「开台」
+// closes the sheet and fires the one-time first-run ceremony — the DJ scans the
+// just-connected library and starts the first song. 「跳过」keeps the old plain
+// station open. Both persist the ONBOARDED flag and dismiss.
 export type OnboardGroup = 'ai' | 'ncm' | 'fish';
 
-export default function Onboarding({ open, onOpenGroup, onFinish }: {
+export default function Onboarding({ open, onOpenGroup, onGoLive, onSkip }: {
   open: boolean;
   onOpenGroup: (g: OnboardGroup) => void;
-  onFinish: () => void;
+  onGoLive: () => void;
+  onSkip: () => void;
 }) {
   const { tr: t } = usePreferences();
   const steps: { g: OnboardGroup; title: string; desc: string }[] = [
@@ -45,8 +49,8 @@ export default function Onboarding({ open, onOpenGroup, onFinish }: {
               </div>
 
               <div className="space-y-2 pt-1">
-                <button onClick={onFinish} className="pill-btn pill-btn-active w-full !py-3">{t('obFinish')}</button>
-                <button onClick={onFinish} className="onboarding-skip w-full text-[12px] py-1">{t('obSkip')}</button>
+                <button onClick={onGoLive} className="pill-btn pill-btn-active w-full !py-3">{t('obGoLive')}</button>
+                <button onClick={onSkip} className="onboarding-skip w-full text-[12px] py-1">{t('obSkip')}</button>
               </div>
             </div>
           </motion.div>

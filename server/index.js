@@ -33,6 +33,7 @@ import { recordFeedback, tasteSummary } from './agent/preferences.js';
 import { onPlaybackFeedback } from './agent/feedback-reaction.js';
 import { registerServer, installSignalHandlers, stopServer } from './shutdown.js';
 import { environmentSnapshot } from './context.js';
+import { performFirstRun } from './rituals.js';
 
 load();
 loadSettings();
@@ -526,14 +527,17 @@ app.post('/api/chat', requireController, async (req, res) => {
 });
 
 // ---- Manually fire a scheduled-style beat (plan / morning / mood) ----
+// 'first-run' is the 开台仪式 (RADIO_VISION §六): performed at most once per
+// data dir — the guard and the library-scan fact live in server/rituals.js.
 app.post('/api/trigger', requireController, async (req, res) => {
   const kind = (req.body?.kind || 'mood').toString();
-  if (!['plan', 'morning', 'mood', 'station'].includes(kind)) {
+  if (!['plan', 'morning', 'mood', 'station', 'first-run'].includes(kind)) {
     return res.status(400).json({ ok: false, error: 'invalid trigger kind' });
   }
   try {
-    const mode = triggerMode(kind);
-    const result = await runSegment({ kind }, { mode, currentIndex: currentIndex() });
+    const result = kind === 'first-run'
+      ? await performFirstRun({ runSegment, currentIndex: currentIndex() })
+      : await runSegment({ kind }, { mode: triggerMode(kind), currentIndex: currentIndex() });
     res.json(result);
   } catch (e) {
     console.error('[trigger] segment failed:', e);

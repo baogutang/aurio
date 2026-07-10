@@ -17,6 +17,7 @@ import { nextMusicSource, postMusicSource, servicesFromModes, type MusicSourceMo
 import { spring, stagger } from './lib/motion';
 import { cleanSayText } from './lib/highlight';
 import { isHotlineAccepted, shouldAutoCloseChat } from './lib/chatFlow';
+import { onboardExitAction, firstRunFollowUp, type FirstRunResponse } from './lib/firstRun';
 import { dedupeQueue } from './lib/queue';
 import { coverUrl } from './lib/cover';
 import {
@@ -1294,6 +1295,45 @@ export default function App() {
     if (replied) scheduleChatAutoClose(activityAtSend);
   };
 
+  // 开台仪式 (RADIO_VISION §六): the one-time first-run trigger. Mirrors trig()
+  // minus the chat-sheet bookkeeping. The server performs the ceremony (scan
+  // fact + first songs) through the normal broadcast flow; a guard hit (same
+  // data dir, ceremony already performed) falls back to today's station open,
+  // and any failure lands on the standby screen — never a trap.
+  const goLiveFirstRun = async () => {
+    autoPlayUserInitRef.current = true;
+    setConn('busy');
+    setSay(t('sayOpening'));
+    try {
+      const b = (await api.trigger('first-run')) as FirstRunResponse;
+      if (firstRunFollowUp(b) === 'station') {
+        void trig('station');
+        return;
+      }
+      applyBroadcast(b);
+    } catch {
+      setSay(t('sayConnFail'));
+      setConn('on');
+      autoPlayUserInitRef.current = false;
+    }
+  };
+
+  // Leaving the onboarding sheet.「开台」fires the ceremony;「跳过」keeps
+  // today's behaviour exactly (ONBOARDED + plain station open). primeAudio()
+  // runs synchronously inside the tap gesture, before any await.
+  const finishOnboarding = async (goLive: boolean) => {
+    const action = onboardExitAction({ goLive, isController });
+    if (action === 'first-run') primeAudio();
+    try { await api.saveSettings({ ONBOARDED: '1' }); } catch { /* ignore */ }
+    setOnboard(false);
+    if (action === 'station') {
+      autoPlayUserInitRef.current = true;
+      void trig('station');
+    } else if (action === 'first-run') {
+      void goLiveFirstRun();
+    }
+  };
+
   const cycleSource = async () => {
     const next = nextMusicSource(musicSource, services);
     if (next === musicSource) return;
@@ -1532,14 +1572,8 @@ export default function App() {
     <Onboarding
       open={onboard}
       onOpenGroup={(g) => { setSettingsGroup(g); setSettingsOpen(true); }}
-      onFinish={async () => {
-        try { await api.saveSettings({ ONBOARDED: '1' }); } catch { /* ignore */ }
-        setOnboard(false);
-        if (isController) {
-          autoPlayUserInitRef.current = true;
-          void trig('station');
-        }
-      }}
+      onGoLive={() => { void finishOnboarding(true); }}
+      onSkip={() => { void finishOnboarding(false); }}
     />
     </>
   );

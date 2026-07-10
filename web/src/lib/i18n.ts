@@ -276,8 +276,9 @@ const zh = {
   obStepVoiceTitle: '③ 配个声音（可选）',
   obStepVoiceDesc: '本机语音或云 TTS 给 Aurio 配音',
   obConfigure: '去配置',
-  obFinish: '完成，进入 Aurio',
+  obGoLive: '开台',
   obSkip: '跳过',
+  sayOpening: '正在开台…',
 
   // Setup guides (collapsible "how to get this")
   guideHowTo: '如何获取？',
@@ -574,8 +575,9 @@ const en: Record<MessageKey, string> = {
   obStepVoiceTitle: '③ Add a voice (optional)',
   obStepVoiceDesc: 'System speech or cloud TTS gives Aurio a voice',
   obConfigure: 'Set up',
-  obFinish: 'Done — enter Aurio',
+  obGoLive: 'Go on air',
   obSkip: 'Skip',
+  sayOpening: 'Going on air…',
 
   // Setup guides (collapsible "how to get this")
   guideHowTo: 'How to get this',
