@@ -10,7 +10,7 @@ import { WebSocketServer } from 'ws';
 import { config, summarize, ROOT, DATA_ROOT } from './config.js';
 import { db, load } from './store.js';
 import { loadSettings, saveSettings, getSettings } from './settings.js';
-import { runSegment, isBusy } from './dj.js';
+import { runSegment, isBusy, pendingShoutouts } from './dj.js';
 import * as music from './music/index.js';
 import { navidrome } from './music/navidrome.js';
 import { ncmLogin, netease } from './music/netease.js';
@@ -32,6 +32,7 @@ import { clientSessionManager } from './runtime/client-session-manager.js';
 import { eventBus } from './runtime/event-bus.js';
 import { recordFeedback, tasteSummary } from './agent/preferences.js';
 import { onPlaybackFeedback } from './agent/feedback-reaction.js';
+import { foldRollups } from './agent/rollups.js';
 import { registerServer, installSignalHandlers, stopServer } from './shutdown.js';
 import { environmentSnapshot } from './context.js';
 import { performFirstRun } from './rituals.js';
@@ -529,10 +530,48 @@ app.post('/api/trigger', async (req, res) => {
   }
 });
 
+// Live-station fields shared by every programme snapshot (the WS join, every
+// `programme` delta, GET /api/programme): the honest listener count and when
+// the current unbroken on-air run began.
+function stationFields() {
+  return {
+    listeners: clientSessionManager.listenerCount(),
+    stationStartedAt: station.startedAt(),
+  };
+}
+
 // ---- The programme (what is on air right now + what's coming) ----
 app.get('/api/programme', (req, res) => {
   const upNext = Math.max(1, Math.min(30, Number(req.query.upNext || 5) || 5));
-  res.json({ ok: true, ...station.join({ upNext }) });
+  res.json({ ok: true, ...station.join({ upNext }), ...stationFields() });
+});
+
+// ---- The tape (磁带, RADIO_AUDIT idea 06): what already aired ----
+// A marker timeline, not a recording: songs re-stream from streamUrl, spoken
+// lines point at their disk-cached /tts mp3s — replay is free. Bounded to the
+// aired-retention window (station keeps ≤12h of history; see playout/station).
+app.get('/api/tape', (req, res) => {
+  const hours = Math.max(1, Math.min(12, Number(req.query.hours || 6) || 6));
+  const since = Date.now() - hours * 60 * 60 * 1000;
+  const items = station.items()
+    .filter((it) => it.airStart != null && it.airStart >= since)
+    .map((it) => ({
+      id: it.id,
+      type: it.type,
+      airStart: it.airStart,
+      duration: it.duration,
+      track: it.track
+        ? { source: it.track.source, id: it.track.id, title: it.track.title, artist: it.track.artist }
+        : null,
+      streamUrl: it.streamUrl ?? null,
+      voice: it.voice?.text ? { text: it.voice.text, ttsUrl: it.voice.ttsUrl ?? null } : null,
+    }));
+  res.json({ ok: true, items }); // log order = oldest → newest
+});
+
+// ---- The hotline ledger: shoutouts waiting for the next spoken break ----
+app.get('/api/hotline', (req, res) => {
+  res.json({ ok: true, pending: pendingShoutouts() });
 });
 
 // Skip is a server log operation: the on-air item ends now, for everyone.
@@ -548,6 +587,9 @@ app.post('/api/played', (req, res) => {
   const t = req.body || {};
   if (!t.id) return res.status(400).json({ error: 'no id' });
   db.addPlay(t);
+  // Fold-on-write: monthly rollups (long-term memory) ride every play, so
+  // they stay current on a machine that is never awake for a nightly cron.
+  try { foldRollups(); } catch (e) { console.error('[rollups] fold:', e.message); }
   if (t.source === 'navidrome') navidrome.scrobble(t.id);
   res.json({ ok: true });
 });
@@ -731,10 +773,10 @@ wss.on('connection', (ws, req) => {
   ws.clientId = clientId;
 
   // Join in progress: the client receives the on-air item + media offset +
-  // what's coming, and starts playback AT THE OFFSET. Everything after this
-  // is a delta-shaped push of the same snapshot.
+  // what's coming (+ the live-station fields), and starts playback AT THE
+  // OFFSET. Everything after this is a delta-shaped push of the same snapshot.
   ws.send(JSON.stringify({ type: 'hello', clientId }));
-  ws.send(JSON.stringify({ type: 'programme', reason: 'join', ...station.join() }));
+  ws.send(JSON.stringify({ type: 'programme', reason: 'join', ...station.join(), ...stationFields() }));
   // A listener arriving un-parks the horizon keeper (and turns the brain on).
   horizonKeeper?.poke({ reset: true });
 
@@ -768,6 +810,9 @@ const wsPing = setInterval(() => {
     ws.isAlive = false;
     try { ws.ping(); } catch { /* noop */ }
   }
+  // A client whose state heartbeats went stale stops counting as a listener
+  // after the TTL with no event firing — this sweep notices the decay.
+  pushListeners();
 }, 30000);
 // Don't let this timer alone keep the process alive (a listening server already
 // does) — so merely importing this module, e.g. in CI smoke tests, still exits.
@@ -781,11 +826,25 @@ function sendAll(obj) {
   }
 }
 
+// 「N 台设备在听」— a lightweight push whenever the honest count changes
+// (join, leave, pause/resume via heartbeat, or heartbeat timeout via the ping
+// sweep above). Programme snapshots carry the count too; this is the delta.
+let lastListenerCount = 0;
+function pushListeners() {
+  const listeners = clientSessionManager.listenerCount();
+  if (listeners === lastListenerCount) return;
+  lastListenerCount = listeners;
+  sendAll({ type: 'listeners', listeners });
+}
+eventBus.on('session:connected', pushListeners);
+eventBus.on('session:disconnected', pushListeners);
+eventBus.on('session:updated', pushListeners);
+
 // Programme deltas: every log change ships a fresh join() snapshot with the
 // reason attached — the client has ONE reconcile path instead of five modes.
 eventBus.on('programme', ({ reason }) => {
   if (!wss.clients.size) return;
-  sendAll({ type: 'programme', reason, ...station.join() });
+  sendAll({ type: 'programme', reason, ...station.join(), ...stationFields() });
 });
 
 // Transient spoken lines (chat answers, scheduled beats) — talked over the

@@ -115,6 +115,11 @@ function consumeShoutout(ts, now = Date.now()) {
   db.setPref(SHOUTOUT_KEY, readShoutouts(now).filter((s) => s.ts !== ts));
 }
 
+/** Read-only view of the pending shoutout ledger (GET /api/hotline). */
+export function pendingShoutouts(now = Date.now()) {
+  return readShoutouts(now);
+}
+
 // Prompt suffixes. Both land on the BASE prompt (not a per-call wrapper), so
 // the judge's corrective retry — `${prompt}\n\n${correctiveNote(codes)}` —
 // keeps them on the rewrite.

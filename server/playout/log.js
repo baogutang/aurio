@@ -261,19 +261,31 @@ export function createProgrammeLog({ store = null, data = null } = {}) {
     },
 
     /**
-     * Drop aired history beyond the most recent `keep` aired items, so the
-     * persisted log stays bounded across weeks of unattended playout. Never
-     * touches unaired items, and always keeps the newest aired item (the
-     * on-air anchor the chain retimes from).
+     * Drop aired history so the persisted log stays bounded across weeks of
+     * unattended playout — while keeping enough of it for the tape
+     * (GET /api/tape replays up to 12h of aired items). An aired item is
+     * dropped when it falls beyond the most recent `keep` aired items (the
+     * hard size cap), or — when `now` and `maxAgeMs` are given — when it
+     * stopped being audible more than `maxAgeMs` before `now`. Never touches
+     * unaired items, and always keeps the newest aired item (the on-air
+     * anchor the chain retimes from).
      */
-    pruneHistory({ keep = 40 } = {}) {
+    pruneHistory({ keep = 40, now = null, maxAgeMs = null } = {}) {
       const airedIdx = [];
       for (let i = 0; i < items.length; i++) {
         if (items[i].airStart != null) airedIdx.push(i);
       }
+      if (airedIdx.length <= 1) return 0;
+      const dropIds = new Set();
       const excess = airedIdx.length - Math.max(1, keep);
-      if (excess <= 0) return 0;
-      const dropIds = new Set(airedIdx.slice(0, excess).map((i) => items[i].id));
+      for (const i of airedIdx.slice(0, Math.max(0, excess))) dropIds.add(items[i].id);
+      if (num(now) != null && num(maxAgeMs) != null) {
+        const cutoff = num(now) - num(maxAgeMs);
+        for (const i of airedIdx.slice(0, -1)) { // the newest aired item always survives
+          if (audibleEndOf(items[i]) < cutoff) dropIds.add(items[i].id);
+        }
+      }
+      if (!dropIds.size) return 0;
       items = items.filter((it) => !dropIds.has(it.id));
       persist();
       return dropIds.size;

@@ -93,6 +93,21 @@ export const clientSessionManager = {
     return false;
   },
 
+  /**
+   * Honest 「N 台设备在听」(contract field `listeners`): connected clients
+   * with a fresh heartbeat that are NOT paused — the hasActiveSession
+   * predicate, counted. A connected-but-paused device is a viewer, not a
+   * listener; a stale heartbeat drops out after the TTL even if the socket
+   * lingers.
+   */
+  listenerCount(maxAgeMs = ACTIVE_TTL_MS) {
+    let n = 0;
+    for (const c of clients.values()) {
+      if (!c.paused && fresh(c, maxAgeMs)) n++;
+    }
+    return n;
+  },
+
   /** Items after the on-air one, given the log view length (agent/loop.js). */
   remaining(queueLen) {
     const len = Number.isFinite(queueLen) ? queueLen : 0;

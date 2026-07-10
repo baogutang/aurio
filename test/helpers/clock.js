@@ -49,3 +49,13 @@ export function memStore(initial = null) {
     peek: () => data,
   };
 }
+
+/** In-memory prefs seam for initStation (stationStartedAt persistence). */
+export function memPrefs(initial = {}) {
+  const m = new Map(Object.entries(initial));
+  return {
+    get: (k, d = null) => (m.has(k) ? m.get(k) : d),
+    set: (k, v) => { m.set(k, v); },
+    peek: (k) => m.get(k),
+  };
+}

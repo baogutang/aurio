@@ -6,7 +6,7 @@
 //   · voice tracking pre-synthesizes upcoming lines only when someone listens;
 //   · the persisted log restores mid-show.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { makeClock, memStore } from './helpers/clock.js';
+import { makeClock, memStore, memPrefs } from './helpers/clock.js';
 
 const synthesizeBackground = vi.fn();
 vi.mock('../server/tts/index.js', () => ({
@@ -14,7 +14,7 @@ vi.mock('../server/tts/index.js', () => ({
   cachedSynthesis: vi.fn(() => null),
 }));
 
-const { initStation, station, setListenerGate, toLogItem, itemToTrack } = await import('../server/playout/station.js');
+const { initStation, station, setListenerGate, toLogItem, itemToTrack, STATION_STARTED_PREF } = await import('../server/playout/station.js');
 const { eventBus } = await import('../server/runtime/event-bus.js');
 const { db } = await import('../server/store.js');
 
@@ -25,21 +25,26 @@ const track = (id, extra = {}) => ({
   ...extra,
 });
 
+const HOUR = 60 * 60 * 1000;
+
 let clock;
 let store;
+let prefs;
 
-function rig({ horizonMs = 1, storeData = null } = {}) {
-  clock = makeClock(0);
+function rig({ horizonMs = 1, storeData = null, startAt = 0, prefsData = {} } = {}) {
+  clock = makeClock(startAt);
   store = memStore(storeData);
+  prefs = memPrefs(prefsData);
   initStation({
     now: clock.now,
     setTimer: clock.setTimer,
     clearTimer: clock.clearTimer,
     horizonMs,
     store,
+    prefs,
     cue: null,
   });
-  return { clock, store };
+  return { clock, store, prefs };
 }
 
 beforeEach(() => {
@@ -262,16 +267,62 @@ describe('persistence and restore', () => {
     expect(station.join().offsetMs).toBe(500);
   });
 
-  it('prunes aired history so the log stays bounded', () => {
+  it('keeps ≥6h of aired items for the tape, drops what fell out of the 12h window', () => {
     rig();
-    const many = Array.from({ length: 60 }, (_, i) => track(`t${i}`));
+    // A realistic broadcast day: 3-min songs, played through for 16 hours.
+    const many = Array.from({ length: 340 }, (_, i) => track(`t${i}`, { duration: 180 }));
     station.appendTracks(many);
     station.start();
-    clock.tick(8000 * 55); // deep into the log
-    expect(station.items().length).toBeLessThan(60);
-    // the on-air anchor and the whole unaired future always survive
+    clock.tick(16 * HOUR);
+    const now = clock.now();
+    expect(station.current()).toBeTruthy(); // still mid-log
+    const aired = station.items().filter((it) => it.airStart != null);
+    // Nothing inside the 12h tape window was lost…
+    const audibleEnd = (it) => it.airStart + Math.max(0, it.cueOut - it.cueIn);
+    expect(aired.every((it) => audibleEnd(it) >= now - 12 * HOUR)).toBe(true);
+    // …so a 6h tape query is fully covered: the retained history reaches back
+    // past now−6h with no holes (consecutive aired items stay contiguous).
+    const oldest = aired[0];
+    expect(oldest.airStart).toBeLessThanOrEqual(now - 6 * HOUR);
+    for (let i = 1; i < aired.length; i++) {
+      expect(aired[i].airStart).toBeLessThanOrEqual(audibleEnd(aired[i - 1]));
+    }
+    // and everything older than the window is gone
+    expect(aired[0].airStart).toBeGreaterThanOrEqual(now - 12 * HOUR - 180000);
+  });
+
+  it('the hard item cap bounds the persisted file even with short items', () => {
+    rig();
+    // Pathologically short items: 90s each → >400 would fit in 12h without a cap.
+    const many = Array.from({ length: 560 }, (_, i) => track(`t${i}`, { duration: 90 }));
+    station.appendTracks(many);
+    station.start();
+    clock.tick(13 * HOUR);
+    const aired = station.items().filter((it) => it.airStart != null);
+    expect(aired.length).toBeLessThanOrEqual(400);
+    expect(aired.length).toBeGreaterThan(300); // the cap trims, it doesn't gut
+    // the persisted log is the bounded artifact
+    expect(JSON.stringify(store.peek()).length).toBeLessThan(500 * 1024);
+    // the on-air anchor and the unaired future always survive
     expect(station.current()).toBeTruthy();
     expect(station.items().some((it) => it.airStart == null)).toBe(true);
+  });
+
+  it('aired items keep their voice {text, ttsUrl} refs for the tape', () => {
+    rig();
+    setListenerGate(() => true);
+    synthesizeBackground.mockImplementation((text, onDone) => {
+      onDone({ url: '/tts/deadbeef.mp3' });
+      return null;
+    });
+    station.appendTracks([track('a'), track('b')], { voice: { text: '第一句口播' } });
+    station.start();
+    clock.tick(9000); // a aired, b on air
+    const a = station.items()[0];
+    expect(a.airStart).toBe(0);
+    expect(a.voice).toMatchObject({ text: '第一句口播', ttsUrl: '/tts/deadbeef.mp3' });
+    // and the persisted copy carries them too — replay after restart is free
+    expect(store.peek().items[0].voice).toMatchObject({ text: '第一句口播', ttsUrl: '/tts/deadbeef.mp3' });
   });
 
   it('migrates a pre-cutover client queue into the log once', () => {
@@ -284,5 +335,64 @@ describe('persistence and restore', () => {
     });
     expect(station.items().map((it) => it.track.id)).toEqual(['legacy1', 'legacy2']);
     expect(db.state.queue).toEqual([]);
+  });
+});
+
+describe('stationStartedAt (uptime of the current on-air run)', () => {
+  it('is null before anything airs, anchors at first air, holds across segues', () => {
+    rig({ startAt: 1000 });
+    expect(station.startedAt()).toBeNull();
+    station.appendTracks([track('a'), track('b'), track('c')]);
+    station.start();
+    expect(station.startedAt()).toBe(1000);
+    clock.tick(8000); // a segues into b — same run
+    expect(station.current()?.track.id).toBe('b');
+    expect(station.startedAt()).toBe(1000);
+  });
+
+  it('dead air ends the run; the next airing starts a new one', () => {
+    rig({ startAt: 1000 });
+    station.appendTracks([track('a')]);
+    station.start();
+    clock.tick(60000); // a's audible end (11000) long past — dead air
+    expect(station.current()).toBeNull();
+    expect(station.startedAt()).toBe(1000); // the last run's anchor, still honest
+    station.appendTracks([track('b')]);     // pinned at now, airs immediately
+    expect(station.current()?.track.id).toBe('b');
+    expect(station.startedAt()).toBe(61000);
+  });
+
+  it('survives a restart that fast-forwarded through downtime (the log carried through)', () => {
+    rig({ startAt: 1000 });
+    station.appendTracks([track('a'), track('b'), track('c')]);
+    station.start();
+    clock.tick(1000);
+    const persisted = structuredClone(store.peek());
+    const carried = { [STATION_STARTED_PREF]: prefs.peek(STATION_STARTED_PREF) };
+
+    // restart 16.5s in: c (started 17000) is mid-air; the chain has no gap
+    rig({ storeData: persisted, startAt: 17500, prefsData: carried });
+    station.start();
+    expect(station.current()?.track.id).toBe('c');
+    expect(station.startedAt()).toBe(1000); // uptime did NOT reset to the boot
+  });
+
+  it('a restart that woke into dead air starts a new run at the next airing', () => {
+    rig({ startAt: 1000 });
+    station.appendTracks([track('a'), track('b')]);
+    station.start();
+    clock.tick(1000);
+    const persisted = structuredClone(store.peek());
+    const carried = { [STATION_STARTED_PREF]: prefs.peek(STATION_STARTED_PREF) };
+
+    // the whole schedule (audible through 19000) played out during downtime
+    const bootAt = 5 * HOUR;
+    rig({ storeData: persisted, startAt: bootAt, prefsData: carried });
+    station.start();
+    expect(station.current()).toBeNull();
+    expect(station.startedAt()).toBe(1000); // dead air still reports the last run
+    station.appendTracks([track('x')]);     // the horizon keeper would do this
+    expect(station.current()?.track.id).toBe('x');
+    expect(station.startedAt()).toBe(bootAt); // gap observed → new run
   });
 });

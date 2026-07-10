@@ -15,7 +15,7 @@
 //
 // Every externally visible change emits eventBus 'programme' { reason } —
 // index.js turns those into WS pushes of a fresh join() snapshot.
-import { createProgrammeLog } from './log.js';
+import { createProgrammeLog, startOf, audibleEndOf } from './log.js';
 import { createPlayout } from './playout.js';
 import { db } from '../store.js';
 import { config } from '../config.js';
@@ -24,8 +24,14 @@ import { synthesizeBackground } from '../tts/index.js';
 import { ensureCue, cachedCue } from '../music/cue.js';
 
 export const PROGRAMME_LOG_PREF = 'programmeLog';
+export const STATION_STARTED_PREF = 'stationStartedAt';
 const FALLBACK_DURATION_MS = 4 * 60000; // a track without a believable duration
-const HISTORY_KEPT = 40;                // aired items retained in the persisted log
+// Aired retention (the 磁带, RADIO_AUDIT idea 06): GET /api/tape replays up to
+// 12h of aired items, so history is kept by AGE — anything that stopped being
+// audible within the last 12h survives — with a hard item cap as the size
+// bound (400 items ≈ 12h of 90s items; typical 3-min songs land well under it).
+const HISTORY_KEPT = 400;                        // hard cap on aired items
+const HISTORY_MAX_AGE_MS = 12 * 60 * 60 * 1000;  // the tape window
 const VOICE_TRACK_AHEAD = 2;            // upcoming voice lines pre-synthesized
 
 let log = null;
@@ -35,8 +41,17 @@ let listenerGate = () => false;
 const inflightVoice = new Set();
 
 // Injectable seams (tests / index.js). Cue analysis defaults OFF under vitest —
-// a unit test appending fixture tracks must never spawn ffmpeg probes.
+// a unit test appending fixture tracks must never spawn ffmpeg probes. The
+// stationStartedAt prefs seam likewise defaults to memory under vitest so a
+// unit test airing items never writes the real state.json.
 let deps = {};
+function memoryPrefs() {
+  const m = new Map();
+  return {
+    get: (k, d = null) => (m.has(k) ? m.get(k) : d),
+    set: (k, v) => { m.set(k, v); },
+  };
+}
 function defaultDeps() {
   return {
     now: () => Date.now(),
@@ -46,6 +61,10 @@ function defaultDeps() {
     horizonMs: undefined, // engine default (5 min)
     cue: process.env.VITEST ? null : ensureCue,
     synthesize: synthesizeBackground,
+    prefs: process.env.VITEST ? memoryPrefs() : {
+      get: (k, d) => db.getPref(k, d),
+      set: (k, v) => db.setPref(k, v),
+    },
   };
 }
 
@@ -190,6 +209,36 @@ function trackVoices() {
 }
 
 // ---------------------------------------------------------------------------
+// station uptime — when did the current unbroken on-air run begin?
+//
+// The honest anchor is in the log, not the process: a restart fast-forwards
+// through downtime stamping airStart = scheduledStart (per the log the station
+// never stopped), so uptime must survive it. The anchor is persisted and only
+// RESET when a gap is actually observed — the on-air item starts after the
+// previous item stopped being audible (dead air broke the run; appends after
+// dead air are pinned at now, so the gap is visible in the log). When history
+// before the on-air item was pruned away, continuity can't be disproved and a
+// valid earlier anchor is kept.
+// ---------------------------------------------------------------------------
+
+function noteRunAnchor() {
+  const cur = playout.current();
+  if (!cur) return; // dead air: the run ended; the next airing decides anew
+  const list = log.items();
+  const i = list.findIndex((it) => it.id === cur.id);
+  const prev = i > 0 ? list[i - 1] : null;
+  const gap = !!prev && startOf(cur) > audibleEndOf(prev);
+  const anchor = startOf(cur);
+  const existing = Number(deps.prefs.get(STATION_STARTED_PREF));
+  if (!gap && Number.isFinite(existing) && existing > 0 && existing <= anchor) return;
+  deps.prefs.set(STATION_STARTED_PREF, anchor);
+}
+
+function pruneAired() {
+  log.pruneHistory({ keep: HISTORY_KEPT, now: deps.now(), maxAgeMs: HISTORY_MAX_AGE_MS });
+}
+
+// ---------------------------------------------------------------------------
 // lifecycle
 // ---------------------------------------------------------------------------
 
@@ -223,13 +272,15 @@ export function initStation(opts = {}) {
     onHorizonLow: (info) => eventBus.emit('horizon-low', info),
   });
   playout.on('item-start', (item) => {
-    log.pruneHistory({ keep: HISTORY_KEPT });
+    noteRunAnchor();
+    pruneAired();
     emitProgramme('item-start');
     trackVoices();
   });
   playout.on('item-end', () => emitProgramme('log'));
   playout.on('jumped', () => {
-    log.pruneHistory({ keep: HISTORY_KEPT });
+    noteRunAnchor();
+    pruneAired();
     emitProgramme('jumped');
     trackVoices();
   });
@@ -290,6 +341,19 @@ export const station = {
   horizonRemaining() {
     ensureInit();
     return log.horizonRemaining(deps.now());
+  },
+
+  /**
+   * ms epoch when the current unbroken on-air run began (contract field
+   * `stationStartedAt`). Survives restarts that fast-forwarded through
+   * downtime; resets only when the schedule actually ran dry (dead air) and
+   * a new run was pinned at now. During dead air this reports the last run's
+   * anchor; null before anything ever aired.
+   */
+  startedAt() {
+    ensureInit();
+    const v = Number(deps.prefs.get(STATION_STARTED_PREF));
+    return Number.isFinite(v) && v > 0 ? v : null;
   },
 
   /** Legacy read view: [on-air track, ...upcoming tracks] (context/agent prompts). */
