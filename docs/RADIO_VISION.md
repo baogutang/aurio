@@ -18,10 +18,10 @@
 
 | 阶段 | 主题 | 规模 | 状态 |
 |:--|:--|:--|:--|
-| P0 | 收尾与地基 | 本周 | ☐ 未开始 |
-| P1 | 台的身份（声音包装 + 调台） | 一个周末 | ☐ 未开始 |
-| P2 | 节目语法（节目表 + 热线 + 栏目） | 一个月 | ☐ 未开始 |
-| P3 | 时间线（服务端 playout，THE FIX） | 一个季度 | ☐ 未开始 |
+| P0 | 收尾与地基 | 本周 | ✅ 代码完成（2026-07-10），待耳测 |
+| P1 | 台的身份（声音包装 + 调台） | 一个周末 | 🟡 声音包装引擎已落地；调台交互与 UI 收敛待做 |
+| P2 | 节目语法（节目表 + 热线 + 栏目） | 一个月 | 🟡 探测器已落地；节目表 / 热线 / 栏目待做 |
+| P3 | 时间线（服务端 playout，THE FIX） | 一个季度 | 🟡 前置的前端测试地基已落地（75 测试 + queueSync 行为规格） |
 | P4 | 灵魂（磁带 / 开台仪式 / 播出钟） | P3 之后 | ☐ 未开始 |
 
 ---
@@ -54,13 +54,14 @@
 
 目标：把手头未提交的工作收干净，补上第 2 原语的最后一块。
 
-- [ ] 合入进行中的话密度工作：跳歌 streak 化（`server/agent/feedback-reaction.js`）、判官角度分离 `anglesOf`（`server/agent/judge.js`）、相应测试
-- [ ] **预取下一首**：当前歌播到还剩 ~20s 时解析并 `preload` 下一首的 URL（消灭换歌死空气的前半段）
-- [ ] **等功率交叉淡入**：`audioGraph.ts` 增加第二个 music 通道或复用 voice 通道空闲期，cos/sin 曲线 ≈2s；`a.src` 硬切只保留为兜底
-- [ ] 卫生：`demo/*.html` 决定去留（入库到 `demo/` 或删除），不再挂在 `git status` 里
-- [ ] 卫生：`pwa/assets/index-*` 构建产物的 diff 噪音 —— 改为 CI 构建产物或调整提交约定
+- [x] 合入进行中的话密度工作：跳歌 streak 化（`server/agent/feedback-reaction.js`）、判官角度分离 `anglesOf`（`server/agent/judge.js`）、相应测试（2026-07-10）
+- [x] **预取下一首**：剩余 ≤20s 时预载下一首（队列变化会重瞄、预取失败回退正常路径）（2026-07-10）
+- [x] **等功率交叉淡入**：双 music 元素 A/B 交替，各自 GainNode 汇入共享总线；自然结尾 ≈2s cos/sin 交叉淡入（逐采样点验证 ch0²+ch1²=1.00），手动跳歌 250ms 快淡出；口播骑在 crossfade 上（垫乐即交叉淡入本身）；mixer 不可用时保留硬切兜底（2026-07-10）
+- [x] 卫生：`demo/*.html` 已入库（2026-07-10）
+- [x] 卫生：pwa 构建产物提交约定写入 CONTRIBUTING —— 与对应源码同一 commit，绝不散提（2026-07-10）
 
 **验收：连续听半小时，任何一次换歌听不到「洞」。**
+——代码级与数学级已验证；2s 交叉淡入的听感、口播压 segue 的平衡、duck 深度**尚需真机耳测**。
 
 ---
 
@@ -71,11 +72,11 @@
 
 ### 声音包装（imaging package）
 
-- [ ] **Sonic logo**：3 秒左右的合成音牌（几个音符），生成一次永久缓存；作为一切 imaging 的前缀
-- [ ] **Liners**：用现有 TTS 预生成 10–20 条台呼变体（「你在听 Aurio」「Aurio，凌晨一点的陪伴」），存 `cache/imaging/`，歌间低频随机轮播（如每 20–30 分钟一条），不走 LLM
-- [ ] **整点台呼**：sonic logo + 报时一句（模板 + 探测器事实，不走 LLM）
-- [ ] 服务端新增 `server/imaging.js`：管理 imaging 素材的生成、缓存与排期；广播里新增 `kind: 'liner' | 'id'` 的轻量元素
-- [ ] 前端：liner / 台呼走 voice 总线（已有播音链），播放时同样 duck 音乐
+- [x] **Sonic logo**：~2s 三音音牌（A4→E5→A5，软起音 + 指数衰减 + 谐波），纯 Node 生成 WAV 永久缓存，`GET /imaging/sonic-logo.wav`（2026-07-10）
+- [x] **Liners**：18 条台呼（6 通用 + 每日段 3 条），走现有 TTS 缓存，默认每 25 分钟轮播一条、最近 4 条不重复；配置 `IMAGING_ENABLED` / `IMAGING_LINER_INTERVAL_MIN`（2026-07-10）
+- [x] **整点台呼**：整点 cron 模板报时（24 条按时缓存），零 LLM；logo 与人声的拼接留有 TODO（TTS 输出格式不一，需解码重采样）（2026-07-10）
+- [x] 服务端 `server/imaging.js`：投递走 DJ 现成的 segue patch 通道（`patchSegueTts` + `tts` 事件，事件带 `kind: 'liner' | 'id'`），只认领没有 DJ segue 的空位（2026-07-10）
+- [x] 前端：零改动 —— segue 通道天然走 voice 总线 + ducking（2026-07-10）
 
 ### 调台交互（UI）
 
@@ -122,7 +123,7 @@
 - [ ] 歌曲背景小知识：year / genre / 歌词已在候选里，让深夜档偶尔讲一首歌的来历（网易云私人DJ 验证过的形态）
 - [ ] 周五晚固定栏目：「本周你听得最多的是……」（数据在 `state.json`，固定时刻出现即仪式）
 - [ ] 早间日程播报：把日历当「生活新闻」念
-- [ ] 探测器补全（RADIO_AUDIT 想法 04）：`return_after_absence` / `shelf_track` / `weather_flip` / `replay_obsession`，代码找事实、写进 brief，模型只负责说出口
+- [x] 探测器补全（RADIO_AUDIT 想法 04）：`return_after_absence` / `shelf_track` / `weather_flip` / `replay_obsession` 四个全部落地（`server/agent/detectors.js`），每观测最多一个事实、按优先级出、逐探测器冷却持久化；skip streak 归 `feedback-reaction.js` 不重复（2026-07-10，提前完成）
 
 ### 声音升级（先行部分）
 
@@ -139,6 +140,7 @@
 技术方案细节（LogItem 形状、删除清单、cue 点、LUFS）见 [RADIO_AUDIT.md](RADIO_AUDIT.md#一个季度--时间线且它活过标签页--the-fix)，此处只列推进要点：
 
 - [ ] **前置（没得商量）**：先建假时钟 playout 测试夹具，能确定性推进时间线并断言 `scheduledStart` 算术 —— 之后才允许动 `queue-controller.js`
+  - [x] 地基先行：web 侧 vitest 基础设施 + 75 个纯 lib 测试已落地，`queueSync.ts` 的合并行为（含怪癖）已被特征测试钉住，作为替换时的对照规格（2026-07-10）
 - [ ] `server/playout/`：`log.js`（墙钟 `scheduledStart` 的 LogItem[]）+ `playout.js`（真实时间推进游标，不管有没有人听）
 - [ ] 客户端 **join in progress**：在偏移量上接入，不是从索引 0 播队列
 - [ ] `hasActiveSession` 只保留「控制花钱」一个用途（游标推进免费，LLM / TTS 调用要有人听）
