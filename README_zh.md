@@ -347,6 +347,8 @@ curl -X POST http://localhost:8080/api/chat \
 
 | 主题 | 链接 |
 |:--|:--|
+| 电台化愿景与路线 | [docs/RADIO_VISION.md](docs/RADIO_VISION.md) |
+| 电台化审计（v0.3.5） | [docs/RADIO_AUDIT.md](docs/RADIO_AUDIT.md) |
 | 架构 | [docs/architecture.md](docs/architecture.md) |
 | 前端规范 | [docs/FRONTEND_SPEC.md](docs/FRONTEND_SPEC.md) |
 | 安全模型 | [SECURITY.md](SECURITY.md) |

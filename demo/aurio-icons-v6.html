@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurio Icons v6</title>
+  <style>
+    :root {
+      --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', sans-serif;
+      --accent-rgb: 255, 106, 61;
+      --hi-rgb: 90, 209, 154;
+      --bg: #0a0a0a;
+      --card: #141414;
+      --border: rgba(255,255,255,.1);
+      --text: #f5f5f7;
+      --muted: #98989d;
+      --matrix-fg: #f5f5f7;
+      --dot-surface-bg: #040404;
+      --glass-border: rgba(255,255,255,.12);
+      --inset-bg: rgba(255,255,255,.06);
+    }
+    [data-theme="light"] {
+      --bg: #e8e8ed; --card: #fff; --border: rgba(0,0,0,.08);
+      --text: #1d1d1f; --muted: #86868b; --matrix-fg: #1d1d1f;
+      --dot-surface-bg: #efefef; --glass-border: rgba(0,0,0,.1);
+      --inset-bg: rgba(0,0,0,.05);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      padding: 1.75rem 1rem 2.5rem;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 400px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 1.25rem; }
+    header h1 { font-size: 19px; font-weight: 650; letter-spacing: -0.02em; }
+    header p { font-size: 12px; color: var(--muted); margin-top: 0.35rem; line-height: 1.5; }
+
+    section {
+      background: var(--card);
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      padding: 1rem 1.1rem 1.15rem;
+      margin-bottom: 0.7rem;
+    }
+    section h2 {
+      font-size: 10px; font-weight: 600; color: var(--muted);
+      letter-spacing: .09em; text-transform: uppercase; margin-bottom: .3rem;
+    }
+    section .hint { font-size: 11px; color: var(--muted); margin-bottom: .75rem; line-height: 1.45; }
+    .ctrls { display: flex; gap: 5px; margin-bottom: .75rem; }
+    .ctrl {
+      font: 500 11px/1 var(--font);
+      padding: 5px 10px; border-radius: 7px; border: none;
+      background: var(--inset-bg); color: var(--text); cursor: pointer;
+    }
+    .ctrl.on { background: rgb(var(--accent-rgb)); color: #fff; }
+
+    /* ── App mock ── */
+    .app-mock {
+      border-radius: 20px;
+      border: 1px solid var(--glass-border);
+      background: var(--dot-surface-bg);
+      background-image: radial-gradient(rgba(255,255,255,.04) 0.65px, transparent 0.65px);
+      background-size: 5px 5px;
+      padding: 1.35rem 0.85rem 1.1rem;
+      text-align: center;
+    }
+    [data-theme="light"] .app-mock {
+      background-image: radial-gradient(rgba(0,0,0,.06) 0.65px, transparent 0.65px);
+    }
+
+    /* clock — same as production */
+    .matrix-grid {
+      --md: 6px;
+      --mg: calc(var(--md) * 0.55);
+      display: flex; align-items: center; justify-content: center;
+      gap: calc(var(--md) * 1.6);
+    }
+    .matrix-digit {
+      display: grid;
+      grid-template-columns: repeat(5, var(--md));
+      gap: var(--mg);
+    }
+    .matrix-colon {
+      display: grid;
+      grid-template-rows: repeat(7, var(--md));
+      gap: var(--mg);
+      margin: 0 calc(var(--md) * -0.2);
+    }
+    .matrix-pixel {
+      width: var(--md); height: var(--md);
+      border-radius: 50%; background: transparent;
+    }
+    .matrix-pixel.on { background: var(--matrix-fg); }
+
+    .mock-weekday { margin: .8rem 0 .12rem; font-size: .76rem; color: var(--muted); letter-spacing: .06em; }
+    .mock-date { font-size: .6rem; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); opacity: .75; }
+    .mock-status {
+      display: inline-flex; align-items: center; gap: .38rem;
+      margin: .95rem 0 1.15rem;
+      font-size: .58rem; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: var(--muted);
+    }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: rgb(var(--hi-rgb));
+      box-shadow: 0 0 10px rgba(var(--hi-rgb),.75);
+    }
+
+    /* transport — production sizes */
+    .transport-row {
+      display: flex; align-items: center; justify-content: center; gap: 1rem;
+      position: relative;
+    }
+    .transport-ring {
+      position: absolute; width: 58px; height: 58px; border-radius: 50%;
+      border: 1.5px solid rgba(var(--accent-rgb),.35);
+      pointer-events: none;
+    }
+    .transport-cluster { display: flex; align-items: center; gap: .5rem; }
+    .transport {
+      display: flex; align-items: center; justify-content: center;
+      width: 46px; height: 46px; border-radius: 50%;
+      color: var(--matrix-fg);
+      background: var(--inset-bg);
+      border: 1px solid var(--glass-border);
+    }
+    .transport.liked { color: rgb(var(--hi-rgb)); }
+    .transport svg { display: block; flex-shrink: 0; }
+    .play-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 58px; height: 58px; border-radius: 50%; border: none;
+      color: #fff;
+      background: linear-gradient(145deg, #ff7a50, rgb(var(--accent-rgb)));
+      box-shadow: 0 6px 24px rgba(var(--accent-rgb),.4), inset 0 1px 0 rgba(255,255,255,.22);
+    }
+    .play-btn.live {
+      box-shadow: 0 8px 32px rgba(var(--accent-rgb),.55), 0 0 0 6px rgba(var(--accent-rgb),.12), inset 0 1px 0 rgba(255,255,255,.25);
+    }
+
+    /* dock */
+    .icons-row { display: flex; gap: 1.1rem; justify-content: center; margin-bottom: .65rem; }
+    .ic { text-align: center; }
+    .ic canvas { display: block; border-radius: 22.5%; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+    .ic small { display: block; margin-top: 5px; font-size: 10px; color: var(--muted); }
+    .dock {
+      display: flex; align-items: flex-end; justify-content: center; gap: 8px;
+      padding: 10px 14px 8px; border-radius: 15px;
+      background: rgba(255,255,255,.2);
+      backdrop-filter: blur(22px) saturate(1.4);
+      border: 1px solid rgba(255,255,255,.32);
+    }
+    .dock-f { width: 46px; height: 46px; border-radius: 10px; background: rgba(120,120,128,.22); }
+    .dock canvas { width: 46px; height: 46px; }
+
+    .bar {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 4px 12px; border-radius: 6px;
+      background: rgba(22,22,22,.92);
+    }
+    .bar-f { width: 14px; height: 14px; border-radius: 3px; background: rgba(255,255,255,.18); }
+    .trays { display: flex; gap: 10px; justify-content: center; margin-top: 8px; }
+    .trays span { display: block; font-size: 9px; color: var(--muted); margin-top: 3px; text-align: center; }
+    .trays canvas { display: block; background: rgba(22,22,22,.92); border-radius: 4px; padding: 3px 5px; }
+
+    .fix {
+      margin-top: .9rem; padding: 10px 12px; border-radius: 10px;
+      background: rgba(var(--hi-rgb),.08);
+      border: 1px solid rgba(var(--hi-rgb),.18);
+      font-size: 11px; color: var(--muted); line-height: 1.55;
+    }
+    .fix strong { color: var(--text); }
+  </style>
+</head>
+<body data-theme="dark">
+  <div class="wrap">
+    <header>
+      <h1>Aurio Icons v6</h1>
+      <p>修复空白 bug · SVG 圆点阵保证可见 · 加粗字模 · 极简 Dock 标记</p>
+    </header>
+
+    <section>
+      <h2>App 内预览</h2>
+      <p class="hint">v5 空白原因：按钮内圆点用了未定义的 --md。v6 改用 SVG 绘制。</p>
+      <div class="ctrls">
+        <button class="ctrl" id="cTheme" type="button">浅色</button>
+        <button class="ctrl" id="cPlay" type="button">播放</button>
+        <button class="ctrl" id="cLike" type="button">喜欢</button>
+      </div>
+      <div class="app-mock" id="appMock"></div>
+    </section>
+
+    <section>
+      <h2>Dock</h2>
+      <div class="icons-row" id="iconsRow"></div>
+      <div class="dock" id="dock"></div>
+    </section>
+
+    <section>
+      <h2>菜单栏</h2>
+      <div style="text-align:center">
+        <div class="bar">
+          <span class="bar-f"></span>
+          <canvas id="trayLive" width="18" height="18"></canvas>
+          <span class="bar-f"></span>
+        </div>
+        <div class="trays" id="trays"></div>
+      </div>
+    </section>
+
+    <p class="fix"><strong>v6 修复：</strong>播放区空白 = CSS 变量 bug，已改 SVG 圆点；字模加粗；Dock 改为三圆点标记（天线 + 双眼），不再堆方块宠。</p>
+  </div>
+
+  <script>
+    /** 5×7 LED glyphs — bolder than v5 */
+    const G = {
+      play:  ['00000','01110','01111','01111','01111','01110','00000'],
+      pause: ['10101','10101','10101','10101','10101','10101','10101'],
+      prev:  ['10000','10000','11110','11110','11110','10000','10000'],
+      next:  ['00001','00001','01111','01111','01111','00001','00001'],
+      heart: ['01010','11111','11111','01110','00100','00000','00000'],
+      minus: ['00000','00000','01110','01110','01110','00000','00000'],
+    };
+
+    /** SVG LED matrix — always renders, scales cleanly */
+    function ledSvg(rows, { w = 24, h = 28, color = 'currentColor', glow = false } = {}) {
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('width', String(w));
+      svg.setAttribute('height', String(h));
+      svg.setAttribute('viewBox', '0 0 5 7');
+      svg.setAttribute('fill', color);
+      if (glow) {
+        const defs = document.createElementNS(ns, 'defs');
+        const f = document.createElementNS(ns, 'filter');
+        f.setAttribute('id', 'led-glow');
+        f.innerHTML = '<feGaussianBlur stdDeviation="0.15" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>';
+        defs.appendChild(f);
+        svg.appendChild(defs);
+        svg.setAttribute('filter', 'url(#led-glow)');
+      }
+      for (let y = 0; y < rows.length; y++) {
+        for (let x = 0; x < rows[y].length; x++) {
+          if (rows[y][x] !== '1') continue;
+          const c = document.createElementNS(ns, 'circle');
+          c.setAttribute('cx', String(x + 0.5));
+          c.setAttribute('cy', String(y + 0.5));
+          c.setAttribute('r', '0.44');
+          svg.appendChild(c);
+        }
+      }
+      return svg;
+    }
+
+    function tbtn(rows, extra = '', opts = {}) {
+      const b = document.createElement('div');
+      b.className = 'transport' + extra;
+      b.appendChild(ledSvg(rows, { w: 22, h: 26, ...opts }));
+      return b;
+    }
+
+    const CLOCK = {
+      '1': ['00100','01100','00100','00100','00100','00100','01110'],
+      '2': ['01110','10001','00001','00010','00100','01000','11111'],
+      '4': ['00010','00110','01010','10010','11111','00010','00010'],
+      '7': ['11111','00001','00010','00100','01000','01000','01000'],
+    };
+
+    function clockDigit(c) {
+      const el = document.createElement('div');
+      el.className = 'matrix-digit';
+      for (const row of CLOCK[c]) {
+        for (const bit of row) {
+          const p = document.createElement('span');
+          p.className = 'matrix-pixel' + (bit === '1' ? ' on' : '');
+          el.appendChild(p);
+        }
+      }
+      return el;
+    }
+    function clockColon() {
+      const el = document.createElement('div');
+      el.className = 'matrix-colon';
+      for (let r = 0; r < 7; r++) {
+        const p = document.createElement('span');
+        p.className = 'matrix-pixel' + (r === 2 || r === 4 ? ' on' : '');
+        el.appendChild(p);
+      }
+      return el;
+    }
+    function clockRow() {
+      const g = document.createElement('div');
+      g.className = 'matrix-grid';
+      g.append(clockDigit('1'), clockDigit('2'), clockColon(), clockDigit('4'), clockDigit('7'));
+      return g;
+    }
+
+    let playing = false, liked = false, dark = true;
+
+    function renderMock() {
+      const root = document.getElementById('appMock');
+      root.innerHTML = '';
+      root.appendChild(clockRow());
+      root.append(Object.assign(document.createElement('p'), { className: 'mock-weekday', textContent: '星期五' }));
+      root.append(Object.assign(document.createElement('p'), { className: 'mock-date', textContent: '2026 · JUL · 03' }));
+      const st = document.createElement('div');
+      st.className = 'mock-status';
+      if (playing) st.append(Object.assign(document.createElement('span'), { className: 'live-dot' }));
+      st.append(Object.assign(document.createElement('span'), { textContent: playing ? 'ON AIR' : 'STANDBY' }));
+      root.append(st);
+
+      const row = document.createElement('div');
+      row.className = 'transport-row';
+      if (playing) row.append(Object.assign(document.createElement('span'), { className: 'transport-ring' }));
+
+      row.append(tbtn(G.prev));
+      const cluster = document.createElement('div');
+      cluster.className = 'transport-cluster';
+      const pb = document.createElement('div');
+      pb.className = 'play-btn' + (playing ? ' live' : '');
+      pb.appendChild(ledSvg(playing ? G.pause : G.play, { w: 26, h: 30, color: '#fff', glow: true }));
+      cluster.append(
+        tbtn(G.heart, liked ? ' liked' : ''),
+        pb,
+        tbtn(G.minus),
+      );
+      row.append(cluster, tbtn(G.next));
+      root.append(row);
+    }
+
+    /* ── Dock: 3-dot mark (antenna + eyes) on squircle ── */
+    function squircle(ctx, s, inset, r) {
+      const x = inset, y = inset, w = s - inset * 2, h = s - inset * 2;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function drawAppIcon(variant, size) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const inset = size * 0.06;
+      const r = size * 0.22;
+
+      if (variant === 'lumen') {
+        const g = ctx.createLinearGradient(0, 0, size * 0.2, size);
+        g.addColorStop(0, '#fff');
+        g.addColorStop(0.4, '#faf7f3');
+        g.addColorStop(1, '#e6ddd2');
+        ctx.fillStyle = g;
+        squircle(ctx, size, inset, r);
+        ctx.fill();
+        const hi = ctx.createLinearGradient(0, inset, 0, size * 0.45);
+        hi.addColorStop(0, 'rgba(255,255,255,.92)');
+        hi.addColorStop(1, 'transparent');
+        ctx.fillStyle = hi;
+        squircle(ctx, size, inset, r);
+        ctx.fill();
+      } else {
+        const g = ctx.createRadialGradient(size * .5, size * .35, 0, size * .5, size * .5, size * .65);
+        g.addColorStop(0, '#3a3a3e');
+        g.addColorStop(1, '#121214');
+        ctx.fillStyle = g;
+        squircle(ctx, size, inset, r);
+        ctx.fill();
+      }
+
+      const cx = size * 0.5;
+      const bodyY = size * 0.54;
+      const bodyR = size * 0.19;
+
+      // soft body glow
+      const glow = ctx.createRadialGradient(cx, bodyY, 0, cx, bodyY, bodyR * 1.8);
+      glow.addColorStop(0, 'rgba(255,106,61,0.35)');
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx, bodyY, bodyR * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // body
+      const body = ctx.createRadialGradient(cx - bodyR * 0.2, bodyY - bodyR * 0.25, 0, cx, bodyY, bodyR);
+      body.addColorStop(0, '#ff8a62');
+      body.addColorStop(1, '#e85528');
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.arc(cx, bodyY, bodyR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.beginPath();
+      ctx.arc(cx - bodyR * 0.28, bodyY - bodyR * 0.32, bodyR * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+
+      // eyes
+      const eyeY = bodyY - bodyR * 0.08;
+      const eyeDx = bodyR * 0.38;
+      const eyeR = size * 0.028;
+      ctx.fillStyle = variant === 'lumen' ? '#1a1210' : '#0a0808';
+      for (const ex of [cx - eyeDx, cx + eyeDx]) {
+        ctx.beginPath();
+        ctx.arc(ex, eyeY, eyeR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // antenna
+      const antY = bodyY - bodyR - size * 0.04;
+      ctx.fillStyle = '#5ad19a';
+      ctx.beginPath();
+      ctx.arc(cx, antY, size * 0.024, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#eafff2';
+      ctx.beginPath();
+      ctx.arc(cx, antY - size * 0.022, size * 0.014, 0, Math.PI * 2);
+      ctx.fill();
+
+      squircle(ctx, size, inset + 0.5, r);
+      ctx.strokeStyle = variant === 'lumen' ? 'rgba(255,255,255,.45)' : 'rgba(255,255,255,.06)';
+      ctx.lineWidth = size * 0.004;
+      ctx.stroke();
+      return c;
+    }
+
+    function renderApps() {
+      const row = document.getElementById('iconsRow');
+      const dock = document.getElementById('dock');
+      row.innerHTML = '';
+      dock.innerHTML = '';
+      for (let i = 0; i < 2; i++) dock.appendChild(Object.assign(document.createElement('div'), { className: 'dock-f' }));
+      for (const [k, label] of [['lumen', 'Lumen'], ['ember', 'Ember']]) {
+        const box = document.createElement('div');
+        box.className = 'ic';
+        const big = drawAppIcon(k, 512);
+        big.style.width = big.style.height = '104px';
+        box.append(big, Object.assign(document.createElement('small'), { textContent: label }));
+        row.appendChild(box);
+        const sm = drawAppIcon(k, 128);
+        dock.appendChild(sm);
+      }
+      for (let i = 0; i < 2; i++) dock.appendChild(Object.assign(document.createElement('div'), { className: 'dock-f' }));
+    }
+
+    function renderTray(c, { active = false, dim = false } = {}) {
+      const S = 18;
+      c.width = c.height = S;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, S, S);
+      if (active) {
+        ctx.fillStyle = 'rgba(90,209,154,.9)';
+        ctx.fillRect(2, S - 2, S - 4, 1.2);
+      }
+      const cx = S / 2;
+      const bodyR = 4.2;
+      const bodyY = S / 2 + 1;
+      ctx.fillStyle = dim ? 'rgba(255,255,255,.4)' : 'rgba(255,255,255,.92)';
+      ctx.beginPath();
+      ctx.arc(cx, bodyY, bodyR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = dim ? 'rgba(0,0,0,.5)' : '#111';
+      for (const ex of [cx - 1.6, cx + 1.6]) {
+        ctx.beginPath();
+        ctx.arc(ex, bodyY - 0.5, 0.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = dim ? 'rgba(255,255,255,.4)' : 'rgba(255,255,255,.92)';
+      ctx.beginPath();
+      ctx.arc(cx, bodyY - bodyR - 1.2, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function renderTrays() {
+      renderTray(document.getElementById('trayLive'), { active: playing });
+      const t = document.getElementById('trays');
+      t.innerHTML = '';
+      [['默认', {}], ['淡', { dim: true }], ['播放', { active: true }]].forEach(([label, opts]) => {
+        const w = document.createElement('div');
+        const c = document.createElement('canvas');
+        renderTray(c, opts);
+        w.append(c, Object.assign(document.createElement('span'), { textContent: label }));
+        t.appendChild(w);
+      });
+    }
+
+    document.getElementById('cTheme').onclick = (e) => {
+      dark = !dark;
+      document.body.dataset.theme = dark ? 'dark' : 'light';
+      e.target.textContent = dark ? '浅色' : '深色';
+      renderMock();
+    };
+    document.getElementById('cPlay').onclick = (e) => {
+      playing = !playing;
+      e.target.classList.toggle('on', playing);
+      renderMock();
+      renderTrays();
+    };
+    document.getElementById('cLike').onclick = (e) => {
+      liked = !liked;
+      e.target.classList.toggle('on', liked);
+      renderMock();
+    };
+
+    renderMock();
+    renderApps();
+    renderTrays();
+  </script>
+</body>
+</html>

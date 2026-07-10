@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurio · 图标 & 品牌 Demo v2</title>
+  <style>
+    :root {
+      --font: 'SF Pro Text', 'PingFang SC', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+      --accent: #ff6a3d;
+      --accent-rgb: 255, 106, 61;
+      --hi: #149a64;
+      --hi-rgb: 20, 154, 100;
+      --bg: #e8e8ed;
+      --card: #ffffff;
+      --border: rgba(0,0,0,.08);
+      --text: #1d1d1f;
+      --muted: rgba(0,0,0,.45);
+      --ghost: 46px;
+      --play: 58px;
+    }
+    [data-theme="dark"] {
+      --bg: #1c1c1e;
+      --card: #2c2c2e;
+      --border: rgba(255,255,255,.1);
+      --text: #f5f5f7;
+      --muted: rgba(255,255,255,.45);
+      --hi-rgb: 90, 209, 154;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem 1.5rem 3rem;
+      line-height: 1.5;
+    }
+    h1 {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+    .sub {
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+    .grid {
+      max-width: 960px;
+      margin: 0 auto;
+      display: grid;
+      gap: 1.25rem;
+    }
+    section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 1.5rem 1.75rem 1.75rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.06);
+    }
+    section h2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+    section p.note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 1rem;
+    }
+    .ctrls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .ctrl {
+      font: 500 11px/1 var(--mono);
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .ctrl.on { background: var(--accent); color: #fff; border-color: transparent; }
+
+    /* ── Transport ── */
+    .transport-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: 0.5rem 0;
+      position: relative;
+    }
+    .transport-cluster { display: flex; align-items: center; gap: 0.5rem; }
+    .tbtn {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: none;
+      cursor: default;
+      border-radius: 50%;
+    }
+    .tbtn-ghost {
+      width: var(--ghost);
+      height: var(--ghost);
+      background: rgba(0,0,0,.04);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    [data-theme="dark"] .tbtn-ghost { background: rgba(255,255,255,.06); }
+    .tbtn-ghost.liked { color: rgb(var(--hi-rgb)); }
+    .tbtn-play {
+      width: var(--play);
+      height: var(--play);
+      background: linear-gradient(160deg, #ff8a62, var(--accent));
+      color: #fff;
+      box-shadow: 0 6px 20px rgba(var(--accent-rgb),.35), inset 0 1px 0 rgba(255,255,255,.25);
+    }
+    .tbtn-play.playing {
+      box-shadow: 0 8px 28px rgba(var(--accent-rgb),.5), 0 0 0 5px rgba(var(--accent-rgb),.12), inset 0 1px 0 rgba(255,255,255,.3);
+    }
+    .pixel-canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 0.5rem;
+    }
+    @media (max-width: 640px) { .compare { grid-template-columns: 1fr; } }
+    .compare-col {
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .compare-col.bad { opacity: 0.55; }
+    .compare-col h3 {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+    .guides .tbtn::after {
+      content: '';
+      position: absolute;
+      inset: 4px;
+      border: 1px dashed rgba(255,59,98,.35);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    /* ── App icons ── */
+    .icon-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      justify-content: center;
+      align-items: flex-end;
+    }
+    .icon-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .icon-card span {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .dock-preview {
+      margin-top: 1.25rem;
+      padding: 0.75rem 1rem;
+      border-radius: 14px;
+      background: rgba(255,255,255,.55);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,.6);
+      display: flex;
+      gap: 0.65rem;
+      align-items: flex-end;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    [data-theme="dark"] .dock-preview {
+      background: rgba(40,40,42,.75);
+      border-color: rgba(255,255,255,.08);
+    }
+    .dock-fake {
+      width: 52px;
+      height: 52px;
+      border-radius: 12px;
+      background: linear-gradient(145deg, #ddd, #bbb);
+      opacity: 0.5;
+    }
+
+    /* ── Menu bar ── */
+    .menubar-preview {
+      margin-top: 0.5rem;
+      padding: 0.45rem 0.85rem;
+      border-radius: 8px;
+      background: rgba(0,0,0,.82);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+    .menubar-fake {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      background: rgba(255,255,255,.25);
+    }
+    .tray-wrap {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 0.75rem;
+    }
+    .tray-item {
+      text-align: center;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .tray-item canvas { display: block; margin: 0 auto 0.35rem; background: rgba(0,0,0,.82); border-radius: 6px; padding: 4px 6px; }
+  </style>
+</head>
+<body data-theme="light">
+  <h1>Aurio 图标 Demo v2</h1>
+  <p class="sub">Transport 播放语义对齐 · Dock 图标 · 菜单栏吉祥物 — 确认后再合进代码</p>
+
+  <div class="grid">
+    <!-- TRANSPORT -->
+    <section>
+      <h2>① Transport 控件（v1 旧版 vs v2 新版）</h2>
+      <div class="ctrls">
+        <button class="ctrl on" id="themeBtn" type="button">Light</button>
+        <button class="ctrl" id="playBtn" type="button">Playing</button>
+        <button class="ctrl" id="likeBtn" type="button">Liked</button>
+        <button class="ctrl" id="guideBtn" type="button">对齐参考线</button>
+      </div>
+      <div class="compare">
+        <div class="compare-col bad">
+          <h3>v1 · 9×9 微点（已弃用）</h3>
+          <div class="transport-row" id="rowV1"></div>
+        </div>
+        <div class="compare-col">
+          <h3>v2 · 11×11 块像素 · 语义对齐</h3>
+          <div class="transport-row" id="rowV2"></div>
+        </div>
+      </div>
+      <p class="note">
+        v2：11×11 网格，2px 像素 + 1px 间距 → 32×32px 图标，在 46px 圆内 flex 居中。<br>
+        Prev = 竖条+左三角 · Next = 右三角+竖条 · Play/Pause = 标准三角/双柱 · ♥ / 裂心 = 喜欢/不喜欢
+      </p>
+    </section>
+
+    <!-- APP ICONS -->
+    <section>
+      <h2>② Dock 应用图标（Apple 渐变 squircle + 像素吉祥物）</h2>
+      <div class="icon-row" id="appIcons"></div>
+      <div class="dock-preview" id="dockPreview"></div>
+      <p class="note">三款方向：Warm（品牌橙）、Studio（浅灰紫 Apple 风）、Aurora（深色 + 青橙光晕）。去掉纯黑底，增加 squircle 高光与柔和渐变。</p>
+    </section>
+
+    <!-- MENU BAR -->
+    <section>
+      <h2>③ 菜单栏常驻吉祥物（Template 单色像素）</h2>
+      <div class="menubar-preview">
+        <span class="menubar-fake"></span>
+        <span class="menubar-fake"></span>
+        <canvas id="trayActive" width="22" height="22"></canvas>
+        <span class="menubar-fake"></span>
+        <span class="menubar-fake"></span>
+      </div>
+      <div class="tray-wrap" id="trayVariants"></div>
+      <p class="note">菜单栏用 18×18 简化单色像素（白/灰），保留天线与方块轮廓，去掉彩色块。Playing 态可加 1px 绿色底条。</p>
+    </section>
+  </div>
+
+  <script>
+    /** ── Pixel renderer ── */
+    function drawPixelIcon(canvas, rows, opts = {}) {
+      const { cell = 2, gap = 1, color = 'currentColor', pad = 0 } = opts;
+      const h = rows.length;
+      const w = Math.max(...rows.map(r => r.length));
+      const cw = pad * 2 + w * cell + (w - 1) * gap;
+      const ch = pad * 2 + h * cell + (h - 1) * gap;
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.fillStyle = color;
+      for (let y = 0; y < h; y++) {
+        const row = rows[y];
+        const ox = pad + Math.floor((w - row.length) / 2) * (cell + gap);
+        for (let x = 0; x < row.length; x++) {
+          if (row[x] !== '1') continue;
+          const px = ox + x * (cell + gap);
+          const py = pad + y * (cell + gap);
+          ctx.fillRect(px, py, cell, cell);
+        }
+      }
+      return canvas;
+    }
+
+    function makeBtn(type, iconName, icons, opts = {}) {
+      const btn = document.createElement('div');
+      btn.className = 'tbtn ' + (type === 'play' ? 'tbtn-play' : 'tbtn-ghost') + (opts.extraClass || '');
+      const c = document.createElement('canvas');
+      c.className = 'pixel-canvas';
+      drawPixelIcon(c, icons[iconName], { cell: 2, gap: 1, color: type === 'play' ? '#fff' : '' });
+      btn.appendChild(c);
+      return btn;
+    }
+
+    function buildTransportRow(container, icons, playing, liked) {
+      container.innerHTML = '';
+      const cluster = document.createElement('div');
+      cluster.className = 'transport-cluster';
+      const like = makeBtn('ghost', liked ? 'heartOn' : 'heart', icons);
+      like.classList.toggle('liked', liked);
+      const play = makeBtn('play', playing ? 'pause' : 'play', icons);
+      play.classList.toggle('playing', playing);
+      cluster.append(like, play, makeBtn('ghost', 'dislike', icons));
+      container.append(
+        makeBtn('ghost', 'prev', icons),
+        cluster,
+        makeBtn('ghost', 'next', icons),
+      );
+    }
+
+    /** v1 bad glyphs (9×9 micro dots) */
+    const ICONS_V1 = {
+      prev: ['000111000','000111000','000111000','111111000','111111000','111111000','000111000','000111110','000111110'],
+      next: ['000111000','000111000','000111000','000111111','000111111','000111111','000111000','011111000','011111000'],
+      play: ['000110000','000111000','000111100','000111110','111111111','000111110','000111100','000111000','000110000'],
+      pause: ['000000000','001110110','001110110','001110110','001110110','001110110','001110110','001110110','000000000'],
+      heart: ['001001000','011111110','011111110','001111100','000111000','000010000','000000000','000000000','000000000'],
+      heartOn: ['001001000','011111110','011111110','001111100','000111000','000010000','000000000','000000000','000000000'],
+      dislike: ['001111100','011111110','110000011','110000011','111111111','110000011','110000011','011111110','001111100'],
+    };
+
+    /** v2 — 11×11, odd grid, media-standard semantics */
+    const ICONS_V2 = {
+      // |◀  skip back
+      prev: [
+        '11000000000',
+        '11000000000',
+        '11111100000',
+        '11111100000',
+        '11111100000',
+        '11111100000',
+        '11111100000',
+        '11000000000',
+        '11000000000',
+        '00000000000',
+        '00000000000',
+      ],
+      // ▶|  skip forward
+      next: [
+        '00000000110',
+        '00000000110',
+        '00000111111',
+        '00000111111',
+        '00000111111',
+        '00000111111',
+        '00000111111',
+        '00000000110',
+        '00000000110',
+        '00000000000',
+        '00000000000',
+      ],
+      // right triangle, optical center
+      play: [
+        '00000110000',
+        '00001111000',
+        '00011111100',
+        '00111111110',
+        '01111111111',
+        '01111111111',
+        '00111111110',
+        '00011111100',
+        '00001111000',
+        '00000110000',
+        '00000000000',
+      ],
+      // two equal bars
+      pause: [
+        '00000000000',
+        '00111001110',
+        '00111001110',
+        '00111001110',
+        '00111001110',
+        '00111001110',
+        '00111001110',
+        '00111001110',
+        '00111001110',
+        '00000000000',
+        '00000000000',
+      ],
+      heart: [
+        '00000000000',
+        '00011011000',
+        '00111111100',
+        '01111111110',
+        '01111111110',
+        '01111111110',
+        '00111111100',
+        '00011111000',
+        '00001110000',
+        '00000100000',
+        '00000000000',
+      ],
+      heartOn: [
+        '00000000000',
+        '00011011000',
+        '00111111100',
+        '01111111110',
+        '01111111110',
+        '01111111110',
+        '00111111100',
+        '00011111000',
+        '00001110000',
+        '00000100000',
+        '00000000000',
+      ],
+      // broken heart — distinct from next/skip
+      dislike: [
+        '00000000000',
+        '00011011000',
+        '00111111100',
+        '01101101110',
+        '01110111110',
+        '01111011110',
+        '00111101100',
+        '00011011000',
+        '00000100000',
+        '00000000000',
+        '00000000000',
+      ],
+    };
+
+    let playing = false;
+    let liked = false;
+    let dark = false;
+    let guides = false;
+
+    const rowV1 = document.getElementById('rowV1');
+    const rowV2 = document.getElementById('rowV2');
+
+    function refreshTransport() {
+      buildTransportRow(rowV1, ICONS_V1, playing, liked);
+      buildTransportRow(rowV2, ICONS_V2, playing, liked);
+      document.body.classList.toggle('guides', guides);
+    }
+    refreshTransport();
+
+    document.getElementById('themeBtn').onclick = (e) => {
+      dark = !dark;
+      document.body.dataset.theme = dark ? 'dark' : 'light';
+      e.target.textContent = dark ? 'Dark' : 'Light';
+      e.target.classList.toggle('on', !dark);
+      renderAppIcons();
+    };
+    document.getElementById('playBtn').onclick = (e) => {
+      playing = !playing;
+      e.target.classList.toggle('on', playing);
+      e.target.textContent = playing ? 'Playing ✓' : 'Playing';
+      refreshTransport();
+    };
+    document.getElementById('likeBtn').onclick = (e) => {
+      liked = !liked;
+      e.target.classList.toggle('on', liked);
+      e.target.textContent = liked ? 'Liked ✓' : 'Liked';
+      refreshTransport();
+    };
+    document.getElementById('guideBtn').onclick = (e) => {
+      guides = !guides;
+      e.target.classList.toggle('on', guides);
+      document.body.classList.toggle('guides', guides);
+    };
+
+    /** ── App icon renderer (canvas squircle) ── */
+    const SPRITE = [
+      '......T.....','......A.....','...SSSSSS...','..SBBBBBBS..','.SBBBBBBBBS.',
+      '.SBEEBBEEBS.','.SBGEBBGEBS.','.SBBBBBBBBS.','.SBLLLLLLBS.','.SBLLLLLLBS.',
+      '.SBBBBBBBBS.','..SBBBBBBS..','...FF..FF...',
+    ];
+    const SC = { B:'#ff6a3d', S:'#ff6a3d99', L:'#5ad19a', E:'#120c08', G:'#fff', A:'#5ad19ad9', T:'#eafff2', F:'#ff6a3d66' };
+
+    const VARIANTS = {
+      warm: {
+        label: 'Warm · 品牌橙',
+        bg: (ctx, s) => {
+          const g = ctx.createLinearGradient(0, 0, s, s);
+          g.addColorStop(0, '#ff8f6b'); g.addColorStop(0.45, '#ff6a3d'); g.addColorStop(1, '#e84a20');
+          return g;
+        },
+        glow: 'rgba(255,106,61,0.25)',
+      },
+      studio: {
+        label: 'Studio · Apple 浅灰紫',
+        bg: (ctx, s) => {
+          const g = ctx.createLinearGradient(0, 0, s, s);
+          g.addColorStop(0, '#f2f2f7'); g.addColorStop(0.5, '#e8e8ed'); g.addColorStop(1, '#d1d1d6');
+          return g;
+        },
+        glow: 'rgba(90,209,154,0.2)',
+        darkSprite: true,
+      },
+      aurora: {
+        label: 'Aurora · 深色光晕',
+        bg: (ctx, s) => {
+          const g = ctx.createLinearGradient(0, 0, s, s);
+          g.addColorStop(0, '#1a1f2e'); g.addColorStop(0.55, '#0f1219'); g.addColorStop(1, '#08090c');
+          return g;
+        },
+        glow: 'rgba(43,245,255,0.18)',
+      },
+    };
+
+    function squirclePath(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function drawAppIcon(canvas, variantKey, size) {
+      const v = VARIANTS[variantKey];
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const pad = size * 0.08;
+      const r = size * 0.22;
+      squirclePath(ctx, pad, pad, size - pad * 2, size - pad * 2, r);
+      ctx.fillStyle = v.bg(ctx, size);
+      ctx.fill();
+      // top highlight (Apple rim)
+      ctx.save();
+      squirclePath(ctx, pad, pad, size - pad * 2, size - pad * 2, r);
+      ctx.clip();
+      const hi = ctx.createLinearGradient(0, pad, 0, size * 0.5);
+      hi.addColorStop(0, 'rgba(255,255,255,0.35)');
+      hi.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = hi;
+      ctx.fillRect(pad, pad, size - pad * 2, size * 0.45);
+      // glow behind mascot
+      const grd = ctx.createRadialGradient(size/2, size*0.52, 0, size/2, size*0.52, size*0.28);
+      grd.addColorStop(0, v.glow);
+      grd.addColorStop(1, 'transparent');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, size, size);
+      ctx.restore();
+
+      const cell = size * 0.048;
+      const cols = 12;
+      const rows = SPRITE.length;
+      const ox = size / 2 - (cols * cell) / 2;
+      const oy = size * 0.52 - (rows * cell) / 2;
+      const dark = v.darkSprite;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < SPRITE[row].length; col++) {
+          const ch = SPRITE[row][col];
+          if (ch === '.') continue;
+          let c = SC[ch];
+          if (dark && ch === 'E') c = '#1d1d1f';
+          if (dark && ch === 'B') c = '#ff6a3d';
+          ctx.fillStyle = c;
+          const rr = cell * 0.12;
+          const px = ox + col * cell;
+          const py = oy + row * cell;
+          ctx.beginPath();
+          ctx.roundRect(px, py, cell + 0.5, cell + 0.5, rr);
+          ctx.fill();
+        }
+      }
+      // subtle border
+      squirclePath(ctx, pad + 0.5, pad + 0.5, size - pad * 2 - 1, size - pad * 2 - 1, r);
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = size * 0.004;
+      ctx.stroke();
+    }
+
+    function renderAppIcons() {
+      const row = document.getElementById('appIcons');
+      const dock = document.getElementById('dockPreview');
+      row.innerHTML = '';
+      dock.innerHTML = '';
+      for (let i = 0; i < 3; i++) {
+        const fake = document.createElement('div');
+        fake.className = 'dock-fake';
+        dock.appendChild(fake);
+      }
+      for (const key of Object.keys(VARIANTS)) {
+        const card = document.createElement('div');
+        card.className = 'icon-card';
+        const c128 = document.createElement('canvas');
+        c128.style.width = '128px';
+        c128.style.height = '128px';
+        c128.style.borderRadius = '28px';
+        c128.style.boxShadow = '0 12px 40px rgba(0,0,0,.18)';
+        drawAppIcon(c128, key, 256);
+        const cap = document.createElement('span');
+        cap.textContent = VARIANTS[key].label;
+        card.append(c128, cap);
+        row.appendChild(card);
+
+        const cDock = document.createElement('canvas');
+        cDock.style.width = '52px';
+        cDock.style.height = '52px';
+        cDock.style.borderRadius = '12px';
+        drawAppIcon(cDock, key, 128);
+        dock.appendChild(cDock);
+      }
+      for (let i = 0; i < 2; i++) {
+        const fake = document.createElement('div');
+        fake.className = 'dock-fake';
+        dock.appendChild(fake);
+      }
+    }
+
+    /** ── Menu bar tray sprites ── */
+    const TRAY_SPRITE = [
+      '....A....',
+      '...BBB...',
+      '..BBBBB..',
+      '..BEEEB..',
+      '..BBBBB..',
+      '..BLLLB..',
+      '..BBBBB..',
+      '...BBB...',
+    ];
+
+    function drawTray(canvas, opts = {}) {
+      const { size = 22, active = false, variant = 'default' } = opts;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, size, size);
+      const cell = variant === 'compact' ? 2 : 2.2;
+      const rows = TRAY_SPRITE;
+      const w = 9;
+      const h = rows.length;
+      const ox = (size - w * cell) / 2;
+      const oy = (size - h * cell) / 2 + (active ? -0.5 : 0);
+      if (active) {
+        ctx.fillStyle = 'rgba(90,209,154,0.35)';
+        ctx.fillRect(2, size - 3, size - 4, 2);
+      }
+      const alpha = variant === 'dim' ? 0.55 : 0.92;
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < rows[y].length; x++) {
+          const ch = rows[y][x];
+          if (ch === '.') continue;
+          ctx.fillRect(Math.round(ox + x * cell), Math.round(oy + y * cell), Math.ceil(cell), Math.ceil(cell));
+        }
+      }
+    }
+
+    function renderTray() {
+      drawTray(document.getElementById('trayActive'), { active: playing });
+      const wrap = document.getElementById('trayVariants');
+      wrap.innerHTML = '';
+      [
+        ['默认', { variant: 'default' }],
+        ['稍淡', { variant: 'dim' }],
+        ['紧凑', { variant: 'compact' }],
+        ['播放中', { active: true }],
+      ].forEach(([label, opts]) => {
+        const item = document.createElement('div');
+        item.className = 'tray-item';
+        const c = document.createElement('canvas');
+        c.width = 22; c.height = 22;
+        drawTray(c, opts);
+        item.append(c, document.createTextNode(label));
+        wrap.appendChild(item);
+      });
+    }
+
+    renderAppIcons();
+    renderTray();
+    document.getElementById('playBtn').addEventListener('click', () => {
+      renderTray();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurio · 图标 Demo v3（全新）</title>
+  <style>
+    :root {
+      --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', sans-serif;
+      --mono: 'SF Mono', ui-monospace, Menlo, monospace;
+      --accent: #ff6a3d;
+      --accent-rgb: 255, 106, 61;
+      --hi-rgb: 20, 154, 100;
+      --bg: #f2f2f7;
+      --card: #fff;
+      --border: rgba(0,0,0,.07);
+      --text: #1d1d1f;
+      --muted: #86868b;
+      --ghost: 46px;
+      --play: 58px;
+    }
+    [data-theme="dark"] {
+      --bg: #000;
+      --card: #1c1c1e;
+      --border: rgba(255,255,255,.1);
+      --text: #f5f5f7;
+      --muted: #98989d;
+      --hi-rgb: 74, 222, 128;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      padding: 2.5rem 1.25rem 4rem;
+    }
+    .hero {
+      text-align: center;
+      max-width: 520px;
+      margin: 0 auto 2rem;
+    }
+    .hero h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .hero p {
+      margin-top: 0.5rem;
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      display: grid;
+      gap: 1rem;
+    }
+    section {
+      background: var(--card);
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      padding: 1.35rem 1.5rem 1.5rem;
+      box-shadow: 0 2px 16px rgba(0,0,0,.04);
+    }
+    section h2 {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    section .desc {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 1.1rem;
+      line-height: 1.5;
+    }
+    .ctrls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
+    }
+    .ctrl {
+      font: 500 12px/1 var(--font);
+      padding: 0.35rem 0.7rem;
+      border-radius: 8px;
+      border: none;
+      background: rgba(120,120,128,.12);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .ctrl.on { background: var(--accent); color: #fff; }
+
+    /* transport */
+    .transport {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: 0.75rem 0;
+    }
+    .cluster { display: flex; align-items: center; gap: 0.5rem; }
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: none;
+    }
+    .btn-g {
+      width: var(--ghost);
+      height: var(--ghost);
+      background: rgba(120,120,128,.1);
+      color: var(--text);
+    }
+    [data-theme="dark"] .btn-g { background: rgba(120,120,128,.24); }
+    .btn-g.on { color: rgb(var(--hi-rgb)); }
+    .btn-p {
+      width: var(--play);
+      height: var(--play);
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(var(--accent-rgb),.4);
+    }
+    .btn-p.live {
+      box-shadow: 0 6px 24px rgba(var(--accent-rgb),.55), 0 0 0 4px rgba(var(--accent-rgb),.15);
+    }
+    .px {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    /* zoom preview */
+    .zoom-row {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .zoom-item {
+      text-align: center;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .zoom-item canvas {
+      display: block;
+      margin: 0 auto 0.3rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(120,120,128,.06);
+    }
+
+    /* app icons */
+    .icons {
+      display: flex;
+      gap: 1.25rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .ic {
+      text-align: center;
+    }
+    .ic canvas {
+      display: block;
+      border-radius: 22%;
+      box-shadow: 0 8px 28px rgba(0,0,0,.15);
+    }
+    .ic span {
+      display: block;
+      margin-top: 0.45rem;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .dock {
+      margin-top: 1.25rem;
+      padding: 10px 16px 8px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.55);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,.65);
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    [data-theme="dark"] .dock {
+      background: rgba(40,40,42,.7);
+      border-color: rgba(255,255,255,.08);
+    }
+    .dock-ph {
+      width: 48px; height: 48px;
+      border-radius: 11px;
+      background: rgba(120,120,128,.2);
+    }
+
+    /* menubar */
+    .bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      background: rgba(30,30,30,.92);
+    }
+    .bar-ph {
+      width: 16px; height: 16px;
+      border-radius: 3px;
+      background: rgba(255,255,255,.22);
+    }
+    .trays {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      margin-top: 0.85rem;
+      flex-wrap: wrap;
+    }
+    .trays div {
+      text-align: center;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .trays canvas {
+      display: block;
+      margin: 0 auto 0.25rem;
+      padding: 3px 5px;
+      background: rgba(30,30,30,.92);
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body data-theme="light">
+  <div class="hero">
+    <h1>图标 Demo v3</h1>
+    <p>16×16 实心像素 · 无间隙块面 · 标准播放语义<br>全新 Dock / 菜单栏方案</p>
+  </div>
+
+  <div class="wrap">
+    <section>
+      <h2>播放控件</h2>
+      <p class="desc">原生 16×16 点阵，放大 1.5× → 24px，在 46 / 58px 圆内居中。Prev=|◀ · Next=▶| · Play ▶ · Pause ⏸ · ♥ · ✕</p>
+      <div class="ctrls">
+        <button class="ctrl on" id="tTheme" type="button">浅色</button>
+        <button class="ctrl" id="tPlay" type="button">播放中</button>
+        <button class="ctrl" id="tLike" type="button">已喜欢</button>
+      </div>
+      <div class="transport" id="transport"></div>
+      <div class="zoom-row" id="zoomRow"></div>
+    </section>
+
+    <section>
+      <h2>Dock 图标</h2>
+      <p class="desc">Peach 奶白暖调 / Signal 深色信号 — squircle + 柔和渐变 + 更大比例吉祥物</p>
+      <div class="icons" id="appRow"></div>
+      <div class="dock" id="dock"></div>
+    </section>
+
+    <section>
+      <h2>菜单栏</h2>
+      <p class="desc">16×16 单色剪影 · 22pt 显示 · 播放态底部绿线</p>
+      <div style="text-align:center">
+        <div class="bar">
+          <span class="bar-ph"></span>
+          <span class="bar-ph"></span>
+          <canvas id="barMain" width="22" height="22" class="px"></canvas>
+          <span class="bar-ph"></span>
+        </div>
+        <div class="trays" id="trays"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    /** 16×16 solid pixel glyphs — contiguous blocks, 1px margin, symmetric */
+    const G = {
+      prev: [
+        '................',
+        '..##...........',
+        '..##...........',
+        '..##...........',
+        '..############..',
+        '..############..',
+        '..############..',
+        '..############..',
+        '..############..',
+        '..############..',
+        '..##...........',
+        '..##...........',
+        '..##...........',
+        '................',
+        '................',
+        '................',
+      ],
+      next: [
+        '................',
+        '...........##..',
+        '...........##..',
+        '...........##..',
+        '..############..',
+        '..############..',
+        '..############..',
+        '..############..',
+        '..############..',
+        '..############..',
+        '...........##..',
+        '...........##..',
+        '...........##..',
+        '................',
+        '................',
+        '................',
+      ],
+      play: [
+        '................',
+        '.....####.......',
+        '.....#####......',
+        '.....######.....',
+        '.....#######....',
+        '.....########...',
+        '.....#########..',
+        '.....##########.',
+        '.....##########.',
+        '.....#########..',
+        '.....########...',
+        '.....#######....',
+        '.....######.....',
+        '.....#####......',
+        '.....####.......',
+        '................',
+      ],
+      pause: [
+        '................',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '...####..####...',
+        '................',
+        '................',
+        '................',
+        '................',
+      ],
+      heart: [
+        '................',
+        '.....##..##.....',
+        '....########....',
+        '...##########...',
+        '...##########...',
+        '....########....',
+        '.....######.....',
+        '......####......',
+        '.......##.......',
+        '................',
+        '................',
+        '................',
+        '................',
+        '................',
+        '................',
+        '................',
+      ],
+      heartOn: [
+        '................',
+        '.....##..##.....',
+        '....########....',
+        '...##########...',
+        '...##########...',
+        '...##########...',
+        '...##########...',
+        '....########....',
+        '.....######.....',
+        '......####......',
+        '.......##.......',
+        '................',
+        '................',
+        '................',
+        '................',
+        '................',
+      ],
+      nope: [
+        '................',
+        '..##........##..',
+        '...##......##...',
+        '....##....##....',
+        '.....##..##.....',
+        '......####......',
+        '......####......',
+        '.....##..##.....',
+        '....##....##....',
+        '...##......##...',
+        '..##........##..',
+        '................',
+        '................',
+        '................',
+        '................',
+        '................',
+      ],
+    };
+
+    const SCALE = 1.5; // 16 → 24px display
+
+    function blit(canvas, rows, color) {
+      const S = 16;
+      canvas.width = S;
+      canvas.height = S;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, S, S);
+      ctx.fillStyle = color;
+      for (let y = 0; y < S; y++) {
+        for (let x = 0; x < S; x++) {
+          if (rows[y][x] === '#') ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+
+    function iconCanvas(rows, color) {
+      const c = document.createElement('canvas');
+      c.className = 'px';
+      blit(c, rows, color);
+      const d = 16 * SCALE;
+      c.style.width = d + 'px';
+      c.style.height = d + 'px';
+      return c;
+    }
+
+    let playing = false, liked = false, dark = false;
+
+    function renderTransport() {
+      const root = document.getElementById('transport');
+      root.innerHTML = '';
+      const fg = dark ? '#f5f5f7' : '#1d1d1f';
+      const cluster = document.createElement('div');
+      cluster.className = 'cluster';
+
+      const mk = (kind, rows, cls) => {
+        const b = document.createElement('div');
+        b.className = 'btn ' + cls;
+        b.appendChild(iconCanvas(rows, cls.includes('btn-p') ? '#fff' : fg));
+        return b;
+      };
+
+      const like = mk('like', liked ? G.heartOn : G.heart, 'btn-g' + (liked ? ' on' : ''));
+      const play = mk('play', playing ? G.pause : G.play, 'btn-p' + (playing ? ' live' : ''));
+      cluster.append(like, play, mk('nope', G.nope, 'btn-g'));
+      root.append(mk('prev', G.prev, 'btn-g'), cluster, mk('next', G.next, 'btn-g'));
+
+      const zoom = document.getElementById('zoomRow');
+      zoom.innerHTML = '';
+      for (const [name, rows] of Object.entries(G)) {
+        if (name === 'heartOn') continue;
+        const item = document.createElement('div');
+        item.className = 'zoom-item';
+        const c = document.createElement('canvas');
+        blit(c, rows, fg);
+        c.style.width = '64px';
+        c.style.height = '64px';
+        item.append(c, document.createTextNode(name + ' · 4×'));
+        zoom.appendChild(item);
+      }
+    }
+
+    /** Mascot — cleaner 14×16 for icon */
+    const MASCOT = [
+      '......##......',
+      '.....####.....',
+      '....######....',
+      '...########...',
+      '...##....##...',
+      '...##....##...',
+      '...########...',
+      '...########...',
+      '...########...',
+      '....######....',
+      '.....####.....',
+      '......##......',
+    ];
+    const MC = { o: '#ff6a3d', g: '#5ad19a', e: '#1a120e' };
+
+    function drawSquircle(ctx, s, pad, r) {
+      const x = pad, y = pad, w = s - pad * 2, h = s - pad * 2;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function drawMascot(ctx, s, ox, oy, cell, palette) {
+      const cols = 14;
+      for (let y = 0; y < MASCOT.length; y++) {
+        for (let x = 0; x < MASCOT[y].length; x++) {
+          const ch = MASCOT[y][x];
+          if (ch === '.') continue;
+          let col = palette.o;
+          if (ch === 'g') col = palette.g;
+          if (ch === 'e') col = palette.e;
+          ctx.fillStyle = col;
+          const px = ox + x * cell;
+          const py = oy + y * cell;
+          ctx.fillRect(px, py, cell, cell);
+        }
+      }
+    }
+
+    // Redesign mascot rows with eye/green belly encoding
+    const MASCOT2 = [
+      '......aa......', // antenna tip white
+      '.....oooo.....',
+      '....oooooooo..',
+      '...oooooooooo.',
+      '...ooee..eeoo.',
+      '...ooggggggoo.',
+      '...oooooooooo.',
+      '...ooggggggoo.',
+      '...oooooooooo.',
+      '....oooooooo..',
+      '.....oooooo...',
+      '......oo......',
+    ];
+    const PAL = { a: '#fff', o: '#ff6a3d', g: '#5ad19a', e: '#2a1810' };
+
+    function drawMascot2(ctx, s, ox, oy, cell) {
+      for (let y = 0; y < MASCOT2.length; y++) {
+        for (let x = 0; x < MASCOT2[y].length; x++) {
+          const ch = MASCOT2[y][x];
+          if (ch === '.') continue;
+          ctx.fillStyle = PAL[ch] || PAL.o;
+          ctx.fillRect(ox + x * cell, oy + y * cell, cell, cell);
+        }
+      }
+      // antenna
+      ctx.fillStyle = PAL.a;
+      ctx.fillRect(ox + 6 * cell, oy - cell * 1.2, cell * 0.9, cell * 1.1);
+    }
+
+    function drawEqualizer(ctx, cx, cy, cell) {
+      const bars = [0.4, 0.7, 1, 0.55, 0.35];
+      const bw = cell * 0.85;
+      const gap = cell * 0.35;
+      const maxH = cell * 2.2;
+      bars.forEach((h, i) => {
+        const bh = maxH * h;
+        ctx.fillStyle = 'rgba(90,209,154,0.85)';
+        ctx.fillRect(cx + i * (bw + gap), cy - bh, bw, bh);
+      });
+    }
+
+    const APP = {
+      peach: {
+        label: 'Peach · 奶白暖调',
+        paint(ctx, s) {
+          const g = ctx.createLinearGradient(0, 0, s, s);
+          g.addColorStop(0, '#fffaf6');
+          g.addColorStop(0.55, '#ffece3');
+          g.addColorStop(1, '#ffd4c2');
+          ctx.fillStyle = g;
+          drawSquircle(ctx, s, s * 0.06, s * 0.2);
+          ctx.fill();
+          const hi = ctx.createLinearGradient(0, 0, 0, s * 0.5);
+          hi.addColorStop(0, 'rgba(255,255,255,0.7)');
+          hi.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = hi;
+          drawSquircle(ctx, s, s * 0.06, s * 0.2);
+          ctx.fill();
+        },
+        shadow: 'rgba(255,106,61,0.12)',
+        eq: true,
+      },
+      signal: {
+        label: 'Signal · 深色电台',
+        paint(ctx, s) {
+          const g = ctx.createRadialGradient(s * 0.5, s * 0.38, 0, s * 0.5, s * 0.5, s * 0.55);
+          g.addColorStop(0, '#2a3140');
+          g.addColorStop(0.6, '#161920');
+          g.addColorStop(1, '#0a0b0e');
+          ctx.fillStyle = g;
+          drawSquircle(ctx, s, s * 0.06, s * 0.2);
+          ctx.fill();
+          const glow = ctx.createRadialGradient(s * 0.5, s * 0.65, 0, s * 0.5, s * 0.65, s * 0.35);
+          glow.addColorStop(0, 'rgba(255,106,61,0.22)');
+          glow.addColorStop(1, 'transparent');
+          ctx.fillStyle = glow;
+          drawSquircle(ctx, s, s * 0.06, s * 0.2);
+          ctx.fill();
+        },
+        shadow: 'rgba(0,0,0,0.45)',
+        eq: false,
+      },
+    };
+
+    function appIcon(key, size) {
+      const v = APP[key];
+      const c = document.createElement('canvas');
+      c.width = size;
+      c.height = size;
+      const ctx = c.getContext('2d');
+      v.paint(ctx, size);
+      const cell = size * 0.052;
+      const ox = size * 0.5 - (14 * cell) / 2;
+      const oy = size * 0.48 - (12 * cell) / 2;
+      ctx.shadowColor = v.shadow;
+      ctx.shadowBlur = size * 0.04;
+      ctx.shadowOffsetY = size * 0.012;
+      drawMascot2(ctx, size, ox, oy, cell);
+      ctx.shadowColor = 'transparent';
+      if (v.eq) drawEqualizer(ctx, ox + cell * 2, oy + 12 * cell + cell * 0.5, cell * 0.55);
+      drawSquircle(ctx, size, size * 0.06 + 0.5, size * 0.2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = size * 0.004;
+      ctx.stroke();
+      return c;
+    }
+
+    function renderApps() {
+      const row = document.getElementById('appRow');
+      const dock = document.getElementById('dock');
+      row.innerHTML = '';
+      dock.innerHTML = '';
+      for (let i = 0; i < 2; i++) { const p = document.createElement('div'); p.className = 'dock-ph'; dock.appendChild(p); }
+      for (const key of Object.keys(APP)) {
+        const wrap = document.createElement('div');
+        wrap.className = 'ic';
+        const big = appIcon(key, 256);
+        big.style.width = '120px';
+        big.style.height = '120px';
+        const lbl = document.createElement('span');
+        lbl.textContent = APP[key].label;
+        wrap.append(big, lbl);
+        row.appendChild(wrap);
+
+        const sm = appIcon(key, 128);
+        sm.style.width = '48px';
+        sm.style.height = '48px';
+        sm.style.borderRadius = '11px';
+        dock.appendChild(sm);
+      }
+      for (let i = 0; i < 2; i++) { const p = document.createElement('div'); p.className = 'dock-ph'; dock.appendChild(p); }
+    }
+
+    /** Menu bar — 16×16 silhouette */
+    const TRAY = [
+      '................',
+      '.......##.......',
+      '......####......',
+      '.....######.....',
+      '.....######.....',
+      '.....######.....',
+      '......####......',
+      '.......##.......',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+    ];
+
+    function drawTray(canvas, opts = {}) {
+      const { playing = false, dim = false } = opts;
+      const S = 16;
+      canvas.width = S;
+      canvas.height = S;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, S, S);
+      if (playing) {
+        ctx.fillStyle = 'rgba(74,222,128,0.9)';
+        ctx.fillRect(2, S - 2, S - 4, 1);
+      }
+      ctx.fillStyle = dim ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.92)';
+      for (let y = 0; y < S; y++) {
+        for (let x = 0; x < S; x++) {
+          if (TRAY[y][x] === '#') ctx.fillRect(x, y, 1, 1);
+        }
+      }
+      // antenna
+      ctx.fillRect(7, 1, 2, 2);
+      const d = 22;
+      canvas.style.width = d + 'px';
+      canvas.style.height = d + 'px';
+    }
+
+    function renderTray() {
+      drawTray(document.getElementById('barMain'), { playing });
+      const t = document.getElementById('trays');
+      t.innerHTML = '';
+      [
+        ['默认', {}],
+        ['稍淡', { dim: true }],
+        ['播放', { playing: true }],
+      ].forEach(([label, opts]) => {
+        const d = document.createElement('div');
+        const c = document.createElement('canvas');
+        c.className = 'px';
+        drawTray(c, opts);
+        d.append(c, document.createTextNode(label));
+        t.appendChild(d);
+      });
+    }
+
+    document.getElementById('tTheme').onclick = (e) => {
+      dark = !dark;
+      document.body.dataset.theme = dark ? 'dark' : 'light';
+      e.target.textContent = dark ? '深色' : '浅色';
+      e.target.classList.toggle('on', !dark);
+      renderTransport();
+      renderTray();
+    };
+    document.getElementById('tPlay').onclick = (e) => {
+      playing = !playing;
+      e.target.classList.toggle('on', playing);
+      e.target.textContent = playing ? '播放中 ✓' : '播放中';
+      renderTransport();
+      renderTray();
+    };
+    document.getElementById('tLike').onclick = (e) => {
+      liked = !liked;
+      e.target.classList.toggle('on', liked);
+      e.target.textContent = liked ? '已喜欢 ✓' : '已喜欢';
+      renderTransport();
+    };
+
+    renderTransport();
+    renderApps();
+    renderTray();
+  </script>
+</body>
+</html>

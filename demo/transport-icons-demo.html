@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurio · Transport 像素图标 Demo</title>
+  <style>
+    :root {
+      --font-ui: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, 'PingFang SC', monospace;
+      --accent-rgb: 255, 106, 61;
+      --hi-rgb: 20, 154, 100;
+      --dot-surface-bg: #efefef;
+      --dot-color: rgba(0, 0, 0, 0.14);
+      --glass-border: rgba(0, 0, 0, 0.1);
+      --inset-bg: rgba(0, 0, 0, 0.04);
+      --text-primary: #0a0a0a;
+      --text-muted: rgba(10, 10, 10, 0.42);
+      --bg: #ebebeb;
+      --card: #f7f7f7;
+      --pd: 3px;
+      --pg: 1px;
+    }
+
+    [data-theme="dark"] {
+      --hi-rgb: 90, 209, 154;
+      --dot-surface-bg: #040404;
+      --dot-color: rgba(255, 255, 255, 0.11);
+      --glass-border: rgba(255, 255, 255, 0.12);
+      --inset-bg: rgba(255, 255, 255, 0.03);
+      --text-primary: #f2f2f2;
+      --text-muted: rgba(255, 255, 255, 0.38);
+      --bg: #030303;
+      --card: #050505;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-ui);
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      padding: 2rem;
+    }
+
+    h1 {
+      font-size: 13px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 2rem 2.5rem 2.25rem;
+      background-image: radial-gradient(var(--dot-color) 0.65px, transparent 0.65px);
+      background-size: 5px 5px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.08);
+    }
+
+    .controls {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .ctrl {
+      font-family: inherit;
+      font-size: 11px;
+      padding: 0.45rem 0.85rem;
+      border-radius: 999px;
+      border: 1px solid var(--glass-border);
+      background: var(--inset-bg);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .ctrl.is-on {
+      background: rgb(var(--accent-rgb));
+      color: #fff;
+      border-color: transparent;
+    }
+
+    /* ── Transport row (matches index.css) ── */
+    .transport-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: 0.35rem 0;
+    }
+
+    .transport-cluster {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .transport-ring {
+      position: absolute;
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      border: 1px solid rgba(var(--hi-rgb), 0.35);
+      pointer-events: none;
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.4; }
+      50% { transform: scale(1.28); opacity: 0; }
+    }
+
+    .btn {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      transition: transform 0.2s, box-shadow 0.2s, color 0.2s;
+    }
+
+    .btn-ghost {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      color: var(--text-muted);
+      background: var(--inset-bg);
+      border: 1px solid var(--glass-border);
+    }
+    .btn-ghost:hover { color: var(--text-primary); transform: scale(1.06); }
+    .btn-ghost.is-liked { color: rgb(var(--hi-rgb)); }
+
+    .btn-play {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      color: #fff;
+      background: linear-gradient(145deg, #ff7a50, rgb(var(--accent-rgb)));
+      box-shadow: 0 6px 24px rgba(var(--accent-rgb), 0.4), inset 0 1px 0 rgba(255,255,255,.22);
+    }
+    .btn-play.is-playing {
+      box-shadow: 0 8px 32px rgba(var(--accent-rgb), 0.55), 0 0 0 6px rgba(var(--accent-rgb), 0.12), inset 0 1px 0 rgba(255,255,255,.25);
+    }
+    .btn-play:hover { transform: scale(1.035); }
+
+    /* ── Pixel icon grid (9×9, 3px dot + 1px gap = 35×35) ── */
+    .pixel-wrap {
+      width: 35px;
+      height: 35px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .pixel-icon {
+      display: flex;
+      flex-direction: column;
+      gap: var(--pg);
+    }
+
+    .pixel-row {
+      display: flex;
+      gap: var(--pg);
+    }
+
+    .pixel-dot {
+      width: var(--pd);
+      height: var(--pd);
+      border-radius: 1px;
+      background: transparent;
+    }
+
+    .pixel-dot.on {
+      background: currentColor;
+    }
+
+    .btn-play .pixel-dot.on {
+      background: #fff;
+      box-shadow: 0 0 4px rgba(255,255,255,.35);
+    }
+
+    /* alignment guides */
+    .show-guides .btn::before,
+    .show-guides .btn::after {
+      content: '';
+      position: absolute;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .show-guides .btn::before {
+      inset: 0;
+      border-radius: 50%;
+      border: 1px dashed rgba(255, 0, 80, 0.35);
+    }
+    .show-guides .btn::after {
+      top: 50%; left: 50%;
+      width: 35px; height: 35px;
+      transform: translate(-50%, -50%);
+      border: 1px dashed rgba(0, 120, 255, 0.45);
+    }
+
+    .legend {
+      margin-top: 1.75rem;
+      font-size: 10px;
+      color: var(--text-muted);
+      line-height: 1.8;
+      text-align: center;
+      max-width: 420px;
+    }
+
+    .legend code {
+      font-size: 9px;
+      background: var(--inset-bg);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    .glyph-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 1.25rem;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--glass-border);
+    }
+
+    .glyph-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .glyph-item span {
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .glyph-preview {
+      width: 54px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      background: var(--inset-bg);
+      border: 1px solid var(--glass-border);
+      color: var(--text-primary);
+    }
+
+    .glyph-preview.is-accent { color: rgb(var(--accent-rgb)); }
+    .glyph-preview.is-hi { color: rgb(var(--hi-rgb)); }
+  </style>
+</head>
+<body data-theme="light">
+
+  <h1>Aurio Transport · 像素图标 Demo</h1>
+
+  <div class="panel">
+    <div class="controls">
+      <button class="ctrl is-on" id="themeBtn" type="button">Light</button>
+      <button class="ctrl" id="playBtn" type="button">Playing</button>
+      <button class="ctrl" id="likeBtn" type="button">Liked</button>
+      <button class="ctrl" id="guideBtn" type="button">对齐参考线</button>
+    </div>
+
+    <div class="transport-row" id="transportRow">
+      <span class="transport-ring" id="transportRing" hidden></span>
+
+      <button class="btn btn-ghost" type="button" aria-label="上一首">
+        <div class="pixel-wrap" data-icon="prev"></div>
+      </button>
+
+      <div class="transport-cluster">
+        <button class="btn btn-ghost" id="likeGhost" type="button" aria-label="喜欢">
+          <div class="pixel-wrap" data-icon="heart"></div>
+        </button>
+        <button class="btn btn-play" id="playGhost" type="button" aria-label="播放">
+          <div class="pixel-wrap" data-icon="play"></div>
+        </button>
+        <button class="btn btn-ghost" type="button" aria-label="不喜欢">
+          <div class="pixel-wrap" data-icon="dislike"></div>
+        </button>
+      </div>
+
+      <button class="btn btn-ghost" type="button" aria-label="下一首">
+        <div class="pixel-wrap" data-icon="next"></div>
+      </button>
+    </div>
+
+    <p class="legend">
+      9×9 点阵 · 3px 点 + 1px 间距 · 图标区 35×35px<br>
+      幽灵键 <code>46×46</code> · 播放键 <code>58×58</code> · 与正式版 <code>index.css</code> 一致<br>
+      开启「对齐参考线」可检查圆心与点阵是否居中
+    </p>
+
+    <div class="glyph-grid" id="glyphGrid"></div>
+  </div>
+
+  <script>
+    /** 9×9 symmetric pixel glyphs — all optically centered */
+    const GLYPHS = {
+      prev: [
+        '000111000',
+        '000111000',
+        '000111000',
+        '111111000',
+        '111111000',
+        '111111000',
+        '000111000',
+        '000111110',
+        '000111110',
+      ],
+      next: [
+        '000111000',
+        '000111000',
+        '000111000',
+        '000111111',
+        '000111111',
+        '000111111',
+        '000111000',
+        '011111000',
+        '011111000',
+      ],
+      play: [
+        '000110000',
+        '000111000',
+        '000111100',
+        '000111110',
+        '111111111',
+        '000111110',
+        '000111100',
+        '000111000',
+        '000110000',
+      ],
+      pause: [
+        '000000000',
+        '001110110',
+        '001110110',
+        '001110110',
+        '001110110',
+        '001110110',
+        '001110110',
+        '001110110',
+        '000000000',
+      ],
+      heart: [
+        '001001000',
+        '011111110',
+        '011111110',
+        '001111100',
+        '000111000',
+        '000010000',
+        '000000000',
+        '000000000',
+        '000000000',
+      ],
+      heartFilled: [
+        '001001000',
+        '011111110',
+        '011111110',
+        '001111100',
+        '000111000',
+        '000010000',
+        '000000000',
+        '000000000',
+        '000000000',
+      ],
+      dislike: [
+        '001111100',
+        '011111110',
+        '110000011',
+        '110000011',
+        '111111111',
+        '110000011',
+        '110000011',
+        '011111110',
+        '001111100',
+      ],
+    };
+
+    function renderPixel(el, name) {
+      const rows = GLYPHS[name];
+      if (!rows) return;
+      el.innerHTML = '';
+      const icon = document.createElement('div');
+      icon.className = 'pixel-icon';
+      for (const row of rows) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'pixel-row';
+        for (const bit of row) {
+          const dot = document.createElement('span');
+          dot.className = 'pixel-dot' + (bit === '1' ? ' on' : '');
+          rowEl.appendChild(dot);
+        }
+        icon.appendChild(rowEl);
+      }
+      el.appendChild(icon);
+    }
+
+    function mountAll() {
+      document.querySelectorAll('[data-icon]').forEach((el) => {
+        renderPixel(el, el.dataset.icon);
+      });
+    }
+
+    function buildGlyphGrid() {
+      const grid = document.getElementById('glyphGrid');
+      const items = [
+        ['prev', 'Prev'],
+        ['heart', 'Heart'],
+        ['play', 'Play'],
+        ['pause', 'Pause'],
+        ['dislike', 'Dislike'],
+        ['next', 'Next'],
+      ];
+      for (const [name, label] of items) {
+        const item = document.createElement('div');
+        item.className = 'glyph-item';
+        const preview = document.createElement('div');
+        preview.className = 'glyph-preview' + (name === 'play' || name === 'pause' ? ' is-accent' : name === 'heart' ? ' is-hi' : '');
+        const wrap = document.createElement('div');
+        wrap.className = 'pixel-wrap';
+        wrap.dataset.icon = name;
+        preview.appendChild(wrap);
+        const cap = document.createElement('span');
+        cap.textContent = label;
+        item.appendChild(preview);
+        item.appendChild(cap);
+        grid.appendChild(item);
+        renderPixel(wrap, name);
+      }
+    }
+
+    let playing = false;
+    let liked = false;
+    let dark = false;
+    let guides = false;
+
+    const playGhost = document.getElementById('playGhost');
+    const playWrap = playGhost.querySelector('[data-icon]');
+    const likeGhost = document.getElementById('likeGhost');
+    const ring = document.getElementById('transportRing');
+    const row = document.getElementById('transportRow');
+
+    document.getElementById('themeBtn').onclick = (e) => {
+      dark = !dark;
+      document.body.dataset.theme = dark ? 'dark' : 'light';
+      e.target.textContent = dark ? 'Dark' : 'Light';
+      e.target.classList.toggle('is-on', !dark);
+    };
+
+    document.getElementById('playBtn').onclick = (e) => {
+      playing = !playing;
+      playGhost.classList.toggle('is-playing', playing);
+      playWrap.dataset.icon = playing ? 'pause' : 'play';
+      renderPixel(playWrap, playing ? 'pause' : 'play');
+      ring.hidden = !playing;
+      e.target.classList.toggle('is-on', playing);
+      e.target.textContent = playing ? 'Playing ✓' : 'Playing';
+    };
+
+    document.getElementById('likeBtn').onclick = (e) => {
+      liked = !liked;
+      likeGhost.classList.toggle('is-liked', liked);
+      e.target.classList.toggle('is-on', liked);
+      e.target.textContent = liked ? 'Liked ✓' : 'Liked';
+    };
+
+    document.getElementById('guideBtn').onclick = (e) => {
+      guides = !guides;
+      row.classList.toggle('show-guides', guides);
+      e.target.classList.toggle('is-on', guides);
+    };
+
+    mountAll();
+    buildGlyphGrid();
+  </script>
+</body>
+</html>

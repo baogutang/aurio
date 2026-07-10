@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurio Icons v4 · LED 圆点 · 自检版</title>
+  <style>
+    :root {
+      --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', sans-serif;
+      --mono: 'SF Mono', ui-monospace, Menlo, monospace;
+      --accent: #ff6a3d;
+      --accent-rgb: 255, 106, 61;
+      --hi: #5ad19a;
+      --hi-rgb: 90, 209, 154;
+      --bg: #e8e8ed;
+      --card: #fff;
+      --border: rgba(0,0,0,.06);
+      --text: #1d1d1f;
+      --muted: #86868b;
+      --matrix-fg: #1d1d1f;
+      --inset: rgba(120,120,128,.08);
+      --ghost: 46px;
+      --play: 58px;
+    }
+    [data-theme="dark"] {
+      --bg: #000;
+      --card: #1c1c1e;
+      --border: rgba(255,255,255,.08);
+      --text: #f5f5f7;
+      --muted: #98989d;
+      --matrix-fg: #f5f5f7;
+      --inset: rgba(120,120,128,.2);
+      --hi-rgb: 90, 209, 154;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem 1rem 3rem;
+    }
+    .wrap { max-width: 640px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 1.75rem; }
+    header h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+    header p { font-size: 13px; color: var(--muted); margin-top: 0.35rem; line-height: 1.45; }
+    section {
+      background: var(--card);
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      padding: 1.25rem 1.35rem 1.4rem;
+      margin-bottom: 0.85rem;
+      box-shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 8px 30px rgba(0,0,0,.04);
+    }
+    [data-theme="dark"] section {
+      box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 8px 30px rgba(0,0,0,.35);
+    }
+    section h2 { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: .15rem; }
+    section .hint { font-size: 12px; color: var(--muted); margin-bottom: 1rem; line-height: 1.5; }
+    .ctrls { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 1rem; }
+    .ctrl {
+      font: 500 12px/1 var(--font);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: none;
+      background: var(--inset);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .ctrl.on { background: var(--accent); color: #fff; }
+
+    /* same dot language as DotMatrixClock */
+    .matrix-grid {
+      --md: 3px;
+      --mg: 1.5px;
+      display: inline-grid;
+      gap: var(--mg);
+    }
+    .matrix-row { display: flex; gap: var(--mg); }
+    .dot {
+      width: var(--md);
+      height: var(--md);
+      border-radius: 50%;
+      background: transparent;
+    }
+    .dot.on { background: currentColor; }
+    .dot.on.glow { box-shadow: 0 0 5px currentColor; }
+
+    .transport {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: .65rem 0;
+    }
+    .cluster { display: flex; align-items: center; gap: .5rem; }
+    .tbtn {
+      width: var(--ghost);
+      height: var(--ghost);
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--inset);
+      color: var(--matrix-fg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tbtn.liked { color: rgb(var(--hi-rgb)); }
+    .tbtn-play {
+      width: var(--play);
+      height: var(--play);
+      border: none;
+      background: linear-gradient(155deg, #ff8a62, var(--accent));
+      color: #fff;
+      box-shadow: 0 5px 22px rgba(var(--accent-rgb),.38), inset 0 1px 0 rgba(255,255,255,.28);
+    }
+    .tbtn-play.live {
+      box-shadow: 0 7px 28px rgba(var(--accent-rgb),.52), 0 0 0 5px rgba(var(--accent-rgb),.12), inset 0 1px 0 rgba(255,255,255,.3);
+    }
+    .tbtn-play .dot.on { background: #fff; box-shadow: 0 0 4px rgba(255,255,255,.5); }
+
+    .dock {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 1rem;
+      padding: 12px 18px 10px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.45);
+      backdrop-filter: blur(28px) saturate(1.4);
+      border: 1px solid rgba(255,255,255,.55);
+    }
+    [data-theme="dark"] .dock {
+      background: rgba(50,50,52,.55);
+      border-color: rgba(255,255,255,.08);
+    }
+    .dock-f { width: 50px; height: 50px; border-radius: 11px; background: rgba(120,120,128,.18); }
+    .icons-row { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
+    .ic { text-align: center; }
+    .ic canvas { display: block; border-radius: 24%; box-shadow: 0 10px 32px rgba(0,0,0,.12); }
+    .ic small { display: block; margin-top: 6px; font-size: 11px; color: var(--muted); }
+
+    .bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 14px;
+      border-radius: 7px;
+      background: rgba(22,22,22,.88);
+    }
+    .bar-f { width: 15px; height: 15px; border-radius: 3px; background: rgba(255,255,255,.2); }
+    .trays { display: flex; gap: 14px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+    .trays span { display: block; font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 4px; text-align: center; }
+    .trays canvas { display: block; background: rgba(22,22,22,.88); border-radius: 5px; padding: 4px 6px; }
+
+    .note {
+      margin-top: 1.25rem;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(var(--accent-rgb),.06);
+      border: 1px solid rgba(var(--accent-rgb),.12);
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .note strong { color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body data-theme="light">
+  <div class="wrap">
+    <header>
+      <h1>Aurio Icons v4</h1>
+      <p>与 App 内时钟相同的 <strong>圆点 LED 矩阵</strong>，不是方块像素<br>浅色 squircle 图标 · 菜单栏单色剪影</p>
+    </header>
+
+    <section>
+      <h2>播放控件</h2>
+      <p class="hint">7×5 圆点阵 · 与 DotMatrixClock 同语法 · 46 / 58px 圆内 flex 居中</p>
+      <div class="ctrls">
+        <button class="ctrl on" id="cTheme" type="button">浅色</button>
+        <button class="ctrl" id="cPlay" type="button">播放</button>
+        <button class="ctrl" id="cLike" type="button">喜欢</button>
+      </div>
+      <div class="transport" id="transport"></div>
+    </section>
+
+    <section>
+      <h2>Dock 图标</h2>
+      <p class="hint">去掉纯黑底 · 圆点吉祥物 · Apple squircle 高光 · 与系统图标并排预览</p>
+      <div class="icons-row" id="iconsRow"></div>
+      <div class="dock" id="dock"></div>
+    </section>
+
+    <section>
+      <h2>菜单栏</h2>
+      <p class="hint">22pt 单色圆点剪影 · 播放态底条</p>
+      <div style="text-align:center">
+        <div class="bar">
+          <span class="bar-f"></span>
+          <canvas id="trayLive" width="22" height="22"></canvas>
+          <span class="bar-f"></span>
+        </div>
+        <div class="trays" id="trays"></div>
+      </div>
+    </section>
+
+    <p class="note"><strong>v4 改动：</strong>方块像素全部废弃；Transport / 时钟 / 吉祥物统一为圆角 LED 点；Dock 用奶白渐变底替代黑色方块；菜单栏仅保留轮廓点阵。</p>
+  </div>
+
+  <script>
+    /** 7 rows × 5 cols — media glyphs, symmetric */
+    const GLYPH = {
+      play: [
+        '01000','01100','01110','01111','01110','01100','01000',
+      ],
+      pause: [
+        '11011','11011','11011','11011','11011','11011','11011',
+      ],
+      prev: [
+        '10000','10000','11110','11110','11110','10000','10000',
+      ],
+      next: [
+        '00001','00001','01111','01111','01111','00001','00001',
+      ],
+      heart: [
+        '01010','11111','11111','01110','00100','00000','00000',
+      ],
+      heartOn: [
+        '01010','11111','11111','01110','00100','00000','00000',
+      ],
+      ban: [
+        '01110','10001','10001','10001','10001','01110','00000',
+      ],
+    };
+
+    function matrixEl(rows, opts = {}) {
+      const { glow = false, md = 3, mg = 1.5 } = opts;
+      const wrap = document.createElement('div');
+      wrap.className = 'matrix-grid';
+      wrap.style.setProperty('--md', md + 'px');
+      wrap.style.setProperty('--mg', mg + 'px');
+      for (const row of rows) {
+        const r = document.createElement('div');
+        r.className = 'matrix-row';
+        for (const bit of row) {
+          const d = document.createElement('span');
+          d.className = 'dot' + (bit === '1' ? ' on' : '') + (bit === '1' && glow ? ' glow' : '');
+          r.appendChild(d);
+        }
+        wrap.appendChild(r);
+      }
+      return wrap;
+    }
+
+    function btn(cls, rows, extra = '') {
+      const b = document.createElement('div');
+      b.className = 'tbtn ' + cls + extra;
+      b.appendChild(matrixEl(rows, { glow: cls.includes('play'), md: cls.includes('play') ? 3.2 : 3 }));
+      return b;
+    }
+
+    let playing = false, liked = false, dark = false;
+
+    function renderTransport() {
+      const root = document.getElementById('transport');
+      root.innerHTML = '';
+      const cluster = document.createElement('div');
+      cluster.className = 'cluster';
+      cluster.append(
+        btn('', liked ? GLYPH.heartOn : GLYPH.heart, liked ? ' liked' : ''),
+        btn('tbtn-play', playing ? GLYPH.pause : GLYPH.play, playing ? ' live' : ''),
+        btn('', GLYPH.ban),
+      );
+      root.append(btn('', GLYPH.prev), cluster, btn('', GLYPH.next));
+    }
+
+    /** ── App icon: round-dot mascot on squircle ── */
+    const PET = [
+      '....T....',
+      '...AAA...',
+      '..OOOOO..',
+      '.OOEEEEO.',
+      '.OOGGGOO.',
+      '.OOOOOOO.',
+      '..OOOOO..',
+      '...OOO...',
+    ];
+    const PC = { T: '#ffffff', A: '#5ad19a', O: '#ff6a3d', E: '#2a1810', G: '#5ad19a' };
+
+    function squirclePath(ctx, s, inset, r) {
+      const x = inset, y = inset, w = s - inset * 2, h = s - inset * 2;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function drawRoundDots(ctx, sprite, ox, oy, rd, gap, palette, glow) {
+      for (let y = 0; y < sprite.length; y++) {
+        for (let x = 0; x < sprite[y].length; x++) {
+          const ch = sprite[y][x];
+          if (ch === '.') continue;
+          const cx = ox + x * (rd * 2 + gap) + rd;
+          const cy = oy + y * (rd * 2 + gap) + rd;
+          const col = palette[ch] || palette.O;
+          if (glow) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, rd * 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = glow;
+            ctx.fill();
+          }
+          ctx.beginPath();
+          ctx.arc(cx, cy, rd, 0, Math.PI * 2);
+          ctx.fillStyle = col;
+          ctx.fill();
+        }
+      }
+    }
+
+    const ICONS = {
+      lumen: {
+        label: 'Lumen · 推荐',
+        bg(ctx, s) {
+          const g = ctx.createLinearGradient(0, 0, s, s);
+          g.addColorStop(0, '#ffffff');
+          g.addColorStop(0.45, '#faf8f5');
+          g.addColorStop(1, '#efe8df');
+          ctx.fillStyle = g;
+          squirclePath(ctx, s, s * 0.08, s * 0.215);
+          ctx.fill();
+          const rim = ctx.createLinearGradient(0, s * 0.08, 0, s * 0.45);
+          rim.addColorStop(0, 'rgba(255,255,255,0.95)');
+          rim.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = rim;
+          squirclePath(ctx, s, s * 0.08, s * 0.215);
+          ctx.fill();
+        },
+        glow: 'rgba(255,106,61,0.15)',
+        eye: '#2a1810',
+      },
+      ember: {
+        label: 'Ember · 深色',
+        bg(ctx, s) {
+          const g = ctx.createRadialGradient(s * 0.5, s * 0.72, 0, s * 0.5, s * 0.5, s * 0.62);
+          g.addColorStop(0, '#3d3d40');
+          g.addColorStop(0.55, '#252528');
+          g.addColorStop(1, '#141416');
+          ctx.fillStyle = g;
+          squirclePath(ctx, s, s * 0.08, s * 0.215);
+          ctx.fill();
+          const warm = ctx.createRadialGradient(s * 0.5, s * 0.7, 0, s * 0.5, s * 0.7, s * 0.38);
+          warm.addColorStop(0, 'rgba(255,106,61,0.28)');
+          warm.addColorStop(1, 'transparent');
+          ctx.fillStyle = warm;
+          squirclePath(ctx, s, s * 0.08, s * 0.215);
+          ctx.fill();
+        },
+        glow: 'rgba(255,106,61,0.35)',
+        eye: '#0a0a0a',
+      },
+    };
+
+    function renderAppIcon(key, size) {
+      const spec = ICONS[key];
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      spec.bg(ctx, size);
+      const rd = size * 0.024;
+      const gap = size * 0.008;
+      const cols = 9, rows = PET.length;
+      const ox = size * 0.5 - (cols * (rd * 2 + gap) - gap) / 2;
+      const oy = size * 0.52 - (rows * (rd * 2 + gap) - gap) / 2;
+      const pal = { ...PC, E: spec.eye };
+      drawRoundDots(ctx, PET, ox, oy, rd, gap, pal, spec.glow);
+      squirclePath(ctx, size, size * 0.08 + 0.5, size * 0.215);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = size * 0.0035;
+      ctx.stroke();
+      return c;
+    }
+
+    function renderApps() {
+      const row = document.getElementById('iconsRow');
+      const dock = document.getElementById('dock');
+      row.innerHTML = '';
+      dock.innerHTML = '';
+      for (let i = 0; i < 3; i++) { const f = document.createElement('div'); f.className = 'dock-f'; dock.appendChild(f); }
+      for (const k of Object.keys(ICONS)) {
+        const box = document.createElement('div');
+        box.className = 'ic';
+        const big = renderAppIcon(k, 512);
+        big.style.width = big.style.height = '128px';
+        box.append(big, Object.assign(document.createElement('small'), { textContent: ICONS[k].label }));
+        row.appendChild(box);
+        const sm = renderAppIcon(k, 128);
+        sm.style.width = sm.style.height = '50px';
+        dock.appendChild(sm);
+      }
+      for (let i = 0; i < 3; i++) { const f = document.createElement('div'); f.className = 'dock-f'; dock.appendChild(f); }
+    }
+
+    /** Tray — 9×7 mono dots */
+    const TRAY = [
+      '....A....',
+      '...OOO...',
+      '..OOOOO..',
+      '..OOOOO..',
+      '..OOOOO..',
+      '...OOO...',
+      '....O....',
+    ];
+
+    function renderTrayCanvas(canvas, { active = false, dim = false } = {}) {
+      const S = 22;
+      canvas.width = canvas.height = S;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, S, S);
+      if (active) {
+        ctx.fillStyle = 'rgba(90,209,154,0.95)';
+        ctx.fillRect(3, S - 2.5, S - 6, 1.5);
+      }
+      const rd = 1.1;
+      const gap = 0.9;
+      const ox = (S - (9 * (rd * 2 + gap) - gap)) / 2;
+      const oy = (S - (7 * (rd * 2 + gap) - gap)) / 2 + 1;
+      ctx.fillStyle = dim ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.92)';
+      for (let y = 0; y < TRAY.length; y++) {
+        for (let x = 0; x < TRAY[y].length; x++) {
+          if (TRAY[y][x] === '.') continue;
+          const cx = ox + x * (rd * 2 + gap) + rd;
+          const cy = oy + y * (rd * 2 + gap) + rd;
+          ctx.beginPath();
+          ctx.arc(cx, cy, rd, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    function renderTrays() {
+      renderTrayCanvas(document.getElementById('trayLive'), { active: playing });
+      const t = document.getElementById('trays');
+      t.innerHTML = '';
+      [['默认', {}], ['淡', { dim: true }], ['播放', { active: true }]].forEach(([label, opts]) => {
+        const w = document.createElement('div');
+        const c = document.createElement('canvas');
+        c.width = c.height = 22;
+        renderTrayCanvas(c, opts);
+        w.append(c, Object.assign(document.createElement('span'), { textContent: label }));
+        t.appendChild(w);
+      });
+    }
+
+    document.getElementById('cTheme').onclick = (e) => {
+      dark = !dark;
+      document.body.dataset.theme = dark ? 'dark' : 'light';
+      e.target.textContent = dark ? '深色' : '浅色';
+      e.target.classList.toggle('on', !dark);
+      renderTrays();
+    };
+    document.getElementById('cPlay').onclick = (e) => {
+      playing = !playing;
+      e.target.classList.toggle('on', playing);
+      e.target.textContent = playing ? '播放 ✓' : '播放';
+      renderTransport();
+      renderTrays();
+    };
+    document.getElementById('cLike').onclick = (e) => {
+      liked = !liked;
+      e.target.classList.toggle('on', liked);
+      e.target.textContent = liked ? '喜欢 ✓' : '喜欢';
+      renderTransport();
+    };
+
+    renderTransport();
+    renderApps();
+    renderTrays();
+  </script>
+</body>
+</html>

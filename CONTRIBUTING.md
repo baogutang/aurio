@@ -44,6 +44,10 @@ cd web
 npm run build         # outputs to ../pwa/
 ```
 
+Commit the rebuilt `pwa/` **in the same commit** as the `web/` change it reflects —
+never as a stray rebuild. This keeps `git status` quiet and every `pwa/` diff
+attributable to a source change.
+
 ## Code Style
 
 - Match existing conventions in each directory (ES modules, minimal comments on obvious code).

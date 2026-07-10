@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurio 图标 v11 · 轻像素平衡点</title>
+  <style>
+    :root { --font: ui-monospace, 'SF Mono', Menlo, 'PingFang SC', monospace; --text: #f2f2f2; --muted: rgba(255,255,255,.4); --hi: #5ad19a; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font); background: #0c0c0c; color: var(--text); padding: 28px 18px 48px; -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 940px; margin: 0 auto; }
+    h1 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+    .lead { font-size: 12px; line-height: 1.7; color: var(--muted); margin-bottom: 24px; max-width: 660px; }
+    .lead strong { color: rgba(255,255,255,.75); }
+    h2 { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+    .compare { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+    @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+    .panel { padding: 14px; border-radius: 14px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.02); }
+    .panel.new { border-color: rgba(90,209,154,.35); background: rgba(90,209,154,.05); }
+    .panel.mid { border-color: rgba(255,180,80,.2); }
+    .panel.flat { border-color: rgba(120,160,255,.2); opacity: .85; }
+    .tag { display: inline-block; font-size: 9px; padding: 2px 7px; border-radius: 4px; margin-bottom: 6px; }
+    .tag.mid { background: rgba(255,180,80,.12); color: #ffd080; }
+    .tag.flat { background: rgba(120,160,255,.12); color: #a8c4ff; }
+    .tag.new { background: rgba(90,209,154,.15); color: var(--hi); }
+    .panel h3 { font-size: 11px; font-weight: 600; margin-bottom: 3px; }
+    .panel p { font-size: 9px; line-height: 1.5; color: var(--muted); margin-bottom: 10px; }
+    .icon-row { display: flex; justify-content: center; gap: 14px; padding: 8px 0; }
+    .icon-row canvas { display: block; border-radius: 22%; }
+    .lbl { font-size: 8px; color: var(--muted); margin-top: 4px; display: block; text-align: center; }
+    .menubar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; height: 28px; padding: 0 12px; margin-bottom: 8px; background: rgba(0,0,0,.9); border-radius: 8px; }
+    .menubar .ghost { width: 12px; height: 12px; border-radius: 3px; background: rgba(255,255,255,.15); }
+    .tray-row { display: flex; gap: 20px; justify-content: center; }
+    .pv { text-align: center; }
+    .pv .lbl { font-size: 9px; }
+    .dock { display: flex; gap: 8px; justify-content: center; align-items: flex-end; margin-top: 10px; padding: 10px 14px; border-radius: 14px; background: rgba(255,255,255,.07); backdrop-filter: blur(20px); }
+    .dock-ph { width: 44px; height: 44px; border-radius: 10px; background: rgba(255,255,255,.1); }
+    .dock canvas { width: 44px; height: 44px; border-radius: 10px; }
+    .wallpaper { margin-top: 20px; padding: 18px; border-radius: 16px; background: linear-gradient(145deg, #6a7f96 0%, #3d4a5c 35%, #c49a6c 100%); }
+    .wallpaper .dock { background: rgba(255,255,255,.14); }
+    .note { margin-top: 20px; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.08); font-size: 10px; line-height: 1.65; color: var(--muted); }
+    .note ul { margin: 6px 0 0 16px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>图标 v11 · 轻像素平衡</h1>
+    <p class="lead">
+      v9 像素太重、底色偏深 → v10 又完全没像素感了。<br>
+      <strong>v11 取中间</strong>：仍用 PixelPet LED 圆点（能认出是 Auri），但<strong>底色提亮</strong>、圆点<strong>略大略贴</strong>、底纹极淡、广播弧只留一圈。
+    </p>
+
+    <h2>菜单栏 · 方案 A（不变）</h2>
+    <div class="panel new" style="margin-bottom:24px">
+      <div class="menubar" id="menubar"></div>
+      <div class="tray-row" id="trayRow"></div>
+    </div>
+
+    <h2>Dock · 找平衡点</h2>
+    <div class="compare">
+      <div class="panel mid">
+        <span class="tag mid">v9 太重</span>
+        <h3>深底 + 密 LED</h3>
+        <p>点距大、底深，网格感强。</p>
+        <div class="icon-row">
+          <div><canvas id="d9s" width="512" height="512" style="width:80px;height:80px"></canvas><span class="lbl">待机</span></div>
+          <div><canvas id="d9a" width="512" height="512" style="width:80px;height:80px"></canvas><span class="lbl">ON AIR</span></div>
+        </div>
+      </div>
+      <div class="panel flat">
+        <span class="tag flat">v10 太扁</span>
+        <h3>浅底 + 纯矢量</h3>
+        <p>像素感归零，不像 App 里那只宠。</p>
+        <div class="icon-row">
+          <div><canvas id="d10s" width="512" height="512" style="width:80px;height:80px"></canvas><span class="lbl">待机</span></div>
+          <div><canvas id="d10a" width="512" height="512" style="width:80px;height:80px"></canvas><span class="lbl">ON AIR</span></div>
+        </div>
+      </div>
+      <div class="panel new">
+        <span class="tag new">v11 推荐</span>
+        <h3>浅暖底 + 轻 LED</h3>
+        <p>#46403a 底，LED 圆点可辨但不糊墙。</p>
+        <div class="icon-row">
+          <div><canvas id="d11s" width="512" height="512" style="width:80px;height:80px"></canvas><span class="lbl">待机</span></div>
+          <div><canvas id="d11a" width="512" height="512" style="width:80px;height:80px"></canvas><span class="lbl">ON AIR</span></div>
+        </div>
+        <div class="dock">
+          <div class="dock-ph"></div>
+          <canvas id="d11sm" width="128" height="128"></canvas>
+          <div class="dock-ph"></div>
+        </div>
+      </div>
+    </div>
+
+    <h2>壁纸实境 · v11</h2>
+    <div class="wallpaper"><div class="dock" id="dockWp"></div></div>
+
+    <div class="note">
+      <strong>v11 参数（相对 v9）</strong>
+      <ul>
+        <li>底色：#46403a → #3a3430（比 v9 亮一档，比 v10 略深保留质感）</li>
+        <li>LED：rd 2.65%、gap 0.35%（圆点更大、更贴，仍是一颗颗灯珠）</li>
+        <li>保留完整精灵，shade/脚用低对比色；眼睛白点保留</li>
+        <li>底纹 0.025 透明度；ON AIR 仅一圈 10 颗绿灯</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    function squircle(ctx, s, inset, r) {
+      const x = inset, y = inset, w = s - inset*2, h = s - inset*2;
+      ctx.beginPath();
+      ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+      ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+      ctx.lineTo(x+w,y+h-r);
+      ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+      ctx.lineTo(x+r,y+h);
+      ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+      ctx.lineTo(x,y+r);
+      ctx.quadraticCurveTo(x,y,x+r,y);
+      ctx.closePath();
+    }
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+      ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+      ctx.lineTo(x+w,y+h-r);
+      ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+      ctx.lineTo(x+r,y+h);
+      ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+      ctx.lineTo(x,y+r);
+      ctx.quadraticCurveTo(x,y,x+r,y);
+      ctx.closePath();
+    }
+
+    function drawTray(ctx, s, onAir) {
+      const u = s/22;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(10.5*u,2*u,1*u,3.5*u);
+      ctx.beginPath(); ctx.arc(11*u,1.8*u,1.3*u,0,Math.PI*2); ctx.fill();
+      roundRect(ctx,6*u,6*u,10*u,9.5*u,2.8*u); ctx.fill();
+      ctx.beginPath(); ctx.arc(8.5*u,16.8*u,1.1*u,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(13.5*u,16.8*u,1.1*u,0,Math.PI*2); ctx.fill();
+      if (onAir) { ctx.beginPath(); ctx.arc(11*u,0.8*u,0.95*u,0,Math.PI*2); ctx.fill(); }
+    }
+
+    const SPRITE = [
+      '......T.....','......A.....','...SSSSSS...','..SBBBBBBS..','.SBBBBBBBBS.',
+      '.SBEEBBEEBS.','.SBGEBBGEBS.','.SBBBBBBBBS.','.SBLLLLLLBS.','.SBLLLLLLBS.',
+      '.SBBBBBBBBS.','..SBBBBBBS..','...FF..FF...',
+    ];
+
+    function drawAuriLed(ctx, size, { mode = 'v9', onAir = false } = {}) {
+      const cfg = {
+        v9:  { rd: 0.0245, gap: 0.0105, glow: true,  rings: 2 },
+        v11: { rd: 0.0265, gap: 0.0035, glow: false, rings: 1 },
+      }[mode];
+      const rows = SPRITE.length, cols = 12;
+      const rd = size * cfg.rd, gap = size * cfg.gap, step = rd*2+gap;
+      const ox = size*0.5 - (cols*step-gap)/2, oy = size*0.53 - (rows*step-gap)/2;
+
+      const colors = {
+        B: '#ff6a3d', S: mode==='v11' ? 'rgba(255,106,61,0.32)' : 'rgba(255,106,61,0.28)',
+        L: '#5ad19a', E: 'rgba(14,10,8,0.8)', G: '#ffffff',
+        A: 'rgba(90,209,154,0.85)', T: '#eafff2', F: 'rgba(255,106,61,0.32)',
+      };
+
+      for (let y=0;y<rows;y++) for (let x=0;x<SPRITE[y].length;x++) {
+        const ch = SPRITE[y][x]; if (ch==='.') continue;
+        const cx = ox+x*step+rd, cy = oy+y*step+rd;
+        if (cfg.glow && (ch==='B'||ch==='L'||ch==='T')) {
+          ctx.beginPath(); ctx.arc(cx,cy,rd*(ch==='T'?2.2:1.35),0,Math.PI*2);
+          ctx.fillStyle = ch==='L'?'rgba(90,209,154,0.12)':ch==='T'?'rgba(90,209,154,0.2)':'rgba(255,106,61,0.1)';
+          ctx.fill();
+        }
+        if (mode==='v11' && ch==='T') {
+          ctx.beginPath(); ctx.arc(cx,cy,rd*1.5,0,Math.PI*2);
+          ctx.fillStyle = 'rgba(90,209,154,0.25)'; ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(cx,cy,rd,0,Math.PI*2);
+        ctx.fillStyle = colors[ch]||'#ff6a3d'; ctx.fill();
+      }
+
+      if (onAir) {
+        const topY = oy - step*0.3, cx = size*0.5;
+        for (let ring=0; ring<cfg.rings; ring++) {
+          const mul = mode==='v11' ? 4.0 : 3.6 + ring*0.7;
+          const r = step*mul*0.32;
+          const steps = mode==='v11' ? 10 : 10 + ring*3;
+          for (let i=0;i<steps;i++) {
+            const ang = Math.PI*(0.22+0.56*i/Math.max(1,steps-1));
+            ctx.beginPath();
+            ctx.arc(cx+Math.cos(ang)*r, topY-Math.sin(ang)*r*0.48, rd*0.58, 0, Math.PI*2);
+            ctx.fillStyle = `rgba(90,209,154,${0.9-ring*0.15})`; ctx.fill();
+          }
+        }
+      }
+    }
+
+    function drawAuriVector(ctx, size, { onAir = false } = {}) {
+      const u = size/22;
+      const body = ctx.createLinearGradient(5.5*u,6*u,16*u,17*u);
+      body.addColorStop(0,'#ff9068'); body.addColorStop(0.5,'#ff6a3d'); body.addColorStop(1,'#e05420');
+      ctx.fillStyle = body; roundRect(ctx,5.5*u,6.2*u,11*u,9.8*u,3.2*u); ctx.fill();
+      ctx.fillStyle = '#5ad19a'; roundRect(ctx,7.2*u,11.8*u,7.6*u,3.2*u,1.6*u); ctx.fill();
+      ctx.fillStyle = 'rgba(8,6,5,0.88)';
+      ctx.beginPath(); ctx.arc(8.6*u,9.4*u,0.95*u,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(13.4*u,9.4*u,0.95*u,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#5ad19a'; roundRect(ctx,10.3*u,2.4*u,1.4*u,3.8*u,0.7*u); ctx.fill();
+      ctx.fillStyle = '#eafff2'; ctx.beginPath(); ctx.arc(11*u,2*u,1.4*u,0,Math.PI*2); ctx.fill();
+      if (onAir) {
+        ctx.strokeStyle = 'rgba(90,209,154,0.95)'; ctx.lineWidth = 1.15*u; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(11*u,5.2*u,3.8*u,Math.PI*1.18,Math.PI*1.82); ctx.stroke();
+      }
+    }
+
+    function drawDock(canvas, { variant = 'v9', onAir = false } = {}) {
+      const s = canvas.width, ctx = canvas.getContext('2d');
+      const inset = s*0.06, r = s*0.22;
+      const bg = ctx.createLinearGradient(0, 0, s*0.22, s);
+
+      const palettes = {
+        v9:  [['#2a221c',0],['#201a16',0.55],['#1a1512',1]],
+        v10: [['#5a5049',0],['#4d4540',0.4],['#453e38',1]],
+        v11: [['#46403a',0],['#403a35',0.5],['#3a3430',1]],
+      };
+      for (const [c,t] of palettes[variant]) bg.addColorStop(t,c);
+      ctx.fillStyle = bg; squircle(ctx,s,inset,r); ctx.fill();
+
+      ctx.save(); squircle(ctx,s,inset,r); ctx.clip();
+
+      const gridCfg = { v9:[0.04,0.058], v10:[0,0], v11:[0.025,0.065] };
+      const [gOp,gStep] = gridCfg[variant];
+      if (gOp > 0) {
+        ctx.fillStyle = `rgba(255,255,255,${gOp})`;
+        for (let y=inset;y<s-inset;y+=s*gStep) for (let x=inset;x<s-inset;x+=s*gStep) {
+          ctx.beginPath(); ctx.arc(x,y,s*0.0018,0,Math.PI*2); ctx.fill();
+        }
+      }
+
+      const warm = ctx.createRadialGradient(s*0.5,s*0.56,0,s*0.5,s*0.56,s*0.38);
+      warm.addColorStop(0, variant==='v10'?'rgba(255,106,61,0.1)':'rgba(255,106,61,0.13)');
+      warm.addColorStop(1,'transparent');
+      ctx.fillStyle = warm; ctx.fillRect(0,0,s,s);
+
+      if (variant!=='v9') {
+        const lift = ctx.createRadialGradient(s*0.38,s*0.22,0,s*0.38,s*0.22,s*0.5);
+        lift.addColorStop(0, variant==='v11'?'rgba(255,220,185,0.12)':'rgba(255,230,200,0.18)');
+        lift.addColorStop(1,'transparent');
+        ctx.fillStyle = lift; ctx.fillRect(0,0,s,s);
+      }
+      ctx.restore();
+
+      if (variant==='v10') drawAuriVector(ctx,s,{onAir});
+      else drawAuriLed(ctx,s,{mode:variant,onAir});
+
+      squircle(ctx,s,inset+0.5,r);
+      ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.lineWidth = s*0.003; ctx.stroke();
+    }
+
+    const mb = document.getElementById('menubar');
+    for (let i=0;i<4;i++){const g=document.createElement('div');g.className='ghost';mb.appendChild(g);}
+    const tc=document.createElement('canvas');tc.width=tc.height=44;
+    drawTray(tc.getContext('2d'),44,false);tc.style.width=tc.style.height='18px';mb.appendChild(tc);
+
+    const tr=document.getElementById('trayRow');
+    for (const [lb,oa,px,d] of [['待机',false,44,22],['播放',true,44,22],['18pt',false,36,18]]) {
+      const pv=document.createElement('div');pv.className='pv';
+      const c=document.createElement('canvas');c.width=c.height=px;
+      drawTray(c.getContext('2d'),px,oa);c.style.width=c.style.height=d+'px';
+      pv.appendChild(c);
+      const l=document.createElement('div');l.className='lbl';l.textContent=lb;pv.appendChild(l);
+      tr.appendChild(pv);
+    }
+
+    [['d9s','v9',false],['d9a','v9',true],['d10s','v10',false],['d10a','v10',true],['d11s','v11',false],['d11a','v11',true]].forEach(([id,v,oa])=>{
+      drawDock(document.getElementById(id),{variant:v,onAir:oa});
+    });
+    drawDock(document.getElementById('d11sm'),{variant:'v11',onAir:false});
+
+    const wp=document.getElementById('dockWp');
+    for (let i=0;i<2;i++){const p=document.createElement('div');p.className='dock-ph';wp.appendChild(p);}
+    const wc=document.createElement('canvas');wc.width=wc.height=128;
+    drawDock(wc,{variant:'v11',onAir:false});wp.appendChild(wc);
+    wp.appendChild(Object.assign(document.createElement('div'),{className:'dock-ph'}));
+  </script>
+</body>
+</html>

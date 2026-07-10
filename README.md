@@ -347,6 +347,8 @@ curl -X POST http://localhost:8080/api/chat \
 
 | Topic | Link |
 |:--|:--|
+| Radio vision & roadmap | [docs/RADIO_VISION.md](docs/RADIO_VISION.md) |
+| Radio audit (v0.3.5) | [docs/RADIO_AUDIT.md](docs/RADIO_AUDIT.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | Frontend spec | [docs/FRONTEND_SPEC.md](docs/FRONTEND_SPEC.md) |
 | Security model | [SECURITY.md](SECURITY.md) |

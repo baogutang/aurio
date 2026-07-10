@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurio 菜单栏图标 v8 · 重设计</title>
+  <style>
+    :root {
+      --font: ui-monospace, 'SF Mono', Menlo, 'PingFang SC', monospace;
+      --text: #f2f2f2;
+      --muted: rgba(255,255,255,.42);
+      --accent: #ff6a3d;
+      --hi: #5ad19a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: #0a0a0a;
+      color: var(--text);
+      padding: 28px 20px 48px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; }
+    h1 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .lead {
+      font-size: 12px; line-height: 1.7; color: var(--muted); max-width: 640px; margin-bottom: 24px;
+    }
+    .lead strong { color: rgba(255,255,255,.78); }
+    .lead code { color: rgba(255,106,61,.9); }
+
+    /* macOS menu bar mock */
+    .menubar {
+      display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+      height: 28px; padding: 0 14px;
+      background: rgba(0,0,0,.92);
+      border-radius: 8px;
+      margin-bottom: 28px;
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .menubar .ghost {
+      width: 14px; height: 14px; border-radius: 3px;
+      background: rgba(255,255,255,.18);
+    }
+    .menubar .stat { font-size: 11px; color: rgba(255,255,255,.55); letter-spacing: .02em; }
+    .menubar .slot {
+      display: flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px;
+      outline: 1px dashed rgba(255,106,61,.45);
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+    .menubar .slot canvas, .menubar .slot svg { display: block; }
+
+    .problem {
+      display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+      padding: 14px 16px; margin-bottom: 24px;
+      border-radius: 12px; border: 1px solid rgba(255,80,80,.25);
+      background: rgba(255,80,80,.06);
+      font-size: 11px; line-height: 1.6; color: var(--muted);
+    }
+    .problem img, .problem canvas { border-radius: 4px; }
+    .problem strong { color: #ffb4b4; }
+
+    h2 {
+      font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--muted); margin: 0 0 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .card {
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.02);
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .card:hover { border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.04); }
+    .card.rec { border-color: rgba(90,209,154,.35); background: rgba(90,209,154,.06); }
+    .card.rec::after {
+      content: '推荐';
+      float: right;
+      font-size: 9px; letter-spacing: .08em;
+      color: var(--hi); padding: 2px 6px; border-radius: 4px;
+      background: rgba(90,209,154,.15);
+    }
+    .card h3 { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+    .card p { font-size: 10px; line-height: 1.55; color: var(--muted); margin-bottom: 12px; min-height: 2.8em; }
+    .preview-row {
+      display: flex; align-items: flex-end; gap: 16px;
+      padding: 10px 12px; border-radius: 10px;
+      background: rgba(0,0,0,.55);
+    }
+    .preview-row.light {
+      background: rgba(245,245,245,.95);
+      margin-top: 8px;
+    }
+    .preview-row.light .lbl { color: rgba(0,0,0,.45); }
+    .preview-row.light canvas { filter: invert(1); }
+    .pv { text-align: center; }
+    .pv .lbl { display: block; font-size: 9px; color: var(--muted); margin-top: 4px; }
+    .pv canvas { display: block; image-rendering: pixelated; }
+
+    .states { display: flex; gap: 8px; margin-top: 10px; font-size: 9px; color: var(--muted); }
+    .states span { padding: 3px 7px; border-radius: 5px; background: rgba(255,255,255,.05); }
+
+    .note {
+      font-size: 11px; line-height: 1.7; color: var(--muted);
+      padding: 14px 16px; border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.02);
+    }
+    .note ul { margin: 8px 0 0 18px; }
+    .note li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>菜单栏图标 v8</h1>
+    <p class="lead">
+      当前 v0.3.4 把 Dock 用的 <strong>12×13 LED 点阵</strong> 直接缩到 22pt，在菜单栏里变成<strong>方块糊团</strong>（见下图红框）。
+      菜单栏需要 <strong>单色实心/描边矢量</strong>，和旁边 CPU、Wi‑Fi 图标同一语法——不是微点阵。
+    </p>
+
+    <div class="problem">
+      <canvas id="currentBad" width="44" height="44" style="width:22px;height:22px"></canvas>
+      <div>
+        <strong>当前生产版（丑）</strong><br>
+        44px 画布上画 12×13 圆点 → macOS template 缩放后变成密铺方块，完全看不清 Auri。
+      </div>
+    </div>
+
+    <h2>模拟菜单栏 · 点选你喜欢的方案</h2>
+    <div class="menubar" id="menubar"></div>
+
+    <div class="grid" id="options"></div>
+
+    <div class="note">
+      <strong>设计原则</strong>
+      <ul>
+        <li>画布 22×22 pt（@2x = 44px），导出 template 黑底透明</li>
+        <li>仍基于 Auri 轮廓，但<strong>不画单颗 LED 点</strong></li>
+        <li>播放态：头顶小弧或实心点，不搞三圈广播波</li>
+        <li>Dock 图标保持 v7 圆点 Auri，只改菜单栏</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    /* ── 当前生产版（复刻 generate-desktop-icons.js 的 tray 逻辑）── */
+    const SPRITE = [
+      '......T.....','......A.....','...SSSSSS...','..SBBBBBBS..','.SBBBBBBBBS.',
+      '.SBEEBBEEBS.','.SBGEBBGEBS.','.SBBBBBBBBS.','.SBLLLLLLBS.','.SBLLLLLLBS.',
+      '.SBBBBBBBBS.','..SBBBBBBS..','...FF..FF...',
+    ];
+
+    function drawCurrentDots(ctx, s, onAir) {
+      const rows = SPRITE.length, cols = 12;
+      const rd = s * 0.0215, gap = s * 0.007, step = rd * 2 + gap;
+      const ox = s * 0.5 - (cols * step - gap) / 2;
+      const oy = s * 0.53 - (rows * step - gap) / 2;
+      ctx.fillStyle = '#fff';
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < SPRITE[y].length; x++) {
+          if (SPRITE[y][x] === '.') continue;
+          const cx = ox + x * step + rd, cy = oy + y * step + rd;
+          ctx.beginPath(); ctx.arc(cx, cy, rd, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      if (onAir) {
+        const topY = oy - step * 0.35, cx = s * 0.5;
+        for (const [ring, mul] of [[0,3.8],[1,4.6],[2,5.4]]) {
+          const r = step * mul * 0.32, steps = 12 + ring * 3;
+          for (let i = 0; i < steps; i++) {
+            const ang = Math.PI * (0.18 + 0.64 * i / Math.max(1, steps-1));
+            ctx.beginPath();
+            ctx.arc(cx + Math.cos(ang)*r, topY - Math.sin(ang)*r*0.55, rd*0.5, 0, Math.PI*2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+
+    /* ── v8 方案：专为 22pt 手绘矢量 ── */
+    const DESIGNS = [
+      {
+        id: 'solid',
+        name: 'A · 实心剪影',
+        desc: 'Auri 外轮廓填实，天线+圆头。最接近吉祥物，菜单栏可读性最好。',
+        rec: true,
+        draw(ctx, s, onAir) {
+          const u = s / 22;
+          ctx.fillStyle = '#000';
+          // 天线
+          ctx.fillRect(10.5*u, 2*u, 1*u, 3.5*u);
+          ctx.beginPath(); ctx.arc(11*u, 1.8*u, 1.3*u, 0, Math.PI*2); ctx.fill();
+          // 身体
+          roundRect(ctx, 6*u, 6*u, 10*u, 9.5*u, 2.8*u); ctx.fill();
+          // 脚
+          ctx.beginPath(); ctx.arc(8.5*u, 16.8*u, 1.1*u, 0, Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.arc(13.5*u, 16.8*u, 1.1*u, 0, Math.PI*2); ctx.fill();
+          // 眼睛凹槽（镂空用 clear 模拟 — 深色菜单栏上可省略）
+          if (onAir) drawOnAirDot(ctx, s);
+        },
+      },
+      {
+        id: 'stroke',
+        name: 'B · 描边',
+        desc: '1.25px 单线描边，和系统 SF Symbol 风格一致。更轻、更「菜单栏」。',
+        rec: false,
+        draw(ctx, s, onAir) {
+          const u = s / 22;
+          ctx.strokeStyle = '#000';
+          ctx.fillStyle = '#000';
+          ctx.lineWidth = 1.25 * u;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          // 天线
+          ctx.beginPath(); ctx.moveTo(11*u, 5*u); ctx.lineTo(11*u, 2.5*u); ctx.stroke();
+          ctx.beginPath(); ctx.arc(11*u, 1.8*u, 1*u, 0, Math.PI*2); ctx.fill();
+          // 身体描边
+          roundRect(ctx, 6.5*u, 6.5*u, 9*u, 8.5*u, 2.5*u); ctx.stroke();
+          // 脚点
+          ctx.beginPath(); ctx.arc(8.5*u, 16.5*u, 0.9*u, 0, Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.arc(13.5*u, 16.5*u, 0.9*u, 0, Math.PI*2); ctx.fill();
+          if (onAir) drawOnAirArc(ctx, s);
+        },
+      },
+      {
+        id: 'compact',
+        name: 'C · 紧凑块',
+        desc: '精灵降采样为 6×7 实心方块（无间隙），保留像素宠味道但不再糊。',
+        rec: false,
+        draw(ctx, s, onAir) {
+          const map = [
+            '..T...','.SSS..','SBBBBS','SBBBBS','SBLLBS','.FFF..',
+          ];
+          const cell = s / 8;
+          const ox = (s - map[0].length * cell) / 2;
+          const oy = (s - map.length * cell) / 2 + cell * 0.2;
+          ctx.fillStyle = '#000';
+          for (let y = 0; y < map.length; y++) {
+            for (let x = 0; x < map[y].length; x++) {
+              if (map[y][x] === '.') continue;
+              ctx.fillRect(ox + x*cell, oy + y*cell, cell, cell);
+            }
+          }
+          if (onAir) drawOnAirDot(ctx, s);
+        },
+      },
+      {
+        id: 'radio',
+        name: 'D · 收音机',
+        desc: '圆角机身 + 扬声器栅格点 + 天线。一眼知道是音频 App。',
+        rec: false,
+        draw(ctx, s, onAir) {
+          const u = s / 22;
+          ctx.fillStyle = '#000';
+          roundRect(ctx, 5*u, 7*u, 12*u, 10*u, 2*u); ctx.fill();
+          // 栅格 2×3
+          for (const [gx, gy] of [[8,10],[11,10],[14,10],[8,13],[11,13],[14,13]]) {
+            ctx.beginPath(); ctx.arc(gx*u, gy*u, 0.7*u, 0, Math.PI*2); ctx.fillStyle = 'rgba(255,255,255,.0)';
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = '#000';
+          }
+          // 用白色镂空模拟栅格 — 在 template 上应画透明洞；demo 用 destination-out
+          ctx.globalCompositeOperation = 'destination-out';
+          for (const [gx, gy] of [[8,10],[11,10],[14,10],[8,13],[11,13],[14,13]]) {
+            ctx.beginPath(); ctx.arc(gx*u, gy*u, 0.65*u, 0, Math.PI*2); ctx.fill();
+          }
+          ctx.globalCompositeOperation = 'source-over';
+          // 天线
+          ctx.fillStyle = '#000';
+          ctx.fillRect(10.5*u, 2*u, 1*u, 4*u);
+          ctx.beginPath(); ctx.arc(11*u, 1.6*u, 1.2*u, 0, Math.PI*2); ctx.fill();
+          if (onAir) drawOnAirArc(ctx, s);
+        },
+      },
+      {
+        id: 'wave',
+        name: 'E · 音波点',
+        desc: '三竖条音量柱 + 底点。极简，但品牌感弱于 Auri。',
+        rec: false,
+        draw(ctx, s, onAir) {
+          const u = s / 22;
+          ctx.fillStyle = '#000';
+          const bars = [[8,12,6],[11,14,4],[14,11,7]];
+          for (const [x, h, y] of bars) {
+            roundRect(ctx, x*u, y*u, 1.8*u, h*u, 0.8*u); ctx.fill();
+          }
+          ctx.beginPath(); ctx.arc(11*u, 19*u, 1*u, 0, Math.PI*2); ctx.fill();
+          if (onAir) drawOnAirDot(ctx, s);
+        },
+      },
+    ];
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x+r, y);
+      ctx.lineTo(x+w-r, y);
+      ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+      ctx.lineTo(x+w, y+h-r);
+      ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+      ctx.lineTo(x+r, y+h);
+      ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+      ctx.lineTo(x, y+r);
+      ctx.quadraticCurveTo(x, y, x+r, y);
+      ctx.closePath();
+    }
+
+    function drawOnAirDot(ctx, s) {
+      const u = s / 22;
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(11*u, 1*u, 0.9*u, 0, Math.PI*2); ctx.fill();
+    }
+
+    function drawOnAirArc(ctx, s) {
+      const u = s / 22;
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1 * u;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(11*u, 4*u, 3*u, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+    }
+
+    function renderTray(design, px, onAir) {
+      const c = document.createElement('canvas');
+      c.width = c.height = px;
+      const ctx = c.getContext('2d');
+      if (design === 'current') drawCurrentDots(ctx, px, onAir);
+      else DESIGNS.find(d => d.id === design).draw(ctx, px, onAir);
+      return c;
+    }
+
+    function mountCanvas(parent, design, displayPx, canvasPx, onAir, label) {
+      const wrap = document.createElement('div');
+      wrap.className = 'pv';
+      const c = renderTray(design, canvasPx, onAir);
+      c.style.width = displayPx + 'px';
+      c.style.height = displayPx + 'px';
+      wrap.appendChild(c);
+      if (label) {
+        const lbl = document.createElement('span');
+        lbl.className = 'lbl';
+        lbl.textContent = label;
+        wrap.appendChild(lbl);
+      }
+      parent.appendChild(wrap);
+      return c;
+    }
+
+    // 当前丑版
+    const bad = document.getElementById('currentBad');
+    drawCurrentDots(bad.getContext('2d'), 44, false);
+
+    // 菜单栏模拟 — 默认展示推荐方案 A
+    const menubar = document.getElementById('menubar');
+    for (let i = 0; i < 5; i++) {
+      const g = document.createElement('div');
+      g.className = 'ghost';
+      menubar.appendChild(g);
+    }
+    menubar.innerHTML += '<span class="stat">CPU 69%</span><span class="stat">MEM 86%</span>';
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.id = 'menubarIcon';
+    menubar.appendChild(slot);
+    for (let i = 0; i < 3; i++) {
+      const g = document.createElement('div');
+      g.className = 'ghost';
+      menubar.appendChild(g);
+    }
+
+    let selected = 'solid';
+
+    function updateMenubar() {
+      const slot = document.getElementById('menubarIcon');
+      slot.innerHTML = '';
+      mountCanvas(slot, selected, 18, 44, false);
+    }
+
+    const grid = document.getElementById('options');
+    for (const d of DESIGNS) {
+      const card = document.createElement('div');
+      card.className = 'card' + (d.rec ? ' rec' : '');
+      card.dataset.id = d.id;
+      card.innerHTML = `<h3>${d.name}</h3><p>${d.desc}</p>`;
+      const row = document.createElement('div');
+      row.className = 'preview-row';
+      for (const [label, px, disp] of [['22pt', 44, 22], ['18pt', 36, 18], ['16pt', 32, 16]]) {
+        mountCanvas(row, d.id, disp, px, false, `${label} 待机`);
+      }
+      mountCanvas(row, d.id, 22, 44, true, '22pt 播放');
+      card.appendChild(row);
+
+      const light = document.createElement('div');
+      light.className = 'preview-row light';
+      mountCanvas(light, d.id, 22, 44, false, '浅色菜单栏');
+      card.appendChild(light);
+
+      card.addEventListener('click', () => {
+        selected = d.id;
+        document.querySelectorAll('.card').forEach(c => c.classList.remove('rec'));
+        card.classList.add('rec');
+        updateMenubar();
+      });
+      grid.appendChild(card);
+    }
+
+    // 对比卡：当前生产
+    const curCard = document.createElement('div');
+    curCard.className = 'card';
+    curCard.style.borderColor = 'rgba(255,80,80,.3)';
+    curCard.innerHTML = '<h3>✕ 当前生产</h3><p>v0.3.4 trayTemplate — 12×13 圆点阵，菜单栏不可读。</p>';
+    const curRow = document.createElement('div');
+    curRow.className = 'preview-row';
+    for (const [label, px, disp] of [['22pt',44,22],['18pt',36,18],['16pt',32,16]]) {
+      mountCanvas(curRow, 'current', disp, px, false, label);
+    }
+    curCard.appendChild(curRow);
+    grid.insertBefore(curCard, grid.firstChild);
+
+    updateMenubar();
+  </script>
+</body>
+</html>

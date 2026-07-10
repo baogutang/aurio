@@ -7,3 +7,6 @@ data/
 .DS_Store
 Thumbs.db
 screenshots/_frames/
+
+# Agent worktrees
+.claude/worktrees/
