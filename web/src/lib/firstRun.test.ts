@@ -22,11 +22,11 @@ describe('firstRunFollowUp', () => {
   });
 
   it('a performed ceremony goes through the normal broadcast flow', () => {
-    expect(firstRunFollowUp({ ts: 1, mode: 'replace', say: '开场', queue: [] })).toBe('broadcast');
+    expect(firstRunFollowUp({ ts: 1, op: 'steer', say: '开场', queue: [] })).toBe('broadcast');
   });
 
   it('the quiet ceremony (nothing playable) also just broadcasts its line', () => {
-    expect(firstRunFollowUp({ ts: 1, mode: 'chat', quiet: true, say: '先陪你安静待一会儿', queue: [] })).toBe('broadcast');
+    expect(firstRunFollowUp({ ts: 1, op: 'chat', quiet: true, say: '先陪你安静待一会儿', queue: [] })).toBe('broadcast');
   });
 
   it('errors and empty replies broadcast too — applyBroadcast owns error display', () => {

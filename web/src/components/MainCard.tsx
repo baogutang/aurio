@@ -22,18 +22,12 @@ interface Props {
   playing: boolean;
   talking?: boolean;
   conn: 'on' | 'busy' | '';
-  onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
   audioRef: React.RefObject<HTMLAudioElement>;
-  queue?: Track[];
-  queueIndex?: number;
-  onPick?: (index: number) => void;
-  onReorder?: (next: Track[]) => void;
-  onRemove?: (index: number) => void;
-  onClear?: () => void;
+  /** The station's upcoming programme — read-only (the timeline is server-side). */
+  upNext?: Track[];
   onSteer?: (text: string, mood: StationMood) => void;
   onTrigger?: (kind: string) => void;
   onResume?: () => void;
-  isObserver?: boolean;
   controlsDisabled?: boolean;
   tasteLine?: string;
   planNote?: string;
@@ -42,16 +36,14 @@ interface Props {
 
 export default function MainCard({
   track, progress, cur, dur, say, sayReveal = null, now, playing, talking = false,
-  conn, onSeek, audioRef,
-  queue = [], queueIndex = -1, onPick, onReorder, onRemove, onClear,
-  onSteer, onTrigger, onResume, isObserver = false, controlsDisabled = false,
+  conn, audioRef, upNext = [],
+  onSteer, onTrigger, onResume, controlsDisabled = false,
   tasteLine = '', planNote = '', queueTotal = 0,
 }: Props) {
   const { tr: t, resolved, reducedMotion } = usePreferences();
   const sayTheme = resolved === 'light' ? 'card' : 'dark';
   const live = conn === 'on' || conn === 'busy';
   const airLabel = conn === 'on' ? t('onAir') : conn === 'busy' ? t('busy') : t('standby');
-  const upNext = queue.slice(queueIndex + 1);
   const sourceLabel = track?.source === 'navidrome'
     ? t('sourceNas')
     : track?.source === 'qqmusic'
@@ -65,7 +57,7 @@ export default function MainCard({
     { mood: 'ban', label: t('steerBan'), text: t('steerPayloadBan') },
   ];
 
-  const steerRow = onSteer && !isObserver && (
+  const steerRow = onSteer && (
     <div className="mt-3 flex flex-wrap gap-1.5">
       {steerChips.map((chip) => (
         <button
@@ -108,12 +100,6 @@ export default function MainCard({
                 {t('tasteLearning')}: {tasteLine}
               </p>
             )}
-            {isObserver && (
-              <p className="mb-2 text-[11px] font-mono text-[var(--text-muted)] px-2 py-1.5 rounded-xl"
-                style={{ background: 'var(--inset-bg)', border: '1px solid var(--glass-border)' }}>
-                {t('observerBanner')}
-              </p>
-            )}
             <Spectrum audioRef={audioRef} height={108} dimmed={talking} />
 
             <motion.h1
@@ -135,7 +121,9 @@ export default function MainCard({
             </div>
 
             <div className="mt-3">
-              <div className="progress-track" onClick={onSeek} role="slider" aria-valuenow={progress}>
+              {/* LIVE: the bar shows where the broadcast is — it is not a
+                  scrubber. The station's clock cannot be dragged. */}
+              <div className="progress-track" role="progressbar" aria-valuenow={progress}>
                 <div className="progress-fill" style={{ width: `${progress}%` }} />
               </div>
               <div className="flex justify-between mt-1.5 font-mono text-[10px] text-[var(--text-muted)] tabular-nums">
@@ -165,17 +153,7 @@ export default function MainCard({
 
             {steerRow}
 
-            {onPick && onReorder && onRemove && onClear && (
-              <UpNext
-                items={upNext}
-                baseIndex={queueIndex + 1}
-                onPick={onPick}
-                onReorder={onReorder}
-                onRemove={onRemove}
-                onClear={onClear}
-                disabled={isObserver || controlsDisabled}
-              />
-            )}
+            <UpNext items={upNext} />
           </div>
         </motion.div>
       ) : (
@@ -206,7 +184,7 @@ export default function MainCard({
               {renderSay(say, sayTheme, sayReveal)}
             </p>
             {steerRow}
-            {onTrigger && !isObserver && (
+            {onTrigger && (
               <button
                 type="button"
                 className="mt-3 w-full rounded-2xl py-2.5 text-[12px] font-medium disabled:opacity-40"

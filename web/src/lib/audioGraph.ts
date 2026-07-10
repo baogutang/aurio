@@ -249,7 +249,8 @@ function scheduleFade(
 }
 
 const fadeOutShape = (t: number, v0: number) => v0 * Math.cos((t * Math.PI) / 2);
-const fadeInShape = (t: number, v0: number) => v0 + (1 - v0) * Math.sin((t * Math.PI) / 2);
+const fadeInShapeTo = (peak: number) =>
+  (t: number, v0: number) => v0 + (peak - v0) * Math.sin((t * Math.PI) / 2);
 
 /** Hard-set a channel gain (cancels any in-flight fade). */
 export function setMusicChannelGain(ch: MusicChannel, value: number): void {
@@ -262,12 +263,14 @@ export function setMusicChannelGain(ch: MusicChannel, value: number): void {
 
 /**
  * Equal-power crossfade between the two music channels: cos out, sin in, so
- * the summed power stays flat and there is no mid-fade dip.
+ * the summed power stays flat and there is no mid-fade dip. `toPeak` is the
+ * incoming channel's resting gain — the per-track loudness normalization
+ * factor (−16 LUFS, from the cue analysis) multiplies into the fade here.
  */
-export function crossfadeMusic(from: MusicChannel, to: MusicChannel, seconds = 2): void {
+export function crossfadeMusic(from: MusicChannel, to: MusicChannel, seconds = 2, toPeak = 1): void {
   if (!mixer || from === to) return;
   scheduleFade(mixer.musicChannelGains[from], mixer.ac, fadeOutShape, seconds, 0);
-  scheduleFade(mixer.musicChannelGains[to], mixer.ac, fadeInShape, seconds, 1);
+  scheduleFade(mixer.musicChannelGains[to], mixer.ac, fadeInShapeTo(toPeak), seconds, toPeak);
 }
 
 /** Quick fade-out of one channel (manual skip: no 2s drag, just no click). */

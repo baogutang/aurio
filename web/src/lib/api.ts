@@ -1,4 +1,5 @@
-import type { StatusResp, SettingsResp, AiProvidersResp, CastDevice, TestResult, Broadcast, LyricsResp, ChatMsg, ProfileResp, TasteResp, Track, ContextResp } from './types';
+import type { StatusResp, SettingsResp, AiProvidersResp, CastDevice, TestResult, SegmentResult, LyricsResp, ChatMsg, ProfileResp, TasteResp, ContextResp } from './types';
+import type { ProgrammeSnapshot } from './programme';
 
 const json = async (r: Response) => {
   if (!r.ok) {
@@ -85,8 +86,8 @@ export const api = {
   messages: (limit = 80): Promise<{ messages: ChatMsg[] }> =>
     get('/api/messages?limit=' + encodeURIComponent(limit)),
   settings: (): Promise<SettingsResp> => get('/api/settings'),
-  chat: (text: string): Promise<Broadcast> => post('/api/chat', { text }, { timeoutMs: LONG_TIMEOUT_MS }),
-  trigger: (kind: string): Promise<Broadcast> => post('/api/trigger', { kind }, { timeoutMs: LONG_TIMEOUT_MS }),
+  chat: (text: string): Promise<SegmentResult> => post('/api/chat', { text }, { timeoutMs: LONG_TIMEOUT_MS }),
+  trigger: (kind: string): Promise<SegmentResult> => post('/api/trigger', { kind }, { timeoutMs: LONG_TIMEOUT_MS }),
   played: (t: { id: string; title: string; artist: string; source: string; position_sec?: number; queue_index?: number }) =>
     post('/api/played', t),
   playbackEvent: (body: {
@@ -95,9 +96,9 @@ export const api = {
     position_sec?: number;
     queue_index?: number;
   }) => post('/api/playback-event', body),
-  setQueue: (queue: unknown[], baseRevision?: number): Promise<{ ok: boolean; queue: number; revision?: number }> =>
-    post('/api/queue', { queue, baseRevision }),
-  getQueue: (): Promise<{ queue: Track[]; revision: number }> => get('/api/queue'),
+  programme: (upNext = 5): Promise<{ ok: boolean } & ProgrammeSnapshot> =>
+    get('/api/programme?upNext=' + encodeURIComponent(upNext)),
+  skip: (): Promise<{ ok: boolean } & ProgrammeSnapshot> => post('/api/skip', {}),
   testNavidrome: (b: { url: string; user: string; pass?: string }): Promise<{ ok: boolean; detail: string }> =>
     post('/api/settings/test-navidrome', b),
   testQQ: (b: Record<string, string>): Promise<TestResult> => post('/api/settings/test-qq', b),

@@ -11,16 +11,15 @@ export interface Track {
   reason?: string;
   segue?: string;
   segueTtsUrl?: string | null;
-  uid?: string; // client-side stable key for queue reorder/remove
 }
 
-export type BroadcastMode = 'replace' | 'append' | 'insert' | 'steer' | 'chat';
+/** What one DJ segment did to the programme log (the /api/chat//api/trigger reply). */
+export type SegmentOp = 'append' | 'insert' | 'steer' | 'chat';
 
-export interface Broadcast {
-  type?: 'broadcast';
+export interface SegmentResult {
   ts?: number;
   kind?: string;
-  mode?: BroadcastMode;
+  op?: SegmentOp;
   placement?: 'next' | 'append';
   mood?: string;
   say?: string;
@@ -29,17 +28,10 @@ export interface Broadcast {
   ttsUrl?: string | null;
   queue?: Track[];
   error?: string;
-  revision?: number;
 }
 
-export interface TtsPatch {
-  type?: 'tts';
-  ts?: number;
-  kind?: string;
-  mode?: BroadcastMode;
-  ttsUrl?: string | null;
-  track?: Pick<Track, 'source' | 'id' | 'title' | 'artist'> | null;
-}
+/** @deprecated alias kept for call sites migrating off the broadcast world. */
+export type Broadcast = SegmentResult;
 
 export interface ContextResp {
   ok: boolean;

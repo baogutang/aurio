@@ -9,48 +9,60 @@ import StatusStrip from './components/StatusStrip';
 import PressButton from './components/PressButton';
 import PixelPet, { type PetState } from './components/PixelPet';
 import HeaderWeather from './components/HeaderWeather';
-import { IconChat, IconSettings, IconPrev, IconNext, IconPlay, IconPause, IconHeart, IconDislike } from './components/icons';
+import { IconChat, IconSettings, IconNext, IconPlay, IconPause, IconHeart, IconDislike } from './components/icons';
 import { api, fmt, setWsClientId } from './lib/api';
-import { mergeQueueWhilePlaying } from './lib/queueSync';
 import { formatNow, type NowDisplay } from './lib/dateFormat';
 import { nextMusicSource, postMusicSource, servicesFromModes, type MusicSourceMode, type MusicServices } from './lib/musicSource';
 import { spring, stagger } from './lib/motion';
 import { cleanSayText } from './lib/highlight';
 import { isHotlineAccepted, shouldAutoCloseChat } from './lib/chatFlow';
 import { onboardExitAction, firstRunFollowUp, type FirstRunResponse } from './lib/firstRun';
-import { dedupeQueue } from './lib/queue';
 import { coverUrl } from './lib/cover';
 import {
   initMixer, resumeMixer, duckMusic, unduckMusic, getMixer,
   setMusicChannelGain, crossfadeMusic, fadeOutMusic, playRetuneSound, type MusicChannel,
 } from './lib/audioGraph';
+import {
+  itemsFrom, skewFrom, programmeAt, nextAfter, upNextTracks, trackOf,
+  gainFactorOf, crossfadeSecOf, audibleEndOf, startOf,
+  type ProgrammeItem, type ProgrammeSnapshot, type SayEvent,
+} from './lib/programme';
 import { tuneStation, type StationMood } from './lib/station';
 import { useI18n, usePreferences } from './context/PreferencesContext';
-import type { Track, Broadcast, ChatMsg, TtsPatch } from './lib/types';
+import type { Track, SegmentResult, ChatMsg } from './lib/types';
 
-// Gapless handoff tuning: prefetch the next track into the standby element
-// once the current one has this many seconds left, then run an equal-power
-// crossfade of roughly this length right before the natural end. A manual
+// Gapless handoff tuning: prefetch the next programme item into the standby
+// element once its scheduled start is this close, then run the crossfade the
+// SCHEDULE prescribes (the segue tail is in the timeline itself). A manual
 // skip only gets a quick fade-out so it still feels immediate.
 const PREFETCH_WINDOW_SEC = 20;
-const AUTO_CROSSFADE_SEC = 2;
 const MANUAL_FADE_SEC = 0.25;
+// Reseek when the media clock drifts this far from the station clock.
+const DRIFT_TOLERANCE_SEC = 4;
+// Media that dies this long before its scheduled end is unplayable — the
+// client asks the station to move on (the log stays honest).
+const EARLY_END_SKIP_MS = 5000;
+// A voice intro only makes sense near the top of the item; joining mid-song
+// must not replay it.
+const VOICE_JOIN_WINDOW_MS = 8000;
 
 // After a successful chat reply the sheet lingers this long — enough to see
 // the answer land — then closes itself back to the main card (user feedback
 // 2026-07-10: 「跟Aurio对话后，聊天框应该随着处理完自动关闭显示主界面」).
 const CHAT_AUTOCLOSE_MS = 1000;
 
-const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+
+type Transition = 'join' | 'auto' | 'manual' | 'cold';
 
 export default function App() {
   const { t, localeTag, locale } = useI18n();
   const { resolved, setTheme, reducedMotion } = usePreferences();
   // audioRef is the stable accessor for THE ACTIVE music element. Two music
-  // elements (A/B) alternate underneath so the next track can be prefetched
+  // elements (A/B) alternate underneath so the next item can be prefetched
   // and crossfaded in; everything that asks "what is playing" (heartbeat,
-  // MediaSession, tray, seek, the pause/resume src guard) reads
-  // audioRef.current and keeps working unchanged.
+  // MediaSession, tray, the pause/resume guard) reads audioRef.current and
+  // keeps working unchanged.
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const musicElsRef = useRef<(HTMLAudioElement | null)[]>([null, null]);
   const activeChRef = useRef<MusicChannel>(0);
@@ -60,27 +72,36 @@ export default function App() {
   const autoFadeFiredRef = useRef(-1);
   const cancelSegueRef = useRef<(() => void) | null>(null);
   const ttsRef = useRef<HTMLAudioElement>(null);
-  const queueRef = useRef<Track[]>([]);
-  const idxRef = useRef(-1);
   const scrobbled = useRef(false);
-  const lastBroadcastTs = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const audioPrimed = useRef(false);
   const playbackRecoveryTimer = useRef<number | undefined>(undefined);
-  const skipTimerRef = useRef<number | undefined>(undefined);
-  const queueRevisionRef = useRef(0);
-  const errorTrackUrlRef = useRef<string | null>(null);
   const clientIdRef = useRef('');
   const reconnectDelayRef = useRef(1000);
-  const autoPlayUserInitRef = useRef(false);
   const segueActiveRef = useRef(false);
-  const consumedSegueRef = useRef<Set<string>>(new Set());
+
+  // --- The programme: the client's slice of the server-authoritative
+  // timeline. `skewMs` converts Date.now() into the station's wall clock.
+  const programmeRef = useRef<{ items: ProgrammeItem[]; skewMs: number }>({ items: [], skewMs: 0 });
+  // The item currently loaded on the active music element (not necessarily
+  // the on-air one while paused).
+  const playingItemIdRef = useRef<string | null>(null);
+  // PAUSE is local — the station never waits. While true, programme pushes
+  // update the display but never touch the media.
+  const userPausedRef = useRef(false);
+  // Voice intros already played (by item id) — an item speaks once.
+  const consumedVoiceRef = useRef<Set<string>>(new Set());
+  // Transient say lines already displayed / voiced (dedupe between the HTTP
+  // reply and the WS 'say' event carrying the same ts).
+  const seenSayTsRef = useRef<Set<number>>(new Set());
+  const playedSayRef = useRef<Set<string>>(new Set());
+  const skipPendingRef = useRef(false);
+  const deadAirTimerRef = useRef<number | undefined>(undefined);
 
   const [current, setCurrent] = useState<Track | null>(null);
   const [playing, setPlaying] = useState(false);
   const [segueActive, setSegueActive] = useState(false);
   const [talking, setTalking] = useState(false);
-  const [clientRole, setClientRole] = useState<'unknown' | 'controller' | 'observer'>('unknown');
   const [feedbackHint, setFeedbackHint] = useState('');
   const [tasteLine, setTasteLine] = useState('');
   const [planNote, setPlanNote] = useState('');
@@ -107,9 +128,8 @@ export default function App() {
   const [services, setServices] = useState<MusicServices & { weather: boolean }>({ netease: false, navidrome: false, qqmusic: false, weather: false });
   const [musicSource, setMusicSource] = useState<MusicSourceMode>('combined');
   const [steerMood, setSteerMood] = useState<StationMood | null>(null);
-  const [queueTotal, setQueueTotal] = useState(0);
-  const [queueIndex, setQueueIndex] = useState(-1);
-  const [queue, setQueue] = useState<Track[]>([]);
+  const [upNext, setUpNext] = useState<Track[]>([]);
+  const [programmeTotal, setProgrammeTotal] = useState(0);
   // 0..1 fraction of the say text revealed while the DJ voice plays (null = whole).
   const [sayReveal, setSayReveal] = useState<number | null>(null);
   const revealRafRef = useRef(0);
@@ -117,7 +137,7 @@ export default function App() {
   // Bumped whenever audioRef.current points at a different element.
   const [activeElVer, setActiveElVer] = useState(0);
 
-  const isController = clientRole === 'controller';
+  const serverNow = useCallback(() => Date.now() + programmeRef.current.skewMs, []);
 
   // MainCard's children (Spectrum / Lyrics) capture audioRef.current inside
   // their effects, so hand them a snapshot ref whose identity changes whenever
@@ -143,98 +163,29 @@ export default function App() {
   const bindMusicA = useCallback((el: HTMLAudioElement | null) => { bindMusicEl(0, el); }, [bindMusicEl]);
   const bindMusicB = useCallback((el: HTMLAudioElement | null) => { bindMusicEl(1, el); }, [bindMusicEl]);
 
-  const syncQueueState = useCallback((q: Track[], idx: number) => {
-    const clean = dedupeQueue(q, idx);
-    const withUid = clean.queue.map((tk) =>
-      tk.uid ? tk : { ...tk, uid: `${tk.source}:${tk.id}:${Math.random().toString(36).slice(2, 8)}` }
-    );
-    queueRef.current = withUid;
-    idxRef.current = clean.index;
-    setQueue(withUid);
-    setQueueTotal(withUid.length);
-    setQueueIndex(clean.index);
+  const refreshUpNext = useCallback(() => {
+    const { items } = programmeRef.current;
+    setUpNext(upNextTracks(items, playingItemIdRef.current));
+    setProgrammeTotal(items.length);
   }, []);
-
-  const syncFromServer = useCallback((serverQ: Track[], rev: number, playingIdx = idxRef.current) => {
-    if (typeof rev === 'number') queueRevisionRef.current = rev;
-    const playingNow = playingIdx >= 0 && !audioRef.current?.paused;
-    if (!playingNow) {
-      syncQueueState(serverQ, playingIdx >= 0 && playingIdx < serverQ.length ? playingIdx : -1);
-      return;
-    }
-    const merged = mergeQueueWhilePlaying(queueRef.current, serverQ, playingIdx);
-    syncQueueState(merged, playingIdx);
-  }, [syncQueueState]);
-
-  const queueRemaining = queueIndex >= 0
-    ? Math.max(0, queueTotal - queueIndex - 1)
-    : queueTotal;
-
-  // Queue edits from the player UI (reorder / remove / clear). Update the live
-  // refs + state, then persist so a reload keeps the user's edits.
-  const reconcileQueue = useCallback(async () => {
-    try {
-      const snap = await api.getQueue();
-      if (typeof snap.revision === 'number') queueRevisionRef.current = snap.revision;
-      if (Array.isArray(snap.queue)) {
-        const idx = Math.min(Math.max(idxRef.current, -1), snap.queue.length - 1);
-        syncQueueState(snap.queue, idx);
-      }
-    } catch { /* noop */ }
-  }, [syncQueueState]);
-
-  const applyQueueEdit = useCallback((q: Track[], idx: number) => {
-    if (!isController) return;
-    const clean = dedupeQueue(q, idx);
-    queueRef.current = clean.queue;
-    idxRef.current = clean.index;
-    setQueue(clean.queue);
-    setQueueTotal(clean.queue.length);
-    setQueueIndex(clean.index);
-    api.setQueue(clean.queue, queueRevisionRef.current).then(async (r) => {
-      if (typeof r?.revision === 'number') queueRevisionRef.current = r.revision;
-    }).catch(async (err: Error & { status?: number }) => {
-      if (err?.status === 403) return;
-      await reconcileQueue();
-      api.setQueue(queueRef.current, queueRevisionRef.current).then((r) => {
-        if (typeof r?.revision === 'number') queueRevisionRef.current = r.revision;
-      }).catch(() => {});
-    });
-  }, [reconcileQueue, isController]);
-
-  const reorderUpNext = useCallback((nextUpcoming: Track[]) => {
-    const idx = idxRef.current;
-    applyQueueEdit([...queueRef.current.slice(0, idx + 1), ...nextUpcoming], idx);
-  }, [applyQueueEdit]);
-
-  const removeAt = useCallback((index: number) => {
-    const q = queueRef.current.filter((_, i) => i !== index);
-    const idx = index < idxRef.current ? idxRef.current - 1 : idxRef.current;
-    applyQueueEdit(q, idx);
-  }, [applyQueueEdit]);
-
-  const clearUpNext = useCallback(() => {
-    const idx = idxRef.current;
-    applyQueueEdit(queueRef.current.slice(0, idx + 1), idx);
-  }, [applyQueueEdit]);
 
   const reportState = useCallback(() => {
     const ws = wsRef.current;
     if (ws?.readyState === 1) {
-      const tr = queueRef.current[idxRef.current];
       const audio = audioRef.current;
+      const tr = current;
       ws.send(JSON.stringify({
         type: 'state',
-        playingIndex: idxRef.current,
         paused: audio?.paused ?? true,
-        queueLen: queueRef.current.length,
-        queueRevision: queueRevisionRef.current,
+        itemId: playingItemIdRef.current,
         currentTrack: tr ? { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source } : null,
         positionSec: audio?.currentTime ?? 0,
         durationSec: audio && !Number.isNaN(audio.duration) ? audio.duration : 0,
       }));
     }
-  }, []);
+  }, [current]);
+  const reportStateRef = useRef(reportState);
+  reportStateRef.current = reportState;
 
   // Duck / unduck the music bed under the DJ voice. Uses the scheduled gain
   // ramp when the mixer exists, and falls back to the old el.volume step when
@@ -249,11 +200,7 @@ export default function App() {
   }, []);
 
   // --- Voice conductor: the say text reveals per code point, paced by the TTS
-  // audio clock (fraction = currentTime / duration once loadedmetadata gives a
-  // duration; CJK ≈ one syllable per character, so proportional allocation is
-  // accurate enough). Any interruption — skip cancels the segue, pause, error —
-  // rolls back to the whole sentence at once. A say without TTS audio never
-  // enters here and shows whole, as before.
+  // audio clock. Any interruption rolls back to the whole sentence at once.
   const stopSayReveal = useCallback(() => {
     if (revealRafRef.current) {
       cancelAnimationFrame(revealRafRef.current);
@@ -266,7 +213,6 @@ export default function App() {
   const startSayReveal = useCallback((tts: HTMLAudioElement) => {
     if (revealRafRef.current) cancelAnimationFrame(revealRafRef.current);
     if (reducedMotion) {
-      // Whole-sentence subtitles under reduced motion.
       revealValRef.current = null;
       setSayReveal(null);
       revealRafRef.current = 0;
@@ -282,7 +228,6 @@ export default function App() {
           stopSayReveal();
           return;
         }
-        // Quantize to ~1% steps so the reveal does not re-render at 60fps.
         const q = Math.floor(f * 100) / 100;
         if (q !== revealValRef.current) {
           revealValRef.current = q;
@@ -366,27 +311,67 @@ export default function App() {
     retireChannel(pending.ch);
   }, [retireChannel]);
 
-  const playTrack = useCallback((tr: Track, idx: number, opts?: { transition?: 'auto' | 'manual' }) => {
+  const clearPlaybackRecovery = () => {
+    if (playbackRecoveryTimer.current) {
+      window.clearTimeout(playbackRecoveryTimer.current);
+      playbackRecoveryTimer.current = undefined;
+    }
+  };
+
+  const clearDeadAirTimer = () => {
+    if (deadAirTimerRef.current !== undefined) {
+      window.clearTimeout(deadAirTimerRef.current);
+      deadAirTimerRef.current = undefined;
+    }
+  };
+
+  // Seek a media element to a position, robust against metadata not being
+  // loaded yet (the seek is re-applied once it is).
+  const seekTo = (el: HTMLAudioElement, seconds: number) => {
+    if (seconds <= 0.05) return;
+    const apply = () => { try { el.currentTime = seconds; } catch { /* noop */ } };
+    if (el.readyState >= 1) apply();
+    else el.addEventListener('loadedmetadata', apply, { once: true });
+  };
+
+  /**
+   * Start one programme item at a media offset. The station said WHAT and
+   * WHEN; this is the HOW — standby element, equal-power crossfade of the
+   * length the schedule embeds, per-track loudness gain, and the item's voice
+   * intro ducked over the transition.
+   */
+  const playItem = useCallback((item: ProgrammeItem, offsetMs: number, opts?: { transition?: Transition; fadeSec?: number }) => {
+    const tr = trackOf(item);
     if (!tr?.url) {
       setPlaying(false);
       setSay(t('sayTrackFail'));
       return;
     }
     clearPlaybackRecovery();
+    clearDeadAirTimer();
     cancelSegueRef.current?.();
     scrobbled.current = false;
     playTokenRef.current += 1;
     setCurrent(tr);
-    setQueueIndex(idx);
-    idxRef.current = idx;
+    playingItemIdRef.current = item.id;
+    refreshUpNext();
     if (tr.segue) setSay(tr.segue);
 
     const transition = opts?.transition ?? 'manual';
-    const segueKey = tr.uid ?? `${tr.source}:${tr.id}`;
-    const wantSegue = !!(tr.segueTtsUrl && ttsRef.current && !consumedSegueRef.current.has(segueKey));
+    const seekSec = Math.max(0, offsetMs) / 1000;
+    const nearTop = offsetMs - item.cueIn < VOICE_JOIN_WINDOW_MS;
+    const wantVoice = !!(tr.segueTtsUrl && ttsRef.current && nearTop && !consumedVoiceRef.current.has(item.id));
+    const gain = gainFactorOf(item);
+
+    const emitStarted = () => {
+      api.playbackEvent({
+        event: 'started',
+        track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
+      }).catch(() => {});
+    };
 
     if (!getMixer()) {
-      // Fallback: mixer failed to init (autoplay/CSP edge) — keep today's
+      // Fallback: mixer failed to init (autoplay/CSP edge) — keep the
       // single-element hard cut. audioRef never flips in this mode.
       const a = audioRef.current;
       if (!a) return;
@@ -394,23 +379,20 @@ export default function App() {
         segueActiveRef.current = false;
         setSegueActive(false);
         a.src = tr.url!;
+        seekTo(a, seekSec);
         resumeMixer();
         unduck(a);
-        api.playbackEvent({
-          event: 'started',
-          track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
-          queue_index: idx,
-        }).catch(() => {});
+        emitStarted();
         a.play()
-          .then(() => reportState())
+          .then(() => reportStateRef.current())
           .catch(() => {
             setPlaying(false);
-            if (autoPlayUserInitRef.current) setSay(t('sayTapPlay'));
-            reportState();
+            setSay(t('sayTapPlay'));
+            reportStateRef.current();
           });
       };
-      if (wantSegue) {
-        consumedSegueRef.current.add(segueKey);
+      if (wantVoice) {
+        consumedVoiceRef.current.add(item.id);
         const tts = ttsRef.current!;
         const dimMusic = !!(a.src && !a.paused);
         segueActiveRef.current = true;
@@ -439,9 +421,10 @@ export default function App() {
       return;
     }
 
-    // Mixer path: the incoming track starts on the standby element and the two
-    // channel gains carry the transition — an equal-power crossfade on a
-    // natural end, a quick fade-out on a manual skip. Never a hard `src` cut.
+    // Mixer path: the incoming item starts on the standby element and the two
+    // channel gains carry the transition — the schedule's own crossfade on a
+    // natural boundary, a quick fade-out on a manual skip, a hard cut after a
+    // cold ending. Never a hard `src` cut on a live element.
     const startCrossfaded = (underVoice: boolean) => {
       const outCh = activeChRef.current;
       const inCh: MusicChannel = outCh === 0 ? 1 : 0;
@@ -456,6 +439,7 @@ export default function App() {
         incoming.preload = 'auto';
         incoming.src = tr.url!;
       }
+      seekTo(incoming, seekSec);
 
       const outLive = !!(outgoing && outgoing.getAttribute('src') && !outgoing.paused && !outgoing.ended);
 
@@ -472,13 +456,15 @@ export default function App() {
       if (!underVoice) unduck(incoming);
 
       if (outLive && outgoing) {
+        const fade = transition === 'auto'
+          ? (opts?.fadeSec ?? 2)
+          : transition === 'cold' ? 0.02 : MANUAL_FADE_SEC;
         if (transition === 'auto') {
-          crossfadeMusic(outCh, inCh, AUTO_CROSSFADE_SEC);
+          crossfadeMusic(outCh, inCh, fade, gain);
         } else {
-          setMusicChannelGain(inCh, 1);
-          fadeOutMusic(outCh, MANUAL_FADE_SEC);
+          setMusicChannelGain(inCh, gain);
+          fadeOutMusic(outCh, Math.max(fade, 0.02));
         }
-        const fade = transition === 'auto' ? AUTO_CROSSFADE_SEC : MANUAL_FADE_SEC;
         pendingRetireRef.current = {
           ch: outCh,
           timer: window.setTimeout(() => {
@@ -487,29 +473,25 @@ export default function App() {
           }, fade * 1000 + 150),
         };
       } else {
-        setMusicChannelGain(inCh, 1);
+        setMusicChannelGain(inCh, gain);
         retireChannel(outCh);
       }
 
-      api.playbackEvent({
-        event: 'started',
-        track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
-        queue_index: idx,
-      }).catch(() => {});
+      emitStarted();
       incoming.play()
-        .then(() => reportState())
+        .then(() => reportStateRef.current())
         .catch(() => {
           setPlaying(false);
-          if (autoPlayUserInitRef.current) setSay(t('sayTapPlay'));
-          reportState();
+          setSay(t('sayTapPlay'));
+          reportStateRef.current();
         });
     };
 
-    if (wantSegue) {
+    if (wantVoice) {
       // The crossfade IS the bed under her voice: the A→B transition runs
       // while she talks and the duck on the shared music bus keeps it low, so
       // she is never speaking into silence.
-      consumedSegueRef.current.add(segueKey);
+      consumedVoiceRef.current.add(item.id);
       const tts = ttsRef.current!;
       segueActiveRef.current = true;
       setSegueActive(true);
@@ -543,29 +525,75 @@ export default function App() {
     } else {
       startCrossfaded(false);
     }
-  }, [reportState, t, duck, unduck, retireChannel, finalizePendingRetire, startSayReveal, stopSayReveal]);
+  }, [t, duck, unduck, retireChannel, finalizePendingRetire, startSayReveal, stopSayReveal, refreshUpNext]);
 
-  const startQueue = useCallback((q: Track[], startAt = 0) => {
-    if (!q.length) return;
-    const idx = Math.max(0, Math.min(startAt, q.length - 1));
-    syncQueueState(q, idx);
-    const tr = queueRef.current[idx];
-    if (tr) playTrack(tr, idx);
-    reportState();
-  }, [syncQueueState, playTrack, reportState]);
+  const playItemRef = useRef(playItem);
+  playItemRef.current = playItem;
 
-  const playQueueIndex = useCallback((index: number, prunePlayed = false, transition: 'auto' | 'manual' = 'manual') => {
-    if (!isController) return;
-    const q = queueRef.current;
-    if (index < 0 || index >= q.length) return;
-    if (prunePlayed && index > 0) {
-      const trimmed = q.slice(index);
-      applyQueueEdit(trimmed, 0);
-      playTrack(trimmed[0], 0, { transition });
+  /**
+   * Reconcile playback with a programme snapshot. The server (or the local
+   * schedule) said what is on air; this decides whether the media needs to
+   * move. PAUSE is local: a paused player only updates the display.
+   */
+  const applyProgramme = useCallback((snap: ProgrammeSnapshot) => {
+    programmeRef.current = {
+      items: itemsFrom(snap),
+      skewMs: skewFrom(snap, Date.now()),
+    };
+    clearDeadAirTimer();
+    const cur = snap.current;
+
+    if (!cur) {
+      // Dead air. If something is scheduled ahead, arm a rejoin at its start.
+      refreshUpNext();
+      const future = programmeRef.current.items.find((it) => (startOf(it) ?? -Infinity) > serverNow());
+      if (future && !userPausedRef.current) {
+        const wait = Math.max(0, (startOf(future) as number) - serverNow());
+        deadAirTimerRef.current = window.setTimeout(() => {
+          deadAirTimerRef.current = undefined;
+          const at = programmeAt(programmeRef.current.items, serverNow());
+          if (at.current && !userPausedRef.current) playItemRef.current(at.current, at.offsetMs, { transition: 'manual' });
+        }, wait + 30);
+      }
       return;
     }
-    playTrack(q[index], index, { transition });
-  }, [applyQueueEdit, playTrack, isController]);
+
+    if (cur.id === playingItemIdRef.current) {
+      // Same item: adopt new metadata (a voice may have just arrived), then
+      // correct drift if the media clock wandered off the station clock.
+      const tr = trackOf(cur);
+      if (tr) setCurrent(tr);
+      refreshUpNext();
+      const a = audioRef.current;
+      if (a && !a.paused) {
+        const s = startOf(cur);
+        if (s != null) {
+          const expected = (cur.cueIn + (serverNow() - s)) / 1000;
+          if (
+            Number.isFinite(a.duration) && expected < a.duration &&
+            Math.abs(a.currentTime - expected) > DRIFT_TOLERANCE_SEC
+          ) {
+            a.currentTime = expected;
+          }
+        }
+      }
+      return;
+    }
+
+    // A different item is on air.
+    if (userPausedRef.current) {
+      // Display follows the station; the media stays paused.
+      const tr = trackOf(cur);
+      if (tr) setCurrent(tr);
+      refreshUpNext();
+      return;
+    }
+    const wasLive = !!playingItemIdRef.current;
+    playItemRef.current(cur, snap.offsetMs, { transition: wasLive ? 'manual' : 'join' });
+  }, [refreshUpNext, serverNow]);
+
+  const applyProgrammeRef = useRef(applyProgramme);
+  applyProgrammeRef.current = applyProgramme;
 
   const playTtsUrl = useCallback((url?: string | null, after?: () => void, opts?: { reveal?: boolean }) => {
     if (!url || !ttsRef.current) {
@@ -597,140 +625,40 @@ export default function App() {
     if (opts?.reveal) startSayReveal(tts);
   }, [duck, unduck, startSayReveal, stopSayReveal]);
 
-  const stampReason = (tracks: Track[], reason?: string) => (
-    reason ? tracks.map((tr) => ({ ...tr, reason: tr.reason || reason })) : tracks
-  );
+  // A transient spoken line — the host talking over the bed NOW (chat answers,
+  // scheduled beats). Reaches us twice for our own requests (HTTP reply + WS
+  // 'say'), so text and voice each dedupe.
+  const applySay = useCallback((s: SayEvent) => {
+    const text = s.text ? cleanSayText(s.text) : '';
+    if (text && s.ts && !seenSayTsRef.current.has(s.ts)) {
+      seenSayTsRef.current.add(s.ts);
+      setSay(text);
+      setMessages((m) => [...m, { role: 'dj', text }]);
+    } else if (text && !s.ts) {
+      setSay(text);
+    }
+    if (s.ttsUrl) {
+      const key = `${s.ts ?? 0}:${s.ttsUrl}`;
+      if (!playedSayRef.current.has(key)) {
+        playedSayRef.current.add(key);
+        playTtsUrl(s.ttsUrl, undefined, { reveal: !!text });
+      }
+    }
+  }, [playTtsUrl]);
 
-  const applyBroadcast = useCallback((b: Broadcast) => {
-    if (b.ts && b.ts <= lastBroadcastTs.current) return;
-    if (b.ts) lastBroadcastTs.current = b.ts;
-    if (typeof b.revision === 'number') queueRevisionRef.current = b.revision;
+  const applySayRef = useRef(applySay);
+  applySayRef.current = applySay;
 
+  // The /api/chat and /api/trigger replies: display + voice the say (the
+  // programme itself arrives over the WS as its own push).
+  const applySegmentResult = useCallback((b: SegmentResult) => {
     setConn('on');
     if (b.error) {
-      setSay(b.say || t('sayError'));
+      setSay(b.say ? cleanSayText(b.say) : t('sayError'));
       return;
     }
-    const cleanSay = b.say ? cleanSayText(b.say) : '';
-    if (cleanSay) {
-      setSay(cleanSay);
-      setMessages((m) => [...m, { role: 'dj', text: cleanSay }]);
-    }
-
-    const shouldAutoPlay = autoPlayUserInitRef.current && isController;
-    const playTts = (after?: () => void) => {
-      if (!b.ttsUrl && b.say && after) {
-        after();
-        return;
-      }
-      // Only pace the subtitle when this voice actually voices a fresh say.
-      playTtsUrl(b.ttsUrl, after, { reveal: !!cleanSay });
-    };
-
-    try {
-    switch (b.mode) {
-      case 'append': {
-        if (b.queue?.length) {
-          const incoming = stampReason(b.queue, b.reason);
-          const merged = [...queueRef.current, ...incoming];
-          const wasIdle = idxRef.current < 0;
-          const startAt = merged.length - incoming.length;
-          syncQueueState(merged, wasIdle ? startAt : idxRef.current);
-          if (wasIdle && shouldAutoPlay) startQueue(merged, startAt);
-          else reportState();
-        }
-        return;
-      }
-      case 'insert': {
-        if (b.queue?.length) {
-          const incoming = stampReason(b.queue, b.reason);
-          const wasIdle = idxRef.current < 0;
-          const q = [...queueRef.current];
-          const at = b.placement === 'append' ? q.length : idxRef.current + 1;
-          q.splice(at, 0, ...incoming);
-          if (wasIdle) {
-            const startAt = Math.max(0, Math.min(at, q.length - 1));
-            syncQueueState(q, startAt);
-            if (shouldAutoPlay) {
-              playTts(() => startQueue(q, startAt));
-            }
-            reportState();
-            return;
-          }
-          syncQueueState(q, idxRef.current);
-          reportState();
-        }
-        playTts();
-        return;
-      }
-      case 'steer': {
-        if (Array.isArray(b.queue) && b.queue.length && typeof b.revision === 'number') {
-          syncFromServer(stampReason(b.queue, b.reason), b.revision, idxRef.current);
-        } else {
-          const keep = idxRef.current + 1;
-          syncQueueState(queueRef.current.slice(0, keep), idxRef.current);
-        }
-        reportState();
-        playTts();
-        return;
-      }
-      case 'chat':
-        playTts();
-        return;
-      default: {
-        const q = b.queue?.length ? stampReason(b.queue, b.reason) : null;
-        if (q) {
-          const wasIdle = idxRef.current < 0;
-          syncQueueState(q, wasIdle ? 0 : idxRef.current);
-          if (shouldAutoPlay) playTts(() => startQueue(q, wasIdle ? 0 : idxRef.current));
-          else playTts();
-        } else playTts();
-      }
-    }
-    } finally {
-      autoPlayUserInitRef.current = false;
-    }
-  }, [t, startQueue, syncQueueState, reportState, playTtsUrl, isController]);
-
-  const applyBroadcastRef = useRef(applyBroadcast);
-  applyBroadcastRef.current = applyBroadcast;
-
-  const applyTtsPatch = useCallback((p: TtsPatch) => {
-    if (!p.ttsUrl) return;
-
-    if (p.mode === 'append' && p.track) {
-      const idx = queueRef.current.findIndex((tr, i) => {
-        if (i <= idxRef.current) return false;
-        if (p.track?.source && p.track?.id) return tr.source === p.track.source && tr.id === p.track.id;
-        return tr.title === p.track?.title && tr.artist === p.track?.artist;
-      });
-      if (idx >= 0) {
-        const next = queueRef.current.map((tr, i) => (
-          i === idx ? { ...tr, segueTtsUrl: p.ttsUrl } : tr
-        ));
-        syncQueueState(next, idxRef.current);
-      }
-      return;
-    }
-
-    if (p.ts && p.ts < lastBroadcastTs.current) return;
-    if (p.ts && Date.now() - p.ts > 45000) return;
-    playTtsUrl(p.ttsUrl);
-  }, [playTtsUrl, syncQueueState]);
-
-  const applyTtsPatchRef = useRef(applyTtsPatch);
-  applyTtsPatchRef.current = applyTtsPatch;
-
-  const clearPlaybackRecovery = () => {
-    if (playbackRecoveryTimer.current) {
-      window.clearTimeout(playbackRecoveryTimer.current);
-      playbackRecoveryTimer.current = undefined;
-    }
-    if (skipTimerRef.current) {
-      window.clearTimeout(skipTimerRef.current);
-      skipTimerRef.current = undefined;
-    }
-  };
+    applySay({ ts: b.ts, kind: b.kind, text: b.say, ttsUrl: b.ttsUrl });
+  }, [applySay, t]);
 
   const refreshTaste = useCallback(() => {
     api.taste().then((r) => {
@@ -742,14 +670,13 @@ export default function App() {
   }, []);
 
   const emitPlaybackEvent = useCallback((event: 'started' | 'completed' | 'skipped' | 'replayed' | 'like' | 'dislike', track?: Track | null) => {
-    const tr = track || queueRef.current[idxRef.current];
+    const tr = track || current;
     if (!tr?.id) return;
     const a = audioRef.current;
     api.playbackEvent({
       event,
       track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
       position_sec: a?.currentTime || 0,
-      queue_index: idxRef.current,
     }).catch(() => {});
     if (event === 'like') {
       setLikedKey(`${tr.source}:${tr.id}`);
@@ -762,109 +689,78 @@ export default function App() {
       window.setTimeout(() => setFeedbackHint(''), 3000);
       refreshTaste();
     }
-  }, [t, refreshTaste]);
+  }, [t, refreshTaste, current]);
 
-  const next = (opts?: { reason?: 'skip' | 'end'; transition?: 'auto' | 'manual' }) => {
-    clearPlaybackRecovery();
-    const q = queueRef.current;
-    const reason = opts?.reason || 'skip';
-    if (reason === 'skip' && idxRef.current >= 0 && idxRef.current < q.length) {
-      emitPlaybackEvent('skipped', q[idxRef.current]);
+  // Skip is a station operation: the on-air item ends now — for every
+  // listener. The HTTP reply is a fresh programme snapshot, so the local
+  // player reconciles immediately without waiting for the WS push.
+  const requestSkip = useCallback(async () => {
+    if (skipPendingRef.current) return;
+    skipPendingRef.current = true;
+    try {
+      const snap = await api.skip();
+      if (snap?.serverNow) applyProgrammeRef.current(snap);
+    } catch { /* the WS push will still arrive */ }
+    finally {
+      skipPendingRef.current = false;
     }
-    if (reason === 'end' && idxRef.current >= 0 && idxRef.current < q.length) {
-      emitPlaybackEvent('completed', q[idxRef.current]);
+  }, []);
+
+  const next = () => {
+    if (current) emitPlaybackEvent('skipped', current);
+    void requestSkip();
+  };
+
+  const pauseLocal = () => {
+    userPausedRef.current = true;
+    audioRef.current?.pause();
+  };
+
+  // PLAY rejoins the live edge — the station never waited. The local schedule
+  // knows where the cursor is without a round-trip.
+  const rejoinLive = () => {
+    userPausedRef.current = false;
+    primeAudio();
+    const at = programmeAt(programmeRef.current.items, serverNow());
+    if (at.current) {
+      playItem(at.current, at.offsetMs, { transition: 'manual' });
+      return;
     }
-    if (idxRef.current < q.length - 1) {
-      const ni = idxRef.current + 1;
-      playQueueIndex(ni, true, opts?.transition ?? 'manual');
-    } else if (q.length > 0 && idxRef.current === q.length - 1) {
-      reportState();
-    }
+    // Nothing on air right now — ask the server for a fresh view (the log may
+    // have moved on while we were away from the WS).
+    api.programme().then((snap) => {
+      if (snap?.serverNow) applyProgrammeRef.current(snap);
+    }).catch(() => {});
+  };
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (a && !a.paused) pauseLocal();
+    else rejoinLive();
   };
 
   const onAudioError = (el: HTMLAudioElement) => {
     if (el !== audioRef.current) {
-      // The standby prefetch failed — forget it. End-of-track then falls back
-      // to the ordinary advance path instead of a crossfade.
+      // The standby prefetch failed — forget it. The boundary then falls back
+      // to an ordinary start instead of a prefetched crossfade.
       prefetchRef.current = null;
       return;
     }
     clearPlaybackRecovery();
     setPlaying(false);
-    const q = queueRef.current;
-    const failedUrl = el.src || null;
-    errorTrackUrlRef.current = failedUrl;
-    if (idxRef.current >= 0 && idxRef.current < q.length - 1) {
-      const ni = idxRef.current + 1;
-      setSay(t('sayTrackFailNext'));
-      skipTimerRef.current = window.setTimeout(() => {
-        skipTimerRef.current = undefined;
-        const cur = queueRef.current[idxRef.current];
-        if (cur?.url && errorTrackUrlRef.current && cur.url !== errorTrackUrlRef.current) return;
-        playQueueIndex(ni, true);
-      }, 250);
-      return;
-    }
-    setSay(t('sayTrackFail'));
-    reportState();
-    if (isController && idxRef.current >= 0 && idxRef.current >= q.length - 1) {
-      window.setTimeout(() => reportState(), 500);
-    }
+    // The media is unplayable: ask the station to move on. The log records an
+    // honest short airing and every listener advances together.
+    setSay(t('sayTrackFailNext'));
+    void requestSkip();
   };
 
   const schedulePlaybackRecovery = () => {
     clearPlaybackRecovery();
-    const expectedUrl = queueRef.current[idxRef.current]?.url || '';
     playbackRecoveryTimer.current = window.setTimeout(() => {
       const a = audioRef.current;
       if (!a || a.paused) return;
-      if (a.src !== expectedUrl) return;
       if (a.readyState < 3) onAudioError(a);
     }, 10000);
-  };
-
-  const prev = () => {
-    clearPlaybackRecovery();
-    const q = queueRef.current;
-    if (idxRef.current > 0) {
-      emitPlaybackEvent('replayed', q[idxRef.current]);
-      const pi = idxRef.current - 1;
-      playQueueIndex(pi);
-    }
-  };
-
-  const resumePlayback = () => {
-    primeAudio();
-    const q = queueRef.current;
-    const idx = idxRef.current >= 0 ? idxRef.current : 0;
-    const a = audioRef.current!;
-    // Resume the already-loaded track in place. Re-running playTrack would reset
-    // the media element (currentTime -> 0) and could replay the segue.
-    if (idxRef.current >= 0 && q[idx]?.url && a.src === q[idx].url && !a.ended) {
-      a.play().catch(() => setSay(t('sayTapPlay')));
-      return;
-    }
-    if (q.length) {
-      playTrack(q[idx], idx);
-      return;
-    }
-    a.play().catch(() => {
-      primeAudio();
-      window.setTimeout(() => {
-        a.play().catch(() => setSay(t('sayTapPlay')));
-      }, 300);
-    });
-  };
-
-  const toggle = () => {
-    if (!isController) return;
-    const a = audioRef.current!;
-    if ((idxRef.current < 0 || !current) && queueRef.current.length) {
-      resumePlayback();
-      return;
-    }
-    if (a.paused) resumePlayback();
-    else a.pause();
   };
 
   // Transport handlers are re-created every render; keep them in refs so the
@@ -873,8 +769,6 @@ export default function App() {
   toggleRef.current = toggle;
   const nextRef = useRef(next);
   nextRef.current = next;
-  const prevRef = useRef(prev);
-  prevRef.current = prev;
 
   useEffect(() => {
     let ws: WebSocket | undefined;
@@ -894,7 +788,7 @@ export default function App() {
       ws.onopen = () => {
         setConn('on');
         reconnectDelayRef.current = 1000;
-        reportState();
+        reportStateRef.current();
       };
       ws.onclose = () => {
         wsRef.current = null;
@@ -912,29 +806,10 @@ export default function App() {
           if (m.type === 'hello') {
             clientIdRef.current = m.clientId || '';
             setWsClientId(m.clientId || null);
-            if (m.role === 'observer' || m.role === 'controller') setClientRole(m.role);
-            const q: Track[] = Array.isArray(m.queue) ? m.queue : [];
-            syncFromServer(q, m.queueRevision ?? queueRevisionRef.current);
-            void reconcileQueue();
-            reportState();
+            reportStateRef.current();
           }
-          if (m.type === 'queue' && Array.isArray(m.queue)) {
-            syncFromServer(m.queue, m.revision ?? queueRevisionRef.current);
-          }
-          if (m.type === 'broadcast') applyBroadcastRef.current(m);
-          if (m.type === 'tts') applyTtsPatchRef.current(m);
-          if (m.type === 'session') {
-            if (!m.clientId || m.clientId === clientIdRef.current) {
-              if (m.role === 'observer' || m.role === 'controller') {
-                setClientRole(m.role);
-                if (m.role === 'observer') {
-                  audioRef.current?.pause();
-                  setPlaying(false);
-                  setSay(t('sayObserver'));
-                }
-              }
-            }
-          }
+          if (m.type === 'programme') applyProgrammeRef.current(m as ProgrammeSnapshot);
+          if (m.type === 'say') applySayRef.current(m as SayEvent);
           if (m.type === 'profile') {
             window.dispatchEvent(new CustomEvent('aurio:profile-progress', { detail: m }));
           }
@@ -946,13 +821,13 @@ export default function App() {
 
     connect();
     return () => { stop = true; wsRef.current = null; ws?.close(); };
-  }, [syncFromServer, reconcileQueue, reportState, t]);
+  }, []);
 
   useEffect(() => {
     if (conn !== 'on') return;
-    const timer = window.setInterval(() => reportState(), 8000);
+    const timer = window.setInterval(() => reportStateRef.current(), 8000);
     return () => window.clearInterval(timer);
-  }, [conn, reportState]);
+  }, [conn]);
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -972,17 +847,17 @@ export default function App() {
       artwork,
     });
     navigator.mediaSession.playbackState = playing || segueActive ? 'playing' : 'paused';
-    navigator.mediaSession.setActionHandler('play', () => { if (isController) resumePlayback(); });
-    navigator.mediaSession.setActionHandler('pause', () => { if (isController) audioRef.current?.pause(); });
-    navigator.mediaSession.setActionHandler('previoustrack', () => { if (isController) prev(); });
-    navigator.mediaSession.setActionHandler('nexttrack', () => { if (isController) next(); });
+    navigator.mediaSession.setActionHandler('play', () => rejoinLive());
+    navigator.mediaSession.setActionHandler('pause', () => pauseLocal());
+    // prev is gone: radio does not rewind (the tape feature will, later).
+    navigator.mediaSession.setActionHandler('previoustrack', null);
+    navigator.mediaSession.setActionHandler('nexttrack', () => next());
     return () => {
       navigator.mediaSession.setActionHandler('play', null);
       navigator.mediaSession.setActionHandler('pause', null);
-      navigator.mediaSession.setActionHandler('previoustrack', null);
       navigator.mediaSession.setActionHandler('nexttrack', null);
     };
-  }, [current, playing, segueActive, isController]);
+  }, [current, playing, segueActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const aurio = (window as Window & { aurio?: { tray?: { setOnAir?: (on: boolean) => void } } }).aurio;
@@ -995,14 +870,13 @@ export default function App() {
     }).aurio?.media;
     if (!media?.onCommand) return;
     const unsub = media.onCommand((cmd) => {
-      if (!isController) return;
       if (cmd === 'playpause') toggleRef.current();
       else if (cmd === 'next') nextRef.current();
-      else if (cmd === 'prev') prevRef.current();
-      else if (cmd === 'stop') audioRef.current?.pause();
+      else if (cmd === 'stop') { userPausedRef.current = true; audioRef.current?.pause(); }
+      // 'prev' intentionally ignored — the station does not rewind.
     });
     return () => { unsub?.(); };
-  }, [isController]);
+  }, []);
 
   const refreshStatus = useCallback(async (announce = false) => {
     try {
@@ -1017,14 +891,10 @@ export default function App() {
             };
         setServices({ ...sourceServices, weather: !!s.config.weather });
       }
-      if (typeof s?.queue === 'number') {
-        setQueueTotal(s.queue);
-        if (idxRef.current < 0) setQueueIndex(-1);
-      }
       if (s?.musicSource === 'netease' || s?.musicSource === 'navidrome' || s?.musicSource === 'qqmusic' || s?.musicSource === 'combined') {
         setMusicSource(s.musicSource);
       }
-      if (announce && idxRef.current < 0) {
+      if (announce && !playingItemIdRef.current) {
         if (!s?.config?.navidrome && !s?.config?.netease && !s?.config?.qqmusic) {
           setSay(t('sayNoSource'));
         } else {
@@ -1044,16 +914,16 @@ export default function App() {
     return () => window.removeEventListener('aurio:settings-changed', onSettingsChanged);
   }, [refreshStatus]);
 
-  useEffect(() => () => clearPlaybackRecovery(), []);
+  useEffect(() => () => { clearPlaybackRecovery(); clearDeadAirTimer(); }, []);
 
   useEffect(() => {
-    if (!playing || !isController) return;
+    if (!playing) return;
     let lock: WakeLockSentinel | null = null;
     if ('wakeLock' in navigator) {
       navigator.wakeLock.request('screen').then((l) => { lock = l; }).catch(() => {});
     }
     return () => { lock?.release().catch(() => {}); };
-  }, [playing, isController]);
+  }, [playing]);
 
   useEffect(() => {
     api.planToday().then((r) => {
@@ -1090,61 +960,50 @@ export default function App() {
     setCur(fmt(a.currentTime));
     setDur(fmt(a.duration));
     setProgress(a.duration ? (a.currentTime / a.duration) * 100 : 0);
-    if (!scrobbled.current && a.currentTime > 20 && idxRef.current >= 0) {
+    if (!scrobbled.current && a.currentTime > 20 && current) {
       scrobbled.current = true;
-      const tr = queueRef.current[idxRef.current];
-      if (tr) api.played({
-        id: tr.id,
-        title: tr.title,
-        artist: tr.artist,
-        source: tr.source,
+      api.played({
+        id: current.id,
+        title: current.title,
+        artist: current.artist,
+        source: current.source,
         position_sec: a.currentTime,
-        queue_index: idxRef.current,
       });
     }
 
-    // Gapless handoff: inside the last PREFETCH_WINDOW_SEC load the next
-    // queued track into the standby element, re-aiming it whenever the queue
-    // changes; then hand off with an equal-power crossfade just before the
-    // current track runs out. Without the mixer this stays inert and the
-    // single-element hard cut applies.
-    if (!getMixer() || !isController || a.paused) return;
-    const total = a.duration;
-    if (!Number.isFinite(total) || total <= 0) return;
-    const standby = musicElsRef.current[activeChRef.current === 0 ? 1 : 0];
-    if (!standby) return;
-    // The previous track's tail is still fading on the standby element; it
-    // clears within a couple of seconds, and only jingle-length tracks would
-    // even want a prefetch this early.
-    if (pendingRetireRef.current) return;
-    const remaining = total - a.currentTime;
-    const nextTr = queueRef.current[idxRef.current + 1];
+    // Schedule-driven handoff: the timeline says when the next item starts
+    // (the crossfade is IN the schedule — scheduledStart is the previous
+    // item's segue point). Prefetch into the standby element as the boundary
+    // approaches, then hand off exactly at it.
+    if (a.paused || userPausedRef.current) return;
+    const { items } = programmeRef.current;
+    const playingId = playingItemIdRef.current;
+    const idx = items.findIndex((it) => it.id === playingId);
+    if (idx < 0) return;
+    const cur_ = items[idx];
+    const nextIt = nextAfter(items, playingId);
+    if (!nextIt || startOf(nextIt) == null) return;
+    const untilNext = (startOf(nextIt) as number) - serverNow();
 
-    if (remaining <= PREFETCH_WINDOW_SEC) {
-      if (nextTr?.url) {
-        if (prefetchRef.current?.url !== nextTr.url) {
-          prefetchRef.current = { url: nextTr.url };
+    if (getMixer() && !pendingRetireRef.current) {
+      const standby = musicElsRef.current[activeChRef.current === 0 ? 1 : 0];
+      const nextUrl = nextIt.streamUrl || nextIt.track?.url;
+      if (standby && nextUrl && untilNext <= PREFETCH_WINDOW_SEC * 1000) {
+        if (prefetchRef.current?.url !== nextUrl) {
+          prefetchRef.current = { url: nextUrl };
           standby.preload = 'auto';
-          standby.src = nextTr.url;
+          standby.src = nextUrl;
         }
-      } else if (prefetchRef.current) {
-        // The queue changed under us and there is no next track anymore.
-        prefetchRef.current = null;
-        standby.removeAttribute('src');
-        try { standby.load(); } catch { /* noop */ }
       }
     }
 
-    if (
-      remaining > 0 &&
-      remaining <= AUTO_CROSSFADE_SEC + 0.35 &&
-      nextTr?.url &&
-      prefetchRef.current?.url === nextTr.url &&
-      standby.readyState >= 3 &&
-      autoFadeFiredRef.current !== playTokenRef.current
-    ) {
+    if (untilNext <= 0 && autoFadeFiredRef.current !== playTokenRef.current) {
       autoFadeFiredRef.current = playTokenRef.current;
-      next({ reason: 'end', transition: 'auto' });
+      const cold = cur_.endType === 'cold';
+      playItem(nextIt, nextIt.cueIn, {
+        transition: cold ? 'cold' : 'auto',
+        fadeSec: crossfadeSecOf(cur_),
+      });
     }
   };
 
@@ -1153,7 +1012,25 @@ export default function App() {
   // events) and the standby prefetch never disturb playback state.
   const onMusicEnded = (el: HTMLAudioElement) => {
     if (el !== audioRef.current) return;
-    next({ reason: 'end' });
+    const { items } = programmeRef.current;
+    const it = items.find((x) => x.id === playingItemIdRef.current);
+    const t_ = serverNow();
+    if (it && audibleEndOf(it) - t_ > EARLY_END_SKIP_MS) {
+      // The media ran out long before the schedule says it should (a lying
+      // duration, e.g. a 30s preview): the station moves on for everyone.
+      emitPlaybackEvent('completed', current);
+      void requestSkip();
+      return;
+    }
+    emitPlaybackEvent('completed', current);
+    // Natural end. If the boundary handler didn't already fire (no overlap /
+    // timing jitter), start whatever the schedule says is on now.
+    const at = programmeAt(items, t_ + 50);
+    if (at.current && at.current.id !== playingItemIdRef.current && !userPausedRef.current) {
+      playItem(at.current, at.offsetMs, { transition: 'manual' });
+      return;
+    }
+    reportStateRef.current();
   };
   const onMusicWaiting = (el: HTMLAudioElement) => {
     if (el !== audioRef.current) return;
@@ -1167,7 +1044,7 @@ export default function App() {
     if (el !== audioRef.current) return;
     clearPlaybackRecovery();
     setPlaying(true);
-    reportState();
+    reportStateRef.current();
   };
   const onMusicPause = (el: HTMLAudioElement) => {
     if (el !== audioRef.current) return;
@@ -1175,45 +1052,30 @@ export default function App() {
     // Pausing mid-crossfade must silence the outgoing tail too.
     finalizePendingRetire();
     if (!segueActiveRef.current) setPlaying(false);
-    reportState();
-  };
-
-  const onSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const a = audioRef.current;
-    if (!a || !a.duration) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    a.currentTime = ((e.clientX - r.left) / r.width) * a.duration;
+    reportStateRef.current();
   };
 
   // Steering the programming is turning the dial: nudge the pseudo-FM
   // frequency and play the retune burst. Only user-initiated switches sound —
   // this runs from chip clicks, never on mount or on server pushes.
   const steer = async (text: string, mood?: StationMood) => {
-    if (!isController) return;
     primeAudio();
+    userPausedRef.current = false;
     if (mood) {
       setSteerMood(mood);
       playRetuneSound();
     }
-    autoPlayUserInitRef.current = true;
     setConn('busy');
     try {
-      const b = (await api.chat(text)) as Broadcast;
-      applyBroadcast(b);
+      const b = await api.chat(text);
+      applySegmentResult(b);
     } catch {
       setSay(t('sayConnFail'));
       setConn('on');
-      autoPlayUserInitRef.current = false;
     }
   };
 
   // --- Chat sheet auto-close --------------------------------------------
-  // After a successful reply the sheet lingers CHAT_AUTOCLOSE_MS so the answer
-  // is seen in-sheet, then closes back to the main card (the DJ's say already
-  // lands there). Never when the request errored, when the user focused/typed
-  // in the input since sending, or while another send is still in flight —
-  // the guard (lib/chatFlow.ts) is checked when the reply lands AND again when
-  // the timer fires, so re-engaging during the linger also keeps it open.
   const cancelChatAutoClose = useCallback(() => {
     if (chatCloseTimerRef.current !== undefined) {
       window.clearTimeout(chatCloseTimerRef.current);
@@ -1235,8 +1097,6 @@ export default function App() {
     }, CHAT_AUTOCLOSE_MS);
   }, [cancelChatAutoClose]);
 
-  // Any close path — manual, backdrop, Escape, or the auto-close itself —
-  // clears the pending timer and the hotline notice; unmount clears the timer.
   useEffect(() => {
     if (!chatOpen) {
       cancelChatAutoClose();
@@ -1246,9 +1106,8 @@ export default function App() {
   useEffect(() => cancelChatAutoClose, [cancelChatAutoClose]);
 
   const send = async (text: string) => {
-    if (!isController) return;
     primeAudio();
-    autoPlayUserInitRef.current = true;
+    userPausedRef.current = false;
     setMessages((m) => [...m, { role: 'user', text }]);
     setHotlineNotice(false);
     cancelChatAutoClose();
@@ -1257,15 +1116,14 @@ export default function App() {
     setConn('busy');
     let replied = false;
     try {
-      const b = (await api.chat(text)) as Broadcast;
-      applyBroadcast(b);
+      const b = await api.chat(text);
+      applySegmentResult(b);
       // 热线接受确认: the DJ queued the request for later — show the state line.
       if (isHotlineAccepted(b)) setHotlineNotice(true);
       replied = !b.error;
     } catch {
       setSay(t('sayConnFail'));
       setConn('on');
-      autoPlayUserInitRef.current = false;
     } finally {
       chatSendsRef.current -= 1;
     }
@@ -1273,22 +1131,20 @@ export default function App() {
   };
 
   const trig = async (kind: string) => {
-    if (!isController) return;
     primeAudio();
-    autoPlayUserInitRef.current = true;
+    userPausedRef.current = false;
     cancelChatAutoClose();
     const activityAtSend = chatActivityRef.current;
     chatSendsRef.current += 1;
     setConn('busy');
     let replied = false;
     try {
-      const b = (await api.trigger(kind)) as Broadcast;
-      applyBroadcast(b);
+      const b = await api.trigger(kind);
+      applySegmentResult(b);
       replied = !b.error;
     } catch {
       setSay(t('sayConnFail'));
       setConn('on');
-      autoPlayUserInitRef.current = false;
     } finally {
       chatSendsRef.current -= 1;
     }
@@ -1297,11 +1153,10 @@ export default function App() {
 
   // 开台仪式 (RADIO_VISION §六): the one-time first-run trigger. Mirrors trig()
   // minus the chat-sheet bookkeeping. The server performs the ceremony (scan
-  // fact + first songs) through the normal broadcast flow; a guard hit (same
+  // fact + first songs) through the normal segment flow; a guard hit (same
   // data dir, ceremony already performed) falls back to today's station open,
   // and any failure lands on the standby screen — never a trap.
   const goLiveFirstRun = async () => {
-    autoPlayUserInitRef.current = true;
     setConn('busy');
     setSay(t('sayOpening'));
     try {
@@ -1310,11 +1165,10 @@ export default function App() {
         void trig('station');
         return;
       }
-      applyBroadcast(b);
+      applySegmentResult(b);
     } catch {
       setSay(t('sayConnFail'));
       setConn('on');
-      autoPlayUserInitRef.current = false;
     }
   };
 
@@ -1322,12 +1176,11 @@ export default function App() {
   // today's behaviour exactly (ONBOARDED + plain station open). primeAudio()
   // runs synchronously inside the tap gesture, before any await.
   const finishOnboarding = async (goLive: boolean) => {
-    const action = onboardExitAction({ goLive, isController });
+    const action = onboardExitAction({ goLive, isController: true });
     if (action === 'first-run') primeAudio();
     try { await api.saveSettings({ ONBOARDED: '1' }); } catch { /* ignore */ }
     setOnboard(false);
     if (action === 'station') {
-      autoPlayUserInitRef.current = true;
       void trig('station');
     } else if (action === 'first-run') {
       void goLiveFirstRun();
@@ -1335,12 +1188,12 @@ export default function App() {
   };
 
   const cycleSource = async () => {
-    const next = nextMusicSource(musicSource, services);
-    if (next === musicSource) return;
+    const nextSrc = nextMusicSource(musicSource, services);
+    if (nextSrc === musicSource) return;
     playRetuneSound();
-    setMusicSource(next);
+    setMusicSource(nextSrc);
     try {
-      const r = await postMusicSource(next);
+      const r = await postMusicSource(nextSrc);
       if (r.musicSource) setMusicSource(r.musicSource);
     } catch {
       api.status().then((s) => {
@@ -1354,7 +1207,7 @@ export default function App() {
   const petState: PetState = talking
     ? 'talking'
     : (playing || segueActive) ? 'playing' : 'idle';
-  const controlsDisabled = !isController || conn === 'busy';
+  const controlsDisabled = conn === 'busy';
   const connLabel = conn === 'on' ? t('connOn') : conn === 'busy' ? t('connBusy') : t('connOff');
   const headerSub = playing && current
     ? current.title
@@ -1410,8 +1263,8 @@ export default function App() {
           hasTrack={!!current}
           services={services}
           musicSource={musicSource}
-          queueTotal={queueTotal}
-          queueRemaining={queueRemaining}
+          queueTotal={programmeTotal}
+          queueRemaining={upNext.length}
           station={station}
           onCycleSource={cycleSource}
         />
@@ -1429,22 +1282,15 @@ export default function App() {
           playing={playing}
           talking={talking}
           conn={conn}
-          onSeek={onSeek}
           audioRef={mainCardAudioRef}
-          queue={queue}
-          queueIndex={queueIndex}
-          onPick={(i) => playQueueIndex(i, true)}
-          onReorder={reorderUpNext}
-          onRemove={removeAt}
-          onClear={clearUpNext}
+          upNext={upNext}
           onSteer={steer}
           onTrigger={trig}
-          onResume={resumePlayback}
-          isObserver={!isController}
+          onResume={rejoinLive}
           controlsDisabled={controlsDisabled}
           tasteLine={tasteLine}
           planNote={planNote}
-          queueTotal={queueTotal}
+          queueTotal={programmeTotal}
         />
       </motion.div>
 
@@ -1455,10 +1301,6 @@ export default function App() {
       )}
 
       <motion.div {...stagger(3)} className="transport-row shrink-0">
-        <PressButton variant="ghost" ariaLabel={t('ariaPrev')} onClick={prev} disabled={controlsDisabled || queueIndex <= 0}>
-          <span className="transport-glyph"><IconPrev /></span>
-        </PressButton>
-
         <div className="transport-cluster">
           <PressButton
             variant="ghost"
@@ -1495,16 +1337,13 @@ export default function App() {
           </PressButton>
           <PressButton variant="ghost" ariaLabel={t('ariaDislike')} onClick={() => {
             emitPlaybackEvent('dislike', current);
-            clearPlaybackRecovery();
-            const q = queueRef.current;
-            if (idxRef.current < q.length - 1) playQueueIndex(idxRef.current + 1, true);
-            else reportState();
+            void requestSkip();
           }} disabled={controlsDisabled || !current}>
             <span className="transport-glyph"><IconDislike /></span>
           </PressButton>
         </div>
 
-        <PressButton variant="ghost" ariaLabel={t('ariaNext')} onClick={next} disabled={controlsDisabled || (queueIndex < 0 && queueTotal === 0)}>
+        <PressButton variant="ghost" ariaLabel={t('ariaNext')} onClick={next} disabled={controlsDisabled || !current}>
           <span className="transport-glyph"><IconNext /></span>
         </PressButton>
       </motion.div>
@@ -1564,7 +1403,7 @@ export default function App() {
       onTrigger={trig}
       busy={conn === 'busy'}
       onGoAir={() => trig('station')}
-      isObserver={!isController}
+      isObserver={false}
       notice={hotlineNotice ? t('hotlineAccepted') : null}
       onInputActivity={() => { chatActivityRef.current += 1; cancelChatAutoClose(); }}
     />

@@ -4,11 +4,11 @@
 // The ceremony itself is server-side (server/rituals.js performFirstRun); the
 // client only chooses which trigger to fire and what to do with the reply.
 
-import type { Broadcast } from './types';
+import type { SegmentResult } from './types';
 
-/** The server's /api/trigger reply for kind 'first-run' — a Broadcast plus the
- *  two ceremony-only markers. */
-export interface FirstRunResponse extends Broadcast {
+/** The server's /api/trigger reply for kind 'first-run' — a SegmentResult
+ *  plus the two ceremony-only markers. */
+export interface FirstRunResponse extends SegmentResult {
   /** Guard hit: the ceremony already performed for this data dir. */
   alreadyPerformed?: boolean;
   /** The quiet ceremony: nothing playable yet, fixed line, no segment ran. */
@@ -29,7 +29,7 @@ export type FirstRunFollowUp = 'station' | 'broadcast';
 
 /** After the first-run reply lands: a guard hit falls back to today's station
  *  open (the button must still do something); everything else — including the
- *  quiet ceremony and error replies — goes through the normal broadcast flow. */
+ *  quiet ceremony and error replies — goes through the normal reply flow. */
 export function firstRunFollowUp(b: FirstRunResponse | null | undefined): FirstRunFollowUp {
   return b?.alreadyPerformed ? 'station' : 'broadcast';
 }
