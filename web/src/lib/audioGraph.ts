@@ -1,14 +1,28 @@
-// Shared Web Audio mixer bus. Both <audio> elements are tapped exactly once
-// (createMediaElementSource throws on a second tap), summed through a master
-// gain, so ducking happens on musicGain — a schedulable a-rate ramp that does
-// NOT dim the spectrum — instead of el.volume (a pre-tap instantaneous step).
+// Shared Web Audio mixer bus. All three <audio> elements are tapped exactly
+// once (createMediaElementSource throws on a second tap), summed through a
+// master gain, so ducking happens on the shared music bus gain — a schedulable
+// a-rate ramp that does NOT dim the spectrum — instead of el.volume (a pre-tap
+// instantaneous step).
 //
-//   music -> musicSource -> musicGain -> musicAnalyser -> masterGain -> dest
-//   voice -> voiceSource -> voiceGain -> [booth chain] -> voiceAnalyser -> masterGain
+// Two music elements (A/B) alternate so the next track can be prefetched and
+// crossfaded in with equal-power (cos/sin) curves. Each channel has its own
+// GainNode for the fade; both feed the shared musicGain (the duck target), so
+// duck × crossfade compose multiplicatively and the analyser sees the sum.
+//
+//   musicA -> srcA -> channelGain[0] ─┐
+//                                     ├-> musicGain -> musicAnalyser ─┐
+//   musicB -> srcB -> channelGain[1] ─┘        (duck bus)             ├-> masterGain -> dest
+//                                                                     │
+//   voice -> voiceSource -> voiceGain -> [booth chain] -> voiceAnalyser ─┘
+
+export type MusicChannel = 0 | 1;
 
 export interface Mixer {
   ac: AudioContext;
+  /** Shared music bus gain — the duck target for the DJ voice. */
   musicGain: GainNode;
+  /** Per-element gains upstream of the bus; the crossfade happens here. */
+  musicChannelGains: [GainNode, GainNode];
   voiceGain: GainNode;
   masterGain: GainNode;
   musicAnalyser: AnalyserNode;
@@ -96,7 +110,11 @@ function armGestureResume(ac: AudioContext): void {
   events.forEach((e) => window.addEventListener(e, wake, { passive: true }));
 }
 
-export function initMixer(music: HTMLAudioElement, voice: HTMLAudioElement): Mixer | null {
+export function initMixer(
+  musicA: HTMLAudioElement,
+  musicB: HTMLAudioElement,
+  voice: HTMLAudioElement,
+): Mixer | null {
   if (mixer) return mixer;
   if (initTried) return null;
   initTried = true;
@@ -105,6 +123,8 @@ export function initMixer(music: HTMLAudioElement, voice: HTMLAudioElement): Mix
     const ac = new AC();
 
     const musicGain = ac.createGain();
+    const chanA = ac.createGain();
+    const chanB = ac.createGain();
     const voiceGain = ac.createGain();
     const masterGain = ac.createGain();
 
@@ -118,13 +138,19 @@ export function initMixer(music: HTMLAudioElement, voice: HTMLAudioElement): Mix
 
     masterGain.connect(ac.destination);
 
-    // Wire the music path fully before tapping the voice element: a throw on the
-    // second tap must not leave the (already-tapped) music element routed to a
-    // dead end and silent.
-    const musicSource = ac.createMediaElementSource(music);
-    musicSource.connect(musicGain);
+    // Wire each music path fully before tapping the next element: a throw on a
+    // later tap must not leave an already-tapped element routed to a dead end
+    // and silent.
     musicGain.connect(musicAnalyser);
     musicAnalyser.connect(masterGain);
+
+    const srcA = ac.createMediaElementSource(musicA);
+    srcA.connect(chanA);
+    chanA.connect(musicGain);
+
+    const srcB = ac.createMediaElementSource(musicB);
+    srcB.connect(chanB);
+    chanB.connect(musicGain);
 
     const voiceSource = ac.createMediaElementSource(voice);
     const chain = buildVoiceChain(ac);
@@ -139,6 +165,7 @@ export function initMixer(music: HTMLAudioElement, voice: HTMLAudioElement): Mix
     mixer = {
       ac,
       musicGain,
+      musicChannelGains: [chanA, chanB],
       voiceGain,
       masterGain,
       musicAnalyser,
@@ -182,6 +209,71 @@ export function duckMusic(target = 0.25, tau = 0.08): void {
 export function unduckMusic(tau = 0.5): void {
   if (!mixer) return;
   ramp(mixer.musicGain, mixer.ac, 1, tau);
+}
+
+// --- per-channel fades (the crossfade lives here, not on the duck bus) ------
+
+const CURVE_POINTS = 33;
+
+// Capture the current value, cancel whatever is scheduled (an interrupted fade
+// must not snap), re-anchor, then draw the shaped curve. The curve starts a
+// few ms out so it never collides with the anchor event; a browser that still
+// rejects the curve gets a plain linear ramp instead of a click.
+function scheduleFade(
+  gain: GainNode,
+  ac: AudioContext,
+  shape: (t: number, v0: number) => number,
+  seconds: number,
+  endValue: number,
+): void {
+  const p = gain.gain;
+  const now = ac.currentTime;
+  const v0 = p.value;
+  p.cancelScheduledValues(now);
+  p.setValueAtTime(v0, now);
+  if (seconds <= 0.02) {
+    p.setValueAtTime(endValue, now);
+    return;
+  }
+  const curve = new Float32Array(CURVE_POINTS);
+  for (let i = 0; i < CURVE_POINTS; i++) {
+    curve[i] = Math.max(0, shape(i / (CURVE_POINTS - 1), v0));
+  }
+  curve[0] = v0;
+  curve[CURVE_POINTS - 1] = endValue;
+  try {
+    p.setValueCurveAtTime(curve, now + 0.006, seconds - 0.006);
+  } catch {
+    p.linearRampToValueAtTime(endValue, now + seconds);
+  }
+}
+
+const fadeOutShape = (t: number, v0: number) => v0 * Math.cos((t * Math.PI) / 2);
+const fadeInShape = (t: number, v0: number) => v0 + (1 - v0) * Math.sin((t * Math.PI) / 2);
+
+/** Hard-set a channel gain (cancels any in-flight fade). */
+export function setMusicChannelGain(ch: MusicChannel, value: number): void {
+  if (!mixer) return;
+  const p = mixer.musicChannelGains[ch].gain;
+  const now = mixer.ac.currentTime;
+  p.cancelScheduledValues(now);
+  p.setValueAtTime(Math.max(0, value), now);
+}
+
+/**
+ * Equal-power crossfade between the two music channels: cos out, sin in, so
+ * the summed power stays flat and there is no mid-fade dip.
+ */
+export function crossfadeMusic(from: MusicChannel, to: MusicChannel, seconds = 2): void {
+  if (!mixer || from === to) return;
+  scheduleFade(mixer.musicChannelGains[from], mixer.ac, fadeOutShape, seconds, 0);
+  scheduleFade(mixer.musicChannelGains[to], mixer.ac, fadeInShape, seconds, 1);
+}
+
+/** Quick fade-out of one channel (manual skip: no 2s drag, just no click). */
+export function fadeOutMusic(ch: MusicChannel, seconds = 0.25): void {
+  if (!mixer) return;
+  scheduleFade(mixer.musicChannelGains[ch], mixer.ac, fadeOutShape, seconds, 0);
 }
 
 export function resumeMixer(): void {

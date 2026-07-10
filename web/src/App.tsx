@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MainCard from './components/MainCard';
 import ChatSheet from './components/ChatSheet';
@@ -18,16 +18,39 @@ import { spring, stagger } from './lib/motion';
 import { cleanSayText } from './lib/highlight';
 import { dedupeQueue } from './lib/queue';
 import { coverUrl } from './lib/cover';
-import { initMixer, resumeMixer, duckMusic, unduckMusic, getMixer } from './lib/audioGraph';
+import {
+  initMixer, resumeMixer, duckMusic, unduckMusic, getMixer,
+  setMusicChannelGain, crossfadeMusic, fadeOutMusic, type MusicChannel,
+} from './lib/audioGraph';
 import { useI18n, usePreferences } from './context/PreferencesContext';
 import type { Track, Broadcast, ChatMsg, TtsPatch } from './lib/types';
+
+// Gapless handoff tuning: prefetch the next track into the standby element
+// once the current one has this many seconds left, then run an equal-power
+// crossfade of roughly this length right before the natural end. A manual
+// skip only gets a quick fade-out so it still feels immediate.
+const PREFETCH_WINDOW_SEC = 20;
+const AUTO_CROSSFADE_SEC = 2;
+const MANUAL_FADE_SEC = 0.25;
 
 const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
 
 export default function App() {
   const { t, localeTag, locale } = useI18n();
   const { resolved, setTheme } = usePreferences();
-  const audioRef = useRef<HTMLAudioElement>(null);
+  // audioRef is the stable accessor for THE ACTIVE music element. Two music
+  // elements (A/B) alternate underneath so the next track can be prefetched
+  // and crossfaded in; everything that asks "what is playing" (heartbeat,
+  // MediaSession, tray, seek, the pause/resume src guard) reads
+  // audioRef.current and keeps working unchanged.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const musicElsRef = useRef<(HTMLAudioElement | null)[]>([null, null]);
+  const activeChRef = useRef<MusicChannel>(0);
+  const prefetchRef = useRef<{ url: string } | null>(null);
+  const pendingRetireRef = useRef<{ ch: MusicChannel; timer: number } | null>(null);
+  const playTokenRef = useRef(0);
+  const autoFadeFiredRef = useRef(-1);
+  const cancelSegueRef = useRef<(() => void) | null>(null);
   const ttsRef = useRef<HTMLAudioElement>(null);
   const queueRef = useRef<Track[]>([]);
   const idxRef = useRef(-1);
@@ -70,8 +93,34 @@ export default function App() {
   const [queueTotal, setQueueTotal] = useState(0);
   const [queueIndex, setQueueIndex] = useState(-1);
   const [queue, setQueue] = useState<Track[]>([]);
+  // Bumped whenever audioRef.current points at a different element.
+  const [activeElVer, setActiveElVer] = useState(0);
 
   const isController = clientRole === 'controller';
+
+  // MainCard's children (Spectrum / Lyrics) capture audioRef.current inside
+  // their effects, so hand them a snapshot ref whose identity changes whenever
+  // the active element flips — the effects re-run and re-capture the right one.
+  const mainCardAudioRef = useMemo<React.RefObject<HTMLAudioElement>>(
+    () => ({ current: audioRef.current }),
+    [activeElVer], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const bindMusicEl = useCallback((ch: MusicChannel, el: HTMLAudioElement | null) => {
+    const prevEl = musicElsRef.current[ch];
+    musicElsRef.current[ch] = el;
+    if (el) {
+      if (!audioRef.current) {
+        audioRef.current = el;
+        activeChRef.current = ch;
+        setActiveElVer((v) => v + 1);
+      }
+    } else if (prevEl && audioRef.current === prevEl) {
+      audioRef.current = null;
+    }
+  }, []);
+  const bindMusicA = useCallback((el: HTMLAudioElement | null) => { bindMusicEl(0, el); }, [bindMusicEl]);
+  const bindMusicB = useCallback((el: HTMLAudioElement | null) => { bindMusicEl(1, el); }, [bindMusicEl]);
 
   const syncQueueState = useCallback((q: Track[], idx: number) => {
     const clean = dedupeQueue(q, idx);
@@ -199,15 +248,20 @@ export default function App() {
           return false;
         });
     };
-    Promise.all([prime(audioRef.current), prime(ttsRef.current)]).then(() => {
+    Promise.all([
+      prime(musicElsRef.current[0]),
+      prime(musicElsRef.current[1]),
+      prime(ttsRef.current),
+    ]).then(() => {
       audioPrimed.current = true;
     });
   }, []);
 
   useEffect(() => {
-    const music = audioRef.current;
+    const a = musicElsRef.current[0];
+    const b = musicElsRef.current[1];
     const voice = ttsRef.current;
-    if (music && voice) initMixer(music, voice);
+    if (a && b && voice) initMixer(a, b, voice);
   }, []);
 
   useEffect(() => {
@@ -221,32 +275,155 @@ export default function App() {
     return () => clearInterval(timer);
   }, [locale, localeTag]);
 
-  const playTrack = useCallback((tr: Track, idx: number) => {
+  // Retire a music channel that has finished fading out: silence it, drop its
+  // src and leave it as the standby element for the next prefetch. Never
+  // touches the active element.
+  const retireChannel = useCallback((ch: MusicChannel) => {
+    const el = musicElsRef.current[ch];
+    if (!el || el === audioRef.current) return;
+    try { el.pause(); } catch { /* noop */ }
+    el.removeAttribute('src');
+    try { el.load(); } catch { /* noop */ }
+    setMusicChannelGain(ch, 0);
+  }, []);
+
+  const finalizePendingRetire = useCallback(() => {
+    const pending = pendingRetireRef.current;
+    if (!pending) return;
+    pendingRetireRef.current = null;
+    window.clearTimeout(pending.timer);
+    retireChannel(pending.ch);
+  }, [retireChannel]);
+
+  const playTrack = useCallback((tr: Track, idx: number, opts?: { transition?: 'auto' | 'manual' }) => {
     if (!tr?.url) {
       setPlaying(false);
       setSay(t('sayTrackFail'));
       return;
     }
     clearPlaybackRecovery();
+    cancelSegueRef.current?.();
     scrobbled.current = false;
+    playTokenRef.current += 1;
     setCurrent(tr);
     setQueueIndex(idx);
     idxRef.current = idx;
     if (tr.segue) setSay(tr.segue);
 
-    const a = audioRef.current!;
-    const startSong = () => {
-      segueActiveRef.current = false;
-      setSegueActive(false);
-      a.src = tr.url!;
+    const transition = opts?.transition ?? 'manual';
+    const segueKey = tr.uid ?? `${tr.source}:${tr.id}`;
+    const wantSegue = !!(tr.segueTtsUrl && ttsRef.current && !consumedSegueRef.current.has(segueKey));
+
+    if (!getMixer()) {
+      // Fallback: mixer failed to init (autoplay/CSP edge) — keep today's
+      // single-element hard cut. audioRef never flips in this mode.
+      const a = audioRef.current;
+      if (!a) return;
+      const startSong = () => {
+        segueActiveRef.current = false;
+        setSegueActive(false);
+        a.src = tr.url!;
+        resumeMixer();
+        unduck(a);
+        api.playbackEvent({
+          event: 'started',
+          track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
+          queue_index: idx,
+        }).catch(() => {});
+        a.play()
+          .then(() => reportState())
+          .catch(() => {
+            setPlaying(false);
+            if (autoPlayUserInitRef.current) setSay(t('sayTapPlay'));
+            reportState();
+          });
+      };
+      if (wantSegue) {
+        consumedSegueRef.current.add(segueKey);
+        const tts = ttsRef.current!;
+        const dimMusic = !!(a.src && !a.paused);
+        segueActiveRef.current = true;
+        setSegueActive(true);
+        if (dimMusic) duck(a);
+        let done = false;
+        let guard: number | undefined;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          if (guard) window.clearTimeout(guard);
+          tts.onended = null;
+          tts.onerror = null;
+          startSong();
+        };
+        tts.onended = finish;
+        tts.onerror = finish;
+        guard = window.setTimeout(finish, 15000);
+        tts.src = tr.segueTtsUrl!;
+        tts.play().catch(finish);
+      } else {
+        startSong();
+      }
+      return;
+    }
+
+    // Mixer path: the incoming track starts on the standby element and the two
+    // channel gains carry the transition — an equal-power crossfade on a
+    // natural end, a quick fade-out on a manual skip. Never a hard `src` cut.
+    const startCrossfaded = (underVoice: boolean) => {
+      const outCh = activeChRef.current;
+      const inCh: MusicChannel = outCh === 0 ? 1 : 0;
+      finalizePendingRetire(); // frees the incoming element if a fade-out is still parked on it
+      const outgoing = musicElsRef.current[outCh];
+      const incoming = musicElsRef.current[inCh];
+      if (!incoming) return;
+
+      const prefetched = prefetchRef.current?.url === tr.url;
+      prefetchRef.current = null;
+      if (!prefetched) {
+        incoming.preload = 'auto';
+        incoming.src = tr.url!;
+      }
+
+      const outLive = !!(outgoing && outgoing.getAttribute('src') && !outgoing.paused && !outgoing.ended);
+
+      activeChRef.current = inCh;
+      audioRef.current = incoming;
+      setActiveElVer((v) => v + 1);
+
+      if (!underVoice) {
+        segueActiveRef.current = false;
+        setSegueActive(false);
+      }
+
       resumeMixer();
-      unduck(a);
+      if (!underVoice) unduck(incoming);
+
+      if (outLive && outgoing) {
+        if (transition === 'auto') {
+          crossfadeMusic(outCh, inCh, AUTO_CROSSFADE_SEC);
+        } else {
+          setMusicChannelGain(inCh, 1);
+          fadeOutMusic(outCh, MANUAL_FADE_SEC);
+        }
+        const fade = transition === 'auto' ? AUTO_CROSSFADE_SEC : MANUAL_FADE_SEC;
+        pendingRetireRef.current = {
+          ch: outCh,
+          timer: window.setTimeout(() => {
+            pendingRetireRef.current = null;
+            retireChannel(outCh);
+          }, fade * 1000 + 150),
+        };
+      } else {
+        setMusicChannelGain(inCh, 1);
+        retireChannel(outCh);
+      }
+
       api.playbackEvent({
         event: 'started',
         track: { id: tr.id, title: tr.title, artist: tr.artist, source: tr.source },
         queue_index: idx,
       }).catch(() => {});
-      a.play()
+      incoming.play()
         .then(() => reportState())
         .catch(() => {
           setPlaying(false);
@@ -255,34 +432,43 @@ export default function App() {
         });
     };
 
-    const segueKey = tr.uid ?? `${tr.source}:${tr.id}`;
-    if (tr.segueTtsUrl && ttsRef.current && !consumedSegueRef.current.has(segueKey)) {
+    if (wantSegue) {
+      // The crossfade IS the bed under her voice: the A→B transition runs
+      // while she talks and the duck on the shared music bus keeps it low, so
+      // she is never speaking into silence.
       consumedSegueRef.current.add(segueKey);
-      const tts = ttsRef.current;
-      const dimMusic = !!(a.src && !a.paused);
+      const tts = ttsRef.current!;
       segueActiveRef.current = true;
       setSegueActive(true);
-      if (dimMusic) duck(a);
+      duck(audioRef.current);
       let done = false;
       let guard: number | undefined;
-      const finish = () => {
+      const settle = (stopVoice: boolean) => {
         if (done) return;
         done = true;
         if (guard) window.clearTimeout(guard);
         tts.onended = null;
         tts.onerror = null;
-        startSong();
+        if (stopVoice) { try { tts.pause(); } catch { /* noop */ } }
+        if (cancelSegueRef.current === cancel) cancelSegueRef.current = null;
+        segueActiveRef.current = false;
+        setSegueActive(false);
+        unduck(audioRef.current);
       };
+      const finish = () => settle(false);
+      const cancel = () => settle(true);
+      cancelSegueRef.current = cancel;
       tts.onended = finish;
       tts.onerror = finish;
       guard = window.setTimeout(finish, 15000);
       resumeMixer();
-      tts.src = tr.segueTtsUrl;
+      tts.src = tr.segueTtsUrl!;
       tts.play().catch(finish);
+      startCrossfaded(true);
     } else {
-      startSong();
+      startCrossfaded(false);
     }
-  }, [reportState, t, duck, unduck]);
+  }, [reportState, t, duck, unduck, retireChannel, finalizePendingRetire]);
 
   const startQueue = useCallback((q: Track[], startAt = 0) => {
     if (!q.length) return;
@@ -293,17 +479,17 @@ export default function App() {
     reportState();
   }, [syncQueueState, playTrack, reportState]);
 
-  const playQueueIndex = useCallback((index: number, prunePlayed = false) => {
+  const playQueueIndex = useCallback((index: number, prunePlayed = false, transition: 'auto' | 'manual' = 'manual') => {
     if (!isController) return;
     const q = queueRef.current;
     if (index < 0 || index >= q.length) return;
     if (prunePlayed && index > 0) {
       const trimmed = q.slice(index);
       applyQueueEdit(trimmed, 0);
-      playTrack(trimmed[0], 0);
+      playTrack(trimmed[0], 0, { transition });
       return;
     }
-    playTrack(q[index], index);
+    playTrack(q[index], index, { transition });
   }, [applyQueueEdit, playTrack, isController]);
 
   const playTtsUrl = useCallback((url?: string | null, after?: () => void) => {
@@ -500,7 +686,7 @@ export default function App() {
     }
   }, [t, refreshTaste]);
 
-  const next = (opts?: { reason?: 'skip' | 'end' }) => {
+  const next = (opts?: { reason?: 'skip' | 'end'; transition?: 'auto' | 'manual' }) => {
     clearPlaybackRecovery();
     const q = queueRef.current;
     const reason = opts?.reason || 'skip';
@@ -512,17 +698,23 @@ export default function App() {
     }
     if (idxRef.current < q.length - 1) {
       const ni = idxRef.current + 1;
-      playQueueIndex(ni, true);
+      playQueueIndex(ni, true, opts?.transition ?? 'manual');
     } else if (q.length > 0 && idxRef.current === q.length - 1) {
       reportState();
     }
   };
 
-  const onAudioError = () => {
+  const onAudioError = (el: HTMLAudioElement) => {
+    if (el !== audioRef.current) {
+      // The standby prefetch failed — forget it. End-of-track then falls back
+      // to the ordinary advance path instead of a crossfade.
+      prefetchRef.current = null;
+      return;
+    }
     clearPlaybackRecovery();
     setPlaying(false);
     const q = queueRef.current;
-    const failedUrl = audioRef.current?.src || null;
+    const failedUrl = el.src || null;
     errorTrackUrlRef.current = failedUrl;
     if (idxRef.current >= 0 && idxRef.current < q.length - 1) {
       const ni = idxRef.current + 1;
@@ -549,7 +741,7 @@ export default function App() {
       const a = audioRef.current;
       if (!a || a.paused) return;
       if (a.src !== expectedUrl) return;
-      if (a.readyState < 3) onAudioError();
+      if (a.readyState < 3) onAudioError(a);
     }, 10000);
   };
 
@@ -815,8 +1007,8 @@ export default function App() {
     }).catch(() => {});
   }, []);
 
-  const onTime = () => {
-    const a = audioRef.current!;
+  const onTime = (a: HTMLAudioElement) => {
+    if (a !== audioRef.current) return;
     setCur(fmt(a.currentTime));
     setDur(fmt(a.duration));
     setProgress(a.duration ? (a.currentTime / a.duration) * 100 : 0);
@@ -832,6 +1024,80 @@ export default function App() {
         queue_index: idxRef.current,
       });
     }
+
+    // Gapless handoff: inside the last PREFETCH_WINDOW_SEC load the next
+    // queued track into the standby element, re-aiming it whenever the queue
+    // changes; then hand off with an equal-power crossfade just before the
+    // current track runs out. Without the mixer this stays inert and the
+    // single-element hard cut applies.
+    if (!getMixer() || !isController || a.paused) return;
+    const total = a.duration;
+    if (!Number.isFinite(total) || total <= 0) return;
+    const standby = musicElsRef.current[activeChRef.current === 0 ? 1 : 0];
+    if (!standby) return;
+    // The previous track's tail is still fading on the standby element; it
+    // clears within a couple of seconds, and only jingle-length tracks would
+    // even want a prefetch this early.
+    if (pendingRetireRef.current) return;
+    const remaining = total - a.currentTime;
+    const nextTr = queueRef.current[idxRef.current + 1];
+
+    if (remaining <= PREFETCH_WINDOW_SEC) {
+      if (nextTr?.url) {
+        if (prefetchRef.current?.url !== nextTr.url) {
+          prefetchRef.current = { url: nextTr.url };
+          standby.preload = 'auto';
+          standby.src = nextTr.url;
+        }
+      } else if (prefetchRef.current) {
+        // The queue changed under us and there is no next track anymore.
+        prefetchRef.current = null;
+        standby.removeAttribute('src');
+        try { standby.load(); } catch { /* noop */ }
+      }
+    }
+
+    if (
+      remaining > 0 &&
+      remaining <= AUTO_CROSSFADE_SEC + 0.35 &&
+      nextTr?.url &&
+      prefetchRef.current?.url === nextTr.url &&
+      standby.readyState >= 3 &&
+      autoFadeFiredRef.current !== playTokenRef.current
+    ) {
+      autoFadeFiredRef.current = playTokenRef.current;
+      next({ reason: 'end', transition: 'auto' });
+    }
+  };
+
+  // Both music elements share these handlers; only the active element drives
+  // app state, so the outgoing element of a crossfade (its late pause/ended
+  // events) and the standby prefetch never disturb playback state.
+  const onMusicEnded = (el: HTMLAudioElement) => {
+    if (el !== audioRef.current) return;
+    next({ reason: 'end' });
+  };
+  const onMusicWaiting = (el: HTMLAudioElement) => {
+    if (el !== audioRef.current) return;
+    schedulePlaybackRecovery();
+  };
+  const onMusicSettled = (el: HTMLAudioElement) => {
+    if (el !== audioRef.current) return;
+    clearPlaybackRecovery();
+  };
+  const onMusicPlay = (el: HTMLAudioElement) => {
+    if (el !== audioRef.current) return;
+    clearPlaybackRecovery();
+    setPlaying(true);
+    reportState();
+  };
+  const onMusicPause = (el: HTMLAudioElement) => {
+    if (el !== audioRef.current) return;
+    clearPlaybackRecovery();
+    // Pausing mid-crossfade must silence the outgoing tail too.
+    finalizePendingRetire();
+    if (!segueActiveRef.current) setPlaying(false);
+    reportState();
   };
 
   const onSeek = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -976,7 +1242,7 @@ export default function App() {
           playing={playing}
           conn={conn}
           onSeek={onSeek}
-          audioRef={audioRef}
+          audioRef={mainCardAudioRef}
           services={services}
           queue={queue}
           queueIndex={queueIndex}
@@ -1075,21 +1341,33 @@ export default function App() {
         </PressButton>
       </motion.div>
 
+      {/* A/B music elements — audioRef always points at the active one, the
+          other is the standby that prefetches and crossfades in. */}
       <audio
-        ref={audioRef}
-        onTimeUpdate={onTime}
-        onEnded={() => next({ reason: 'end' })}
-        onError={onAudioError}
-        onWaiting={schedulePlaybackRecovery}
-        onStalled={schedulePlaybackRecovery}
-        onCanPlay={clearPlaybackRecovery}
-        onPlaying={clearPlaybackRecovery}
-        onPlay={() => { clearPlaybackRecovery(); setPlaying(true); reportState(); }}
-        onPause={() => {
-          clearPlaybackRecovery();
-          if (!segueActiveRef.current) setPlaying(false);
-          reportState();
-        }}
+        ref={bindMusicA}
+        preload="auto"
+        onTimeUpdate={(e) => onTime(e.currentTarget)}
+        onEnded={(e) => onMusicEnded(e.currentTarget)}
+        onError={(e) => onAudioError(e.currentTarget)}
+        onWaiting={(e) => onMusicWaiting(e.currentTarget)}
+        onStalled={(e) => onMusicWaiting(e.currentTarget)}
+        onCanPlay={(e) => onMusicSettled(e.currentTarget)}
+        onPlaying={(e) => onMusicSettled(e.currentTarget)}
+        onPlay={(e) => onMusicPlay(e.currentTarget)}
+        onPause={(e) => onMusicPause(e.currentTarget)}
+      />
+      <audio
+        ref={bindMusicB}
+        preload="auto"
+        onTimeUpdate={(e) => onTime(e.currentTarget)}
+        onEnded={(e) => onMusicEnded(e.currentTarget)}
+        onError={(e) => onAudioError(e.currentTarget)}
+        onWaiting={(e) => onMusicWaiting(e.currentTarget)}
+        onStalled={(e) => onMusicWaiting(e.currentTarget)}
+        onCanPlay={(e) => onMusicSettled(e.currentTarget)}
+        onPlaying={(e) => onMusicSettled(e.currentTarget)}
+        onPlay={(e) => onMusicPlay(e.currentTarget)}
+        onPause={(e) => onMusicPause(e.currentTarget)}
       />
       <audio
         ref={ttsRef}
