@@ -65,9 +65,7 @@ export function buildObservation(trigger = {}) {
     })),
     plan: plan?.date === new Date().toISOString().slice(0, 10) ? plan : null,
     // At most one verified fact per observation (see detectors.js). factsLine
-    // is the ready-to-render prompt line; context.js's observation block
-    // renders a fixed field list, so surfacing it there is one line:
-    //   if (o.factsLine) lines.push(o.factsLine);
+    // is the ready-to-render prompt line, surfaced by context.js.
     facts: fact ? [fact.fact] : [],
     factsLine: fact ? factsPromptLine([fact.fact]) : '',
     ts: Date.now(),

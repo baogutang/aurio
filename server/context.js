@@ -248,6 +248,7 @@ export async function assemble(trigger = {}) {
     if (o.plan?.mood) {
       lines.push(`今日节目基调: ${o.plan.mood}${o.plan.note ? `（${o.plan.note}）` : ''}`);
     }
+    if (o.factsLine) lines.push(o.factsLine);
     blocks.push(untrusted('当前观测（实时播放状态）', lines.join('\n')));
   }
 
