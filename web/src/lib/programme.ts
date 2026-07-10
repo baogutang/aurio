@@ -119,12 +119,13 @@ export function trackOf(item: ProgrammeItem | null): Track | null {
 
 /**
  * Per-channel playback gain from the cue analysis (−16 LUFS normalization).
- * Clamped: boosting far beyond unity risks clipping the master bus.
+ * The master-bus limiter (audioGraph) catches peaks, so quiet tracks may be
+ * lifted the full +12 dB the cue analysis intends; cuts stay at −12 dB.
  */
 export function gainFactorOf(item: Pick<ProgrammeItem, 'gainDb'> | null): number {
   const db = Number(item?.gainDb);
   if (!Number.isFinite(db) || db === 0) return 1;
-  return Math.min(2, Math.max(0.25, 10 ** (db / 20)));
+  return Math.min(10 ** (12 / 20), Math.max(0.25, 10 ** (db / 20)));
 }
 
 /** Seconds of crossfade the schedule embeds at this item's tail. */

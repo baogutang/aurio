@@ -104,10 +104,12 @@ describe('trackOf', () => {
 });
 
 describe('mix parameters', () => {
-  it('gainFactorOf converts dB and clamps', () => {
+  it('gainFactorOf converts dB and clamps at ±12 dB', () => {
     expect(gainFactorOf(item('a'))).toBe(1);
     expect(gainFactorOf(item('a', { gainDb: -6 }))).toBeCloseTo(0.501, 2);
-    expect(gainFactorOf(item('a', { gainDb: 12 }))).toBe(2);   // clamped
+    // The master-bus limiter gives normalization its full +12 dB headroom.
+    expect(gainFactorOf(item('a', { gainDb: 12 }))).toBeCloseTo(3.981, 2);
+    expect(gainFactorOf(item('a', { gainDb: 24 }))).toBeCloseTo(3.981, 2); // clamped
     expect(gainFactorOf(item('a', { gainDb: -24 }))).toBe(0.25); // clamped
     expect(gainFactorOf(null)).toBe(1);
   });

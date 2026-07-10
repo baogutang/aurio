@@ -11,9 +11,13 @@
 //
 //   musicA -> srcA -> channelGain[0] ─┐
 //                                     ├-> musicGain -> musicAnalyser ─┐
-//   musicB -> srcB -> channelGain[1] ─┘        (duck bus)             ├-> masterGain -> dest
+//   musicB -> srcB -> channelGain[1] ─┘        (duck bus)             ├-> masterGain -> limiter -> dest
 //                                                                     │
 //   voice -> voiceSource -> voiceGain -> [booth chain] -> voiceAnalyser ─┘
+//
+// The limiter is a brick-wall safety net (−1 dB ceiling, 20:1) so the per-item
+// loudness normalization can boost quiet tracks toward −16 LUFS without ever
+// clipping the DAC on inter-sample peaks.
 
 export type MusicChannel = 0 | 1;
 
@@ -136,7 +140,17 @@ export function initMixer(
     voiceAnalyser.fftSize = 256;
     voiceAnalyser.smoothingTimeConstant = 0.6;
 
-    masterGain.connect(ac.destination);
+    // Brick-wall limiter on the master bus (ADDITIVE — the graph shape above
+    // is unchanged, this only sits between masterGain and the destination).
+    const limiter = ac.createDynamicsCompressor();
+    limiter.threshold.value = -1;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.001;
+    limiter.release.value = 0.25;
+
+    masterGain.connect(limiter);
+    limiter.connect(ac.destination);
 
     // Wire each music path fully before tapping the next element: a throw on a
     // later tap must not leave an already-tapped element routed to a dead end
