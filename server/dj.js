@@ -24,6 +24,7 @@ function segmentPriority(trigger = {}, mode = 'replace') {
   if (trigger.kind === 'refill') return PRIORITY.refill;
   if (trigger.kind === 'chat') return PRIORITY.user;
   if (['morning', 'plan', 'mood'].includes(trigger.kind)) return PRIORITY.user;
+  if (trigger.kind === 'feedback') return PRIORITY.feedback;
   if (trigger.kind === 'station' && mode === 'insert') return PRIORITY.feedback;
   return PRIORITY.system;
 }
@@ -113,11 +114,16 @@ const CORRECTION = {
   tech_words: '上一版出现了技术词，请不要提任何技术相关的词。',
   too_long: '上一版太长了，请压到一句话。',
   repetition: '上一版和最近说过的话太像了，请换一个完全不同的开头和说法。',
+  same_angle: '上一版抓的具体细节和最近两段完全重叠（比如又是天气、又是时间）。换一个别的角度：正在播的这首歌本身、歌手、年份、或者听众刚做的事。',
 };
+
+// The listener never heard the rejected draft. Without this the model apologises
+// on air for a slip nobody witnessed ("刚才嘴瓢了，音乐先接上。").
+const NO_META = '这次重写对听众是不可见的：直接给出新的一句，不要提到你在重写，不要道歉，不要解释刚才发生了什么。';
 
 function correctiveNote(codes) {
   const lines = codes.map((c) => CORRECTION[c]).filter(Boolean);
-  return `（重写要求，只改口播、不改选曲）\n${lines.join('\n')}`;
+  return `（重写要求，只改口播、不改选曲）\n${lines.join('\n')}\n${NO_META}`;
 }
 
 export async function composeSegment(trigger = {}) {
@@ -228,7 +234,7 @@ async function runSegmentInner(trigger = {}, { mode = 'replace', currentIndex: p
     if (priority < PRIORITY.user && pendingHighPriority > 0) {
       return { error: 'superseded', revision: revisionNow() };
     }
-    if (trigger.text) db.addMessage('user', trigger.text, { kind: trigger.kind || 'chat' });
+    if (trigger.kind === 'chat' && trigger.text) db.addMessage('user', trigger.text, { kind: 'chat' });
 
     const seg = await composeSegment(trigger);
     if (priority < PRIORITY.user && pendingHighPriority > 0) {

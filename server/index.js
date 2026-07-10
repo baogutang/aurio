@@ -223,14 +223,21 @@ app.get('/api/ready', async (req, res) => {
   });
 });
 
+// Builds before 0.4.1 logged a synthetic "用户刚跳过了：…" line on every skip as
+// if the listener had typed it. Those rows are still in everyone's store; hide
+// them rather than rewriting the user's history.
+const SYNTHETIC_USER = /^用户(刚跳过了|不喜欢这首)[：:]/;
+
 app.get('/api/messages', (req, res) => {
   const limit = Math.max(1, Math.min(200, Number(req.query.limit || 80) || 80));
   res.json({
-    messages: db.messages(limit).map((m) => ({
-      role: m.role === 'user' ? 'user' : 'dj',
-      text: (m.text || '').toString(),
-      ts: m.ts,
-    })),
+    messages: db.messages(limit)
+      .filter((m) => !(m.role === 'user' && SYNTHETIC_USER.test((m.text || '').toString())))
+      .map((m) => ({
+        role: m.role === 'user' ? 'user' : 'dj',
+        text: (m.text || '').toString(),
+        ts: m.ts,
+      })),
   });
 });
 

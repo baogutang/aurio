@@ -8,6 +8,7 @@ import { weather } from './weather/openweather.js';
 import { todayEvents } from './calendar/index.js';
 import { profileText } from './taste-profile.js';
 import { tasteSummary } from './agent/preferences.js';
+import { recentAngles } from './agent/judge.js';
 
 function readIfExists(p) {
   try { return fs.readFileSync(p, 'utf8'); } catch { return ''; }
@@ -157,8 +158,22 @@ function memory() {
   return lines.join('\n') || '暂无播放历史';
 }
 
+// Older builds wrote synthetic "用户刚跳过了：…" lines into the message log as if
+// the listener had typed them. They are still sitting in everyone's store.json,
+// and feeding them back teaches the host to imitate its own filler. Drop them on
+// read rather than mutating the user's data.
+const SYNTHETIC_USER = /^用户(刚跳过了|不喜欢这首)[：:]/;
+
+// Only real dialogue belongs here. A scheduled beat has no interlocutor, so its
+// spoken line is a monologue — and showing the host ten of its own monologues
+// under the heading "recent conversation" is how it learns to imitate its own
+// filler. Its own recent lines still reach it via the segment memory below,
+// where they are labelled as something to vary from rather than to continue.
 function history() {
-  const msgs = db.recentMessages(10);
+  const msgs = db.recentMessages(40)
+    .filter((m) => (m.meta?.kind || 'chat') === 'chat')
+    .filter((m) => !(m.role === 'user' && SYNTHETIC_USER.test(m.text || '')))
+    .slice(-10);
   if (!msgs.length) return '';
   return msgs.map((m) => `${m.role === 'user' ? '用户' : 'Aurio'}: ${m.text}`).join('\n');
 }
@@ -246,7 +261,7 @@ export async function assemble(trigger = {}) {
     const recent = segMem.slice(-5).map((s) =>
       `- [${s.kind}] ${s.say || ''}${s.tracks?.length ? ` → ${s.tracks.join('、')}` : ''}`
     ).join('\n');
-    blocks.push(untrusted('最近节目段落', recent));
+    blocks.push(`## 你最近播出的段落\n下面是你自己刚说过的话。它们的作用是让这一段自然接上，**不是**让你照着句式再写一遍。换一个角度、换一种句子结构。\n${recent}`);
   }
 
   // Continuity: this is an ongoing stream, not a one-shot request. Keep segments
@@ -274,11 +289,21 @@ export async function assemble(trigger = {}) {
     morning: '早间时段，做一段早安开场',
     mood: '整点情绪检查，根据时间/天气/日程微调',
     station: '现在开台：编一段电台节目（一句开场白 + 挑 3–5 首歌）',
+    feedback: '听众连着跳过了几首。换个方向，口播最多一句，也可以不说话。',
     refill: '队列快见底了：无缝续播，保持当前电台情绪，追加 3–5 首，口播尽量短或留空',
   }[trigger.kind] || '触发';
 
   blocks.push(`## 本次触发\n[${triggerLabel}]`);
+  if (trigger.fact) blocks.push(`## 刚刚发生的事（由程序观测到的事实）\n${trigger.fact}`);
   if (trigger.text) blocks.push(untrusted('本次用户输入', trigger.text));
+
+  // Hand the host the angles it has already worn out, so it has to find a fresh
+  // one instead of reaching for the weather every single break.
+  const worn = recentAngles();
+  if (worn.length) {
+    const label = { weather: '天气', clock: '报时', skip: '跳过/换歌这件事', title: '念歌名', memory: '回忆', music: '音乐本身' };
+    blocks.push(`## 别重复自己\n最近两段口播已经用过这些角度：${worn.map((c) => label[c] || c).join('、')}。这一段换一个别的具体细节，或者干脆不说话。`);
+  }
 
   const ex = exemplars(trigger.kind);
   if (ex) blocks.push(`## 口播示范（学这个感觉，别照抄内容）\n下面是一些真人电台主播会说的话。看她怎么抓一个具体的点、怎么留白：\n${ex}`);
