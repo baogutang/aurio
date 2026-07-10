@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
-import { useI18n } from '../context/PreferencesContext';
+import { useI18n, usePreferences } from '../context/PreferencesContext';
 import type { Track, LyricLine } from '../lib/types';
 
 function activeIndex(lines: LyricLine[], t: number): number {
@@ -18,6 +18,7 @@ export default function Lyrics({ track, audioRef }: {
   audioRef: React.RefObject<HTMLAudioElement>;
 }) {
   const { t } = useI18n();
+  const { reducedMotion } = usePreferences();
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [synced, setSynced] = useState(false);
   const [active, setActive] = useState(-1);
@@ -79,17 +80,21 @@ export default function Lyrics({ track, audioRef }: {
       const row = rowRefs.current[active];
       const container = containerRef.current;
       if (!row || !container) return;
-      const target = row.offsetTop - (container.clientHeight - row.offsetHeight) / 2;
+      // Rect-based: offsetTop measures from the nearest POSITIONED ancestor
+      // (.app-card), not from this panel, which pinned the target past the
+      // scroll range and left the active line stuck at the bottom edge.
+      const rowTop = container.scrollTop
+        + (row.getBoundingClientRect().top - container.getBoundingClientRect().top);
+      const target = rowTop - (container.clientHeight - row.offsetHeight) / 2;
       const jump = Math.abs(active - lastScrollActive.current) > 2;
       lastScrollActive.current = active;
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       container.scrollTo({
-        top: Math.max(0, target),
-        behavior: reduced || jump ? 'auto' : 'smooth',
+        top: Math.min(Math.max(0, target), container.scrollHeight - container.clientHeight),
+        behavior: reducedMotion || jump ? 'auto' : 'smooth',
       });
     });
     return () => cancelAnimationFrame(scrollRaf.current);
-  }, [active]);
+  }, [active, reducedMotion]);
 
   if (loading) {
     return <p className="lyrics-empty text-center text-[12px] text-[var(--text-muted)] py-3">{t('lyricsLoading')}</p>;
