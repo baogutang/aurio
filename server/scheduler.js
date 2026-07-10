@@ -37,10 +37,13 @@ const jobs = [];                 // fixed jobs: plan, recap, hourly ID
 const showJobs = new Map();      // "name@expr" → live show-open cron
 let reloadTimer = null;
 const SHOWS_RELOAD_MS = 30000;   // re-stat cadence for user/shows.json
-const RUN_WITHOUT_LISTENER = String(process.env.AURIO_SCHEDULE_WITHOUT_LISTENER || '').toLowerCase() === 'true';
-
+// Scheduled beats are pure spend (LLM + TTS). The playout cursor advances
+// regardless (server/playout); a beat with no listener would talk to an empty
+// room and burn tokens, so spend waits for one. The old
+// AURIO_SCHEDULE_WITHOUT_LISTENER escape hatch is gone — post-cutover its only
+// meaning was "spend with nobody listening".
 function gate(kind) {
-  if (!RUN_WITHOUT_LISTENER && !hasActiveSession()) {
+  if (!hasActiveSession()) {
     console.log('[scheduler] skipped', kind, '(no active listener)');
     return false;
   }
@@ -49,8 +52,7 @@ function gate(kind) {
 
 function runPlan() {
   if (!gate('plan')) return;
-  const mode = hasActiveSession() ? 'append' : 'replace';
-  runSegment({ kind: 'plan' }, { mode, currentIndex: currentIndex() })
+  runSegment({ kind: 'plan' }, { mode: 'append', currentIndex: currentIndex() })
     .catch((e) => console.error('[scheduler] plan', e.message));
 }
 
