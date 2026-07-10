@@ -1,14 +1,11 @@
-import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ClockDisplay from './ClockDisplay';
 import BootLog from './BootLog';
 import Spectrum from './Spectrum';
 import Lyrics from './Lyrics';
 import UpNext from './UpNext';
-import AlbumArt from './AlbumArt';
 import { renderSay } from '../lib/highlight';
 import { spring } from '../lib/motion';
-import type { RGB } from '../lib/swatch';
 import { usePreferences } from '../context/PreferencesContext';
 import type { NowDisplay } from '../lib/dateFormat';
 import type { Track } from '../lib/types';
@@ -49,7 +46,6 @@ export default function MainCard({
   tasteLine = '', planNote = '', queueTotal = 0,
 }: Props) {
   const { clock, tr: t, resolved } = usePreferences();
-  const [swatch, setSwatch] = useState<RGB | null>(null);
   const sayTheme = resolved === 'light' ? 'card' : 'dark';
   const live = conn === 'on' || conn === 'busy';
   const airLabel = conn === 'on' ? t('onAir') : conn === 'busy' ? t('busy') : t('standby');
@@ -70,7 +66,6 @@ export default function MainCard({
           exit={{ opacity: 0, y: -8 }}
           transition={spring.gentle}
           className="panel-dot main-card main-card--play"
-          style={{ ['--art-rgb' as string]: swatch ? swatch.join(', ') : 'var(--accent-rgb)' }}
         >
           <div className="flex items-center justify-between mb-3 shrink-0">
             <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
@@ -96,35 +91,17 @@ export default function MainCard({
             )}
             <Spectrum audioRef={audioRef} height={108} />
 
-            <div className="mt-3 flex items-center gap-3">
-              <div className="relative shrink-0">
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute -inset-2 rounded-full"
-                  style={{
-                    background:
-                      'radial-gradient(circle at 50% 50%, rgba(var(--art-rgb), 0.45), transparent 70%)',
-                    filter: 'blur(11px)',
-                  }}
-                />
-                <div className="relative">
-                  <AlbumArt track={track} size={64} onSwatch={setSwatch} />
-                </div>
-              </div>
-              <div className="min-w-0 flex-1">
-                <motion.h1
-                  key={track.title}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="font-matrix text-[1.28rem] font-bold leading-snug line-clamp-2 text-[var(--text-primary)] tracking-[0.02em]"
-                >
-                  {track.title}
-                </motion.h1>
-                <p className="mt-0.5 text-xs text-[var(--text-muted)] truncate">
-                  {[track.artist, track.album].filter(Boolean).join(' · ')}
-                </p>
-              </div>
-            </div>
+            <motion.h1
+              key={track.title}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-3 font-matrix text-[1.28rem] font-bold leading-snug line-clamp-2 text-[var(--text-primary)] tracking-[0.02em]"
+            >
+              {track.title}
+            </motion.h1>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)] truncate">
+              {[track.artist, track.album].filter(Boolean).join(' · ')}
+            </p>
 
             <div className="mt-2.5 rounded-xl px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]"
               style={{ background: 'var(--glass)', border: '1px solid var(--glass-border)' }}>
