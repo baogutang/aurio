@@ -18,7 +18,7 @@ import { lyricsFor } from './index.js';
 const CREDIT_KEYS = /(作词|作曲|填词|谱曲|编曲|制作|监制|出品|发行|混音|母带|录音|和声|合声|演唱|原唱|翻唱|歌手|艺人|吉他|贝斯|键盘|钢琴|弦乐|打击乐|鼓|笛|企划|统筹|策划|封面|设计|视觉|经纪|宣传|版权|词|曲|OP|SP|ISRC)/i;
 const CREDIT_KEYS_EN = /\b(lyrics?|lyricist|music|melody|composer|composed|arranger?|arranged|producer|produced|written|mixed|mixing|master(?:ed|ing)?|record(?:ed|ing)?|vocals?|chorus\s*by|guitar|bass|drums?|piano|keyboards?|strings|label|publisher)\b/i;
 
-function isCreditLine(line) {
+export function isCreditLine(line) {
   const m = line.match(/^([^:：︰]{1,24})[:：︰]/);
   if (m && (CREDIT_KEYS.test(m[1]) || CREDIT_KEYS_EN.test(m[1]))) return true;
   if (/^(lyrics?|music|composed|arranged|produced|written|mixed|mastered|performed)\s+by\b/i.test(line)) return true;
@@ -28,7 +28,7 @@ function isCreditLine(line) {
 
 // Whole line wrapped in brackets → section header or annotation ([Verse 1],
 // 【副歌】, (Chorus), 《歌名》…), never a singable line.
-function isBracketHeader(line) {
+export function isBracketHeader(line) {
   return /^[\[【(（<《{].*[\]】)）>》}]$/.test(line);
 }
 
