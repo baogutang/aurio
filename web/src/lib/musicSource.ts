@@ -2,7 +2,9 @@ import { authHeaders } from './api';
 
 export type MusicSourceMode = 'combined' | 'netease' | 'navidrome' | 'qqmusic';
 export type MusicServices = { netease: boolean; navidrome: boolean; qqmusic?: boolean };
-type SourceLabelKey = 'sourceCombined' | 'sourceNetease' | 'sourceNas' | 'sourceQQ' | 'sourceNone';
+type SourceLabelKey =
+  | 'sourceCombined' | 'sourceNetease' | 'sourceNas' | 'sourceQQ' | 'sourceNone'
+  | 'sourceHintPrefix';
 
 function liveCount(svc: MusicServices) {
   return Number(!!svc.netease) + Number(!!svc.navidrome) + Number(!!svc.qqmusic);
@@ -46,11 +48,8 @@ export function labelForSource(
   if (mode === 'netease' && svc.netease) return t('sourceNetease');
   if (mode === 'navidrome' && svc.navidrome) return t('sourceNas');
   if (mode === 'qqmusic' && svc.qqmusic) return t('sourceQQ');
-  if (liveCount(svc) > 0) return t('sourceCombined');
-  if (svc.netease) return t('sourceNetease');
-  if (svc.navidrome) return t('sourceNas');
-  if (svc.qqmusic) return t('sourceQQ');
-  return t('sourceNone');
+  // A stale mode (e.g. netease after logout) displays as combined.
+  return t('sourceCombined');
 }
 
 export function servicesFromModes(modes: MusicSourceMode[] = []): MusicServices {
@@ -66,5 +65,5 @@ export function hintForSources(
   t: (k: SourceLabelKey) => string,
 ): string | undefined {
   const labels = availableSourceModes(svc).map((mode) => labelForSource(mode, svc, t));
-  return labels.length > 1 ? `点击切换音源：${labels.join(' / ')}` : undefined;
+  return labels.length > 1 ? `${t('sourceHintPrefix')}${labels.join(' / ')}` : undefined;
 }

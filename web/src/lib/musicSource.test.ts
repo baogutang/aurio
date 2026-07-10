@@ -105,15 +105,13 @@ describe('hintForSources', () => {
     expect(hintForSources(none, idT)).toBeUndefined();
   });
 
-  it('joins available labels when several modes exist — with a hard-coded Chinese prefix', () => {
-    // BUG (documented, not fixed): the prefix ignores the t() locale, so
-    // English users get a Chinese hint. See report.
+  it('joins available labels behind the localized prefix', () => {
     expect(hintForSources(all, idT)).toBe(
-      '点击切换音源：sourceCombined / sourceNetease / sourceNas / sourceQQ',
+      'sourceHintPrefixsourceCombined / sourceNetease / sourceNas / sourceQQ',
     );
   });
 
   it('includes combined + the single service when only one source is live', () => {
-    expect(hintForSources(neteaseOnly, idT)).toBe('点击切换音源：sourceCombined / sourceNetease');
+    expect(hintForSources(neteaseOnly, idT)).toBe('sourceHintPrefixsourceCombined / sourceNetease');
   });
 });
