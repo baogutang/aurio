@@ -289,7 +289,7 @@ describe('persistence and restore', () => {
     }
     // and everything older than the window is gone
     expect(aired[0].airStart).toBeGreaterThanOrEqual(now - 12 * HOUR - 180000);
-  });
+  }, 30000); // long-running by design: ticks through a full 16h broadcast day
 
   it('the hard item cap bounds the persisted file even with short items', () => {
     rig();
@@ -306,7 +306,7 @@ describe('persistence and restore', () => {
     // the on-air anchor and the unaired future always survive
     expect(station.current()).toBeTruthy();
     expect(station.items().some((it) => it.airStart == null)).toBe(true);
-  });
+  }, 30000); // long-running by design: ticks through a 13h day of 90s items
 
   it('aired items keep their voice {text, ttsUrl} refs for the tape', () => {
     rig();
