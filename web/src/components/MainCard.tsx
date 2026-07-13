@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import HotClock from './HotClock';
 import Spectrum from './Spectrum';
+import VoiceStrip from './VoiceStrip';
 import Lyrics from './Lyrics';
 import UpNext from './UpNext';
 import { renderSay } from '../lib/highlight';
@@ -11,6 +12,7 @@ import type { NowDisplay } from '../lib/dateFormat';
 import type { Track } from '../lib/types';
 import type { StationMood } from '../lib/station';
 import type { ProgrammeItem } from '../lib/programme';
+import type { DayPlan } from '../lib/plan';
 
 interface Props {
   track: Track | null;
@@ -44,7 +46,11 @@ interface Props {
   onResume?: () => void;
   controlsDisabled?: boolean;
   tasteLine?: string;
+  /** Legacy one-line plan note (/api/plan/today) — shown only without `plan`. */
   planNote?: string;
+  /** 今日节目单 (P5-C): the structured day plan; null hides all plan chrome. */
+  plan?: DayPlan | null;
+  onOpenPlan?: () => void;
   queueTotal?: number;
 }
 
@@ -53,7 +59,7 @@ export default function MainCard({
   conn, audioRef, upNext = [], programme = [], serverNow,
   airClock = null, stationStartedAt = null, tapeMode = false, onOpenTape, onBackToLive,
   onSteer, onTrigger, onResume, controlsDisabled = false,
-  tasteLine = '', planNote = '', queueTotal = 0,
+  tasteLine = '', planNote = '', plan = null, onOpenPlan, queueTotal = 0,
 }: Props) {
   const { tr: t, resolved, reducedMotion } = usePreferences();
   const sayTheme = resolved === 'light' ? 'card' : 'dark';
@@ -145,7 +151,14 @@ export default function MainCard({
                 {t('tasteLearning')}: {tasteLine}
               </p>
             )}
-            <Spectrum audioRef={audioRef} height={108} dimmed={talking} />
+            {/* The spectrum area. While the DJ voice airs the music display
+                yields (the same `talking` that drives the audio sidechain)
+                and the Speaking strip cuts in over it — one 250ms ease each
+                way, reset instantly by the talking-state rollbacks. */}
+            <div className="relative">
+              <Spectrum audioRef={audioRef} height={108} dimmed={talking} />
+              <VoiceStrip active={talking} />
+            </div>
 
             <motion.h1
               key={track.title}
@@ -239,14 +252,28 @@ export default function MainCard({
             serverNow={stationNow}
             programme={programme}
             onOpenTape={onOpenTape}
+            plan={plan}
           />
 
           <div className="panel-dot p-3.5 mt-2.5">
-            {planNote && (
+            {/* 今日节目单 (P5-C): with a structured plan the note line becomes
+                the rundown's opener; older servers keep the plain note. When
+                neither exists, nothing renders — no empty chrome. */}
+            {plan && onOpenPlan ? (
+              <button
+                type="button"
+                className="plan-note-line mb-2"
+                onClick={onOpenPlan}
+                aria-label={t('ariaPlanOpen')}
+              >
+                <span className="plan-note-chip">▤ {t('planChip')}</span>
+                {plan.note && <span className="plan-note-text">{plan.note}</span>}
+              </button>
+            ) : planNote ? (
               <p className="mb-2 text-[10px] font-mono text-[var(--text-muted)]">
                 {t('planToday')}: {planNote}
               </p>
-            )}
+            ) : null}
             <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--text-muted)] mb-1.5">{t('djSay')}</p>
             <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]" aria-live="polite">
               {renderSay(say, sayTheme, sayReveal)}

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import MainCard from './components/MainCard';
 import ChatSheet from './components/ChatSheet';
 import TapeSheet from './components/TapeSheet';
+import PlanSheet from './components/PlanSheet';
 import SettingsModal from './components/SettingsModal';
 import Onboarding, { type OnboardGroup } from './components/Onboarding';
 import WidgetShell from './components/WidgetShell';
@@ -32,6 +33,7 @@ import {
   type ProgrammeItem, type ProgrammeSnapshot, type SayEvent,
 } from './lib/programme';
 import { tapePlayUrl, nextPlayable, tapeDisplayTrack, type TapeItem } from './lib/tape';
+import { parsePlan, type DayPlan } from './lib/plan';
 import { airPositionMs, formatWallClock, fillTemplate } from './lib/live';
 import { tuneStation, CALL_SIGN, type StationMood } from './lib/station';
 import { useI18n, usePreferences } from './context/PreferencesContext';
@@ -117,6 +119,10 @@ export default function App() {
   const [feedbackHint, setFeedbackHint] = useState('');
   const [tasteLine, setTasteLine] = useState('');
   const [planNote, setPlanNote] = useState('');
+  // 今日节目单 (P5-C): the structured day plan (GET /api/plan). null on old
+  // servers / before the morning cron — every plan surface hides then.
+  const [plan, setPlan] = useState<DayPlan | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
   const [likedKey, setLikedKey] = useState('');
   const [progress, setProgress] = useState(0);
   const [cur, setCur] = useState('0:00');
@@ -1115,6 +1121,28 @@ export default function App() {
     return () => { lock?.release().catch(() => {}); };
   }, [playing]);
 
+  // 今日节目单 (P5-C): fetched on mount, then on a slow hourly cadence — the
+  // plan is a morning artifact, not a live feed. Any failure (endpoint
+  // missing on today's servers) or empty payload parses to null and the whole
+  // layer hides. `aurio:plan-refresh` lets settings flows (e.g. a calendar
+  // just connected) nudge an immediate re-read.
+  useEffect(() => {
+    let stop = false;
+    const load = () => {
+      api.plan()
+        .then((r) => { if (!stop) setPlan(parsePlan(r)); })
+        .catch(() => { if (!stop) setPlan(null); });
+    };
+    load();
+    const timer = window.setInterval(load, 60 * 60_000);
+    window.addEventListener('aurio:plan-refresh', load);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+      window.removeEventListener('aurio:plan-refresh', load);
+    };
+  }, []);
+
   useEffect(() => {
     api.planToday().then((r) => {
       if (r?.plan?.mood) setPlanNote(r.plan.mood + (r.plan.note ? ` · ${r.plan.note}` : ''));
@@ -1534,6 +1562,8 @@ export default function App() {
           controlsDisabled={controlsDisabled}
           tasteLine={tasteLine}
           planNote={planNote}
+          plan={plan}
+          onOpenPlan={() => setPlanOpen(true)}
           queueTotal={programmeTotal}
         />
       </motion.div>
@@ -1639,10 +1669,15 @@ export default function App() {
       />
       {/* Any way the voice stops — natural end, a skip cancelling the segue
           (pause), or an error — rolls the conductor back: full sentence shows,
-          dims release, the pet settles. */}
+          dims release, the pet settles.
+          The play latch ignores the priming wav: primeAudio()'s pause() is
+          followed by load(), which per the media load algorithm DISCARDS the
+          queued 'pause' task — without the guard the prime's own 'play' would
+          latch talking=true forever (strip up, spectrum dimmed, pet mouthing)
+          with no voice airing. Priming is not the DJ speaking. */}
       <audio
         ref={ttsRef}
-        onPlay={() => setTalking(true)}
+        onPlay={(e) => { if (e.currentTarget.getAttribute('src') !== SILENT_WAV) setTalking(true); }}
         onPause={() => { setTalking(false); stopSayReveal(); }}
         onEnded={() => { setTalking(false); stopSayReveal(); }}
         onError={() => { setTalking(false); stopSayReveal(); }}
@@ -1675,6 +1710,12 @@ export default function App() {
       petState={petState}
       listeners={listeners}
       stationStartedAt={stationStartedAt}
+      serverNow={serverNow}
+    />
+    <PlanSheet
+      open={planOpen}
+      onClose={() => setPlanOpen(false)}
+      plan={plan}
       serverNow={serverNow}
     />
     <TapeSheet

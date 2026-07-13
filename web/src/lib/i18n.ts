@@ -388,6 +388,17 @@ const zh = {
   songCardTapHint: '点一下，现在就放',
   // 「现在放」 keeps the request on the urgent (插播) hotline channel.
   songCardPlayNow: '现在放 {artist} - {title}',
+
+  // P5-C: plan / speaking
+  planSheetTitle: '今日节目单',
+  planSheetSubtitle: '为你编排的一天 · 会前自动静默',
+  planChip: '节目单',
+  planQuietLabel: '静默',
+  planNowTag: 'NOW',
+  planEmptySegments: '今天还没排出分段——早间计划生成后会出现在这里。',
+  ariaPlanOpen: '打开今日节目单',
+  // Brand term — stays unlocalized, like ON AIR / fmTitle.
+  speakingLabel: 'Speaking…',
 } as const;
 
 const en: Record<MessageKey, string> = {
@@ -771,6 +782,17 @@ Paste them below and hit "Save & test" to verify.`,
   // 「现在放」 keeps the request on the urgent (插播) hotline channel — the
   // hotline listens in the station's tongue, so the token rides along.
   songCardPlayNow: 'Play it now 现在放: {artist} - {title}',
+
+  // P5-C: plan / speaking
+  planSheetTitle: 'Today’s rundown',
+  planSheetSubtitle: 'Your day, programmed · auto-quiet before meetings',
+  planChip: 'Rundown',
+  planQuietLabel: 'quiet',
+  planNowTag: 'NOW',
+  planEmptySegments: 'No segments yet — they appear once the morning plan lands.',
+  ariaPlanOpen: 'Open today’s rundown',
+  // Brand term — stays unlocalized, like ON AIR / fmTitle.
+  speakingLabel: 'Speaking…',
 };
 
 const tables: Record<Locale, Record<MessageKey, string>> = { zh, en };

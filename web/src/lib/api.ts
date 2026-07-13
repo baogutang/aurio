@@ -141,6 +141,9 @@ export const api = {
   taste: (): Promise<TasteResp> => get('/api/taste'),
   planToday: (): Promise<{ plan: { date?: string; mood?: string; note?: string } | null }> =>
     get('/api/plan/today'),
+  // 今日节目单 (P5-C). Servers without the endpoint 404 — callers run the raw
+  // payload through parsePlan() and treat any failure as "no plan today".
+  plan: (): Promise<unknown> => get('/api/plan'),
 };
 
 export const fmt = (s: number) => {

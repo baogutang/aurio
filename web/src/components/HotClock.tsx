@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MatrixTime } from './DotMatrixClock';
 import { api } from '../lib/api';
 import { angleOfTime, clockArcs, describeArc, polar, type ClockSpan, type ClockArc } from '../lib/hotClock';
+import { planArcs, quietTickAngles, PLAN_TONES, type DayPlan } from '../lib/plan';
 import { programmeAt, startOf, audibleEndOf, type ProgrammeItem } from '../lib/programme';
 import { parseTapeItems } from '../lib/tape';
 import { useI18n, usePreferences } from '../context/PreferencesContext';
@@ -14,6 +15,7 @@ import { useI18n, usePreferences } from '../context/PreferencesContext';
 // dot-matrix like the rest of the hardware face.
 
 const C = 130;            // viewBox center
+const R_PLAN = 127;       // 今日节目单 ring — thin outer layer (P5-C)
 const R_TICKS = 122;      // minute-dot ring
 const R_ARC = 110;        // programme arcs
 const R_VOICE_IN = 102;   // voice tick inner radius
@@ -33,6 +35,8 @@ interface Props {
   programme: ProgrammeItem[];
   /** Open the tape view (aired arcs / the rewind pill). Hidden when absent. */
   onOpenTape?: () => void;
+  /** 今日节目单 (P5-C): the day plan; null hides the outer ring entirely. */
+  plan?: DayPlan | null;
 }
 
 const spanOfItem = (it: ProgrammeItem): ClockSpan | null => {
@@ -57,7 +61,7 @@ function arcColor(arc: ClockArc): { stroke: string; opacity: number } {
 }
 
 export default function HotClock({
-  time, weekday, dateLine, airLabel, live, serverNow, programme, onOpenTape,
+  time, weekday, dateLine, airLabel, live, serverNow, programme, onOpenTape, plan = null,
 }: Props) {
   const { t } = useI18n();
   const { reducedMotion } = usePreferences();
@@ -97,6 +101,13 @@ export default function HotClock({
   const currentId = programmeAt(programme, now).current?.id ?? null;
   const arcs = clockArcs({ aired, programme: programmeSpans, currentId, now });
 
+  // 今日节目单 (P5-C): the current hour's slice of the day plan as a thin
+  // outer ring — kind→tone mapping documented in lib/plan.ts (PLAN_TONES).
+  // Quiet windows punch the ring out and leave hollow minute dots. A null
+  // plan (old server, cron not run yet) renders nothing at all.
+  const dayArcs = planArcs(plan, now);
+  const quietDots = quietTickAngles(plan, now);
+
   // Unwrap the hand angle so the CSS sweep never spins backwards at :00.
   const unwrap = useRef({ last: 0, turns: 0 });
   const rawAngle = angleOfTime(now);
@@ -120,6 +131,33 @@ export default function HotClock({
                 cx={p.x} cy={p.y} r={five ? 1.7 : 1}
                 fill="var(--matrix-fg)"
                 opacity={five ? 0.3 : 0.12}
+              />
+            );
+          })}
+
+          {/* 今日节目单 — the day's shape around the dial (additive layer) */}
+          {dayArcs.map((arc, i) => {
+            const tone = PLAN_TONES[arc.kind];
+            return (
+              <path
+                key={`plan-${arc.kind}-${i}`}
+                d={describeArc(C, C, R_PLAN, arc.a0, arc.a1)}
+                fill="none"
+                stroke={tone.stroke}
+                strokeOpacity={tone.opacity}
+                strokeWidth={2.2}
+                strokeDasharray={tone.dashed ? '1.6 3' : undefined}
+              />
+            );
+          })}
+          {quietDots.map((deg, i) => {
+            const p = polar(C, C, R_PLAN, deg);
+            return (
+              <circle
+                key={`quiet-${i}`}
+                cx={p.x} cy={p.y} r={1.4}
+                fill="none"
+                stroke="var(--matrix-fg)" strokeOpacity={0.55} strokeWidth={0.8}
               />
             );
           })}
