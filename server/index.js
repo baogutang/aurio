@@ -22,6 +22,7 @@ import { IMAGING_CACHE_DIR, startImaging } from './imaging.js';
 import { testWeather } from './weather/openweather.js';
 import { testIcs } from './calendar/ics.js';
 import { openCalendarPrivacy, testSystemCalendar } from './calendar/system.js';
+import { testCalendarProvider, CALENDAR_TEST_PROVIDERS } from './calendar/test.js';
 import { startScheduler } from './scheduler.js';
 import { enabledProviders } from './calendar/index.js';
 import { cast } from './cast/upnp.js';
@@ -263,6 +264,14 @@ app.get('/api/settings', (req, res) => {
         region: config.voice.tencent.region,
         voiceType: String(config.voice.tencent.voiceType),
       },
+      doubao: {
+        appid: config.doubao.appid, // appid is an identifier, not a secret
+        hasToken: !!config.doubao.token,
+        voiceType: config.doubao.voiceType,
+        speed: String(config.doubao.speed),
+        emotion: config.doubao.emotion,
+        enabled: config.doubao.enabled,
+      },
     },
     ai: {
       provider: config.ai.provider,
@@ -333,6 +342,17 @@ app.post('/api/settings/test-calendar', async (req, res) => {
 
 app.post('/api/calendar/system/test', async (req, res) => {
   res.json(await testSystemCalendar());
+});
+
+// One test route for every calendar provider (system/feishu/dingtalk/wecom/ics).
+// Runs against SAVED credentials — the settings panel saves first, then tests —
+// and always answers { ok, detail } where a failing detail says what to DO next.
+app.post('/api/calendar/test', async (req, res) => {
+  const provider = (req.body?.provider || '').toString();
+  if (!CALENDAR_TEST_PROVIDERS.includes(provider)) {
+    return res.status(400).json({ ok: false, detail: '未知的日历来源' });
+  }
+  res.json(await testCalendarProvider(provider));
 });
 
 app.post('/api/calendar/system/open-privacy', (req, res) => {

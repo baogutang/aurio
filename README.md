@@ -114,7 +114,7 @@ Streaming apps optimize for engagement. Playlists demand curation. **Aurio is a 
 | Music source | Platform catalog | Your NAS + NetEase + QQ |
 | Personality | None | Editable taste corpus + DJ persona |
 | Context | Opaque | Calendar · weather · time-of-day |
-| Voice | None | System / Tencent / Fish TTS |
+| Voice | None | System / Doubao (豆包) / Tencent / Fish TTS |
 | Privacy | Cloud-first | Local server · loopback API by default |
 
 ### Design principles

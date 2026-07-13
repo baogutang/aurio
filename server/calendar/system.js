@@ -5,7 +5,9 @@ import { spawn } from 'node:child_process';
 
 function macToday() {
   // Reads today's events from the macOS Calendar app via AppleScript.
-  return new Promise((resolve) => {
+  // Rejects on a non-zero osascript exit (most commonly: Automation permission
+  // denied, error -1743) so callers can tell "no events" from "not authorized".
+  return new Promise((resolve, reject) => {
     const script = `set output to ""
 set today to current date
 set startOfDay to today - (time of today)
@@ -20,9 +22,12 @@ end tell
 return output`;
     const child = spawn('osascript', ['-e', script], { windowsHide: true });
     let out = '';
+    let err = '';
     child.stdout.on('data', (d) => (out += d));
-    child.on('error', () => resolve([]));
-    child.on('close', () => {
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', (e) => reject(e));
+    child.on('close', (code) => {
+      if (code !== 0) return reject(new Error(err.trim() || `osascript exited ${code}`));
       const events = out.split('\n').filter(Boolean).map((line) => {
         const [title] = line.split('\t');
         return { title, start: null, end: null, source: 'system' };
@@ -46,8 +51,16 @@ export const system = {
 
 export async function testSystemCalendar() {
   if (process.platform !== 'darwin') return { ok: false, detail: '当前只支持 macOS 本机日历' };
-  const events = await macToday();
-  return { ok: true, detail: `本机日历已可读取 · 今天 ${events.length} 个事件` };
+  try {
+    const events = await macToday();
+    return { ok: true, detail: `✓ 本机日历已可读取 · 今天 ${events.length} 个事件` };
+  } catch (e) {
+    const msg = (e?.message || '').toString();
+    if (/-1743|不允许|不被允许|Not authou?rized|Not authorized/i.test(msg)) {
+      return { ok: false, detail: '还没授权读取日历：点「打开日历授权」，在 隐私与安全性 → 自动化 里允许 Aurio 控制「日历」，再回来点一次检查。' };
+    }
+    return { ok: false, detail: `读取本机日历失败：${msg.slice(0, 100)} —— 确认「日历」App 能正常打开，然后再试一次。` };
+  }
 }
 
 export function openCalendarPrivacy() {

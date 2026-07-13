@@ -122,6 +122,10 @@ export const api = {
   testWeather: (b: Record<string, string>): Promise<TestResult> => post('/api/settings/test-weather', b),
   testCalendar: (b: Record<string, string>): Promise<TestResult> => post('/api/settings/test-calendar', b),
   testSystemCalendar: (): Promise<TestResult> => post('/api/calendar/system/test', {}),
+  // Guided calendar setup: one test route for every provider, run against the
+  // SAVED credentials (panels save first, then test).
+  testCalendarProvider: (provider: string): Promise<TestResult> =>
+    post('/api/calendar/test', { provider }, { timeoutMs: 30000 }),
   openCalendarPrivacy: (): Promise<TestResult> => post('/api/calendar/system/open-privacy', {}),
   importCalendar: (b: { name: string; content: string }): Promise<TestResult & { files?: string[] }> =>
     post('/api/calendar/import', b),

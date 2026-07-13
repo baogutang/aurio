@@ -4,76 +4,14 @@ import { api } from '../lib/api';
 import { spring } from '../lib/motion';
 import { usePreferences } from '../context/PreferencesContext';
 import type { ThemeMode, LocaleMode } from '../lib/preferences';
-import type { MessageKey } from '../lib/i18n';
 import type { SettingsResp, AiProvidersResp, CastDevice, Track, ProfileResp, TasteResp } from '../lib/types';
 import { IconClose } from './icons';
+import { ChevR, ChevL, Field, ResultLine, Buttons, Guide, type T, type Res } from './settings/shared';
+import { anyCalendarConfigured } from '../lib/settingsPanels';
+import VoicePanel from './settings/VoicePanel';
+import CalendarPanel from './settings/CalendarPanel';
 
-type T = (key: MessageKey) => string;
 type Group = 'appearance' | 'ai' | 'ncm' | 'nas' | 'qq' | 'fish' | 'calendar' | 'weather' | 'cast' | 'taste' | 'updates';
-type Res = { ok: boolean; msg: string } | null;
-
-// ---- tiny inline icons (chevrons) ----
-const ChevR = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
-);
-const ChevL = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-);
-
-// ---- shared field helpers (defined outside the component to keep focus) ----
-function Field({ label, type = 'text', value, onChange, placeholder }: { label: string; type?: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return (
-    <div>
-      <label className="text-[11px] text-[var(--text-muted)] mb-1.5 block">{label}</label>
-      <input className="field" type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
-    </div>
-  );
-}
-function Area({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return (
-    <div>
-      <label className="text-[11px] text-[var(--text-muted)] mb-1.5 block">{label}</label>
-      <textarea className="field !h-24 !py-2 resize-none font-mono text-[12px]" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
-    </div>
-  );
-}
-function ResultLine({ r }: { r: Res }) {
-  if (!r) return null;
-  return <p className={`text-[13px] font-mono break-words ${r.ok ? '' : 'text-red-400'}`} style={r.ok ? { color: 'rgb(var(--hi-rgb))' } : undefined}>{r.msg}</p>;
-}
-function Buttons({ children }: { children: React.ReactNode }) {
-  return <div className="flex gap-2 pt-1">{children}</div>;
-}
-
-// Collapsible "how to get this" help: numbered steps + official links. Links open
-// in the system browser (Electron's window-open handler / a new tab in browsers).
-function Guide({ t, body, links }: { t: T; body: string; links?: { label: string; url: string }[] }) {
-  const [open, setOpen] = useState(false);
-  const steps = body.split('\n').map((s) => s.trim()).filter(Boolean);
-  return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--inset-bg)', border: '1px solid var(--glass-border)' }}>
-      <button type="button" onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3.5 py-2.5 text-[12px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-        <span>💡 {t('guideHowTo')}</span>
-        <span className={`transition-transform ${open ? 'rotate-90' : ''}`}><ChevR size={13} /></span>
-      </button>
-      {open && (
-        <div className="px-3.5 pb-3 space-y-2">
-          <ol className="space-y-1 text-[12px] leading-relaxed text-[var(--text-primary)] opacity-75 list-decimal list-inside">
-            {steps.map((s, i) => <li key={i}>{s}</li>)}
-          </ol>
-          {links && links.length > 0 && (
-            <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
-              {links.map((l) => (
-                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="text-[12px] font-medium" style={{ color: 'rgb(var(--hi-rgb))' }}>{l.label} ↗</a>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // =====================================================================
 //  Panels
@@ -381,165 +319,6 @@ function QQPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp | nu
   );
 }
 
-function FishPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp | null; onChanged: () => void }) {
-  const [provider, setProvider] = useState('system');
-  const [systemVoice, setSystemVoice] = useState('Tingting');
-  const [tencentId, setTencentId] = useState('');
-  const [tencentKey, setTencentKey] = useState('');
-  const [tencentVoice, setTencentVoice] = useState('1001');
-  const [tencentRegion, setTencentRegion] = useState('ap-guangzhou');
-  const [key, setKey] = useState('');
-  const [ref, setRef] = useState('');
-  const [hasKey, setHasKey] = useState(false);
-  const [res, setRes] = useState<Res>(null);
-  const [busy, setBusy] = useState(false);
-  const audio = useRef<HTMLAudioElement>(null);
-
-  useEffect(() => {
-    if (!settings) return;
-    setProvider(settings.voice?.provider || 'system');
-    setSystemVoice(settings.voice?.system.voice || 'Tingting');
-    setTencentId('');
-    setTencentKey('');
-    setTencentVoice(settings.voice?.tencent.voiceType || '1001');
-    setTencentRegion(settings.voice?.tencent.region || 'ap-guangzhou');
-    setKey('');
-    setRef(settings.fish.referenceId);
-    setHasKey(settings.fish.hasKey);
-  }, [settings]);
-
-  const body = (): Record<string, string> => ({
-    VOICE_PROVIDER: provider,
-    SYSTEM_TTS_VOICE: systemVoice,
-    TENCENT_TTS_VOICE_TYPE: tencentVoice,
-    TENCENT_TTS_REGION: tencentRegion,
-    ...(tencentId ? { TENCENT_SECRET_ID: tencentId } : {}),
-    ...(tencentKey ? { TENCENT_SECRET_KEY: tencentKey } : {}),
-    ...(key ? { FISH_API_KEY: key } : {}),
-    FISH_REFERENCE_ID: ref,
-  });
-  const audition = async () => {
-    setBusy(true); setRes({ ok: true, msg: t('fishAuditioning') });
-    try {
-      const r = await api.testFish(body());
-      setRes({ ok: r.ok, msg: r.ok ? r.detail : '✗ ' + r.detail });
-      if (r.ok && r.url && audio.current) { audio.current.src = r.url; audio.current.play().catch(() => {}); }
-    } catch { setRes({ ok: false, msg: t('nasReqFail') }); }
-    finally { setBusy(false); }
-  };
-  const save = async () => {
-    setBusy(true);
-    try { await api.saveSettings(body()); setRes({ ok: true, msg: t('fishSaved') }); onChanged(); }
-    catch { setRes({ ok: false, msg: t('commonSaveFail') }); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('fishHint')}</p>
-      <div className="flex gap-1.5 flex-wrap">
-        <button onClick={() => setProvider('system')} className={`option-chip ${provider === 'system' ? 'is-active' : ''}`}>{t('voiceSystem')}</button>
-        <button onClick={() => setProvider('tencent')} className={`option-chip ${provider === 'tencent' ? 'is-active' : ''}`}>{t('voiceTencent')}</button>
-        <button onClick={() => setProvider('fish')} className={`option-chip ${provider === 'fish' ? 'is-active' : ''}`}>{t('voiceFish')}</button>
-      </div>
-      {provider === 'system' && (
-        <Field label={t('voiceSystemVoice')} value={systemVoice} onChange={setSystemVoice} placeholder="Tingting" />
-      )}
-      {provider === 'tencent' && (
-        <div className="space-y-3">
-          <Guide t={t} body={t('tcGuide')} links={[
-            { label: t('guideConsole'), url: 'https://console.cloud.tencent.com/cam/capi' },
-            { label: t('guideDocs'), url: 'https://cloud.tencent.com/document/product/1073/92668' },
-          ]} />
-          <Field label={t('voiceTencentId')} type="password" value={tencentId} onChange={setTencentId} placeholder={settings?.voice?.tencent.hasSecretId ? t('fishKeyKeep') : ''} />
-          <Field label={t('voiceTencentKey')} type="password" value={tencentKey} onChange={setTencentKey} placeholder={settings?.voice?.tencent.hasSecretKey ? t('fishKeyKeep') : ''} />
-          <Field label={t('voiceTencentVoice')} value={tencentVoice} onChange={setTencentVoice} placeholder="1001" />
-          <Field label={t('voiceTencentRegion')} value={tencentRegion} onChange={setTencentRegion} placeholder="ap-guangzhou" />
-        </div>
-      )}
-      {provider === 'fish' && (
-        <div className="space-y-3">
-          <Guide t={t} body={t('fishGuide')} links={[{ label: 'fish.audio', url: 'https://fish.audio' }]} />
-          <Field label={t('fishKey')} type="password" value={key} onChange={setKey} placeholder={hasKey ? t('fishKeyKeep') : ''} />
-          <Field label={t('fishRef')} value={ref} onChange={setRef} placeholder="e.g. 7f92f8afb8ec43bf81429cc1c9199cb1" />
-        </div>
-      )}
-      <ResultLine r={res} />
-      <Buttons>
-        <button disabled={busy} onClick={audition} className="pill-btn flex-1 disabled:opacity-40">{t('fishAudition')}</button>
-        <button disabled={busy} onClick={save} className="pill-btn pill-btn-active flex-1 disabled:opacity-40">{t('commonSave')}</button>
-      </Buttons>
-      <audio ref={audio} />
-    </div>
-  );
-}
-
-function CalendarPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp | null; onChanged: () => void }) {
-  const [urls, setUrls] = useState('');
-  const [res, setRes] = useState<Res>(null);
-  const [busy, setBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (settings) setUrls(settings.calendars.ics.urls); }, [settings]);
-  const imported = settings?.calendars.ics.files || [];
-
-  const test = async () => {
-    setBusy(true); setRes({ ok: true, msg: t('commonTesting') });
-    try { const r = await api.testCalendar({ CALENDAR_ICS_URLS: urls, CALENDAR_ICS_FILES: imported.join('\n') }); setRes({ ok: r.ok, msg: (r.ok ? '✓ ' : '✗ ') + r.detail }); }
-    catch { setRes({ ok: false, msg: t('nasReqFail') }); }
-    finally { setBusy(false); }
-  };
-  const testSystem = async () => {
-    setBusy(true); setRes({ ok: true, msg: t('commonTesting') });
-    try { const r = await api.testSystemCalendar(); setRes({ ok: r.ok, msg: (r.ok ? '✓ ' : '✗ ') + r.detail }); }
-    catch { setRes({ ok: false, msg: t('nasReqFail') }); }
-    finally { setBusy(false); }
-  };
-  const openPrivacy = async () => {
-    try { const r = await api.openCalendarPrivacy(); setRes({ ok: r.ok, msg: r.detail }); }
-    catch { setRes({ ok: false, msg: t('nasReqFail') }); }
-  };
-  const importFile = async (file?: File) => {
-    if (!file) return;
-    setBusy(true); setRes({ ok: true, msg: t('calImporting') });
-    try {
-      const content = await file.text();
-      const r = await api.importCalendar({ name: file.name, content });
-      setRes({ ok: r.ok, msg: (r.ok ? '✓ ' : '✗ ') + r.detail });
-      onChanged();
-    } catch {
-      setRes({ ok: false, msg: t('nasReqFail') });
-    } finally {
-      setBusy(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  };
-  const save = async () => {
-    setBusy(true);
-    try { await api.saveSettings({ CALENDAR_ICS_URLS: urls, CALENDAR_ICS_FILES: imported.join('\n') }); setRes({ ok: true, msg: t('calSaved') }); onChanged(); }
-    catch { setRes({ ok: false, msg: t('commonSaveFail') }); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-[var(--text-muted)] leading-relaxed">{t('calHint')}</p>
-      <Guide t={t} body={t('calGuide')} />
-      <div className="grid grid-cols-2 gap-2">
-        <button disabled={busy} onClick={testSystem} className="pill-btn disabled:opacity-40">{t('calSystemTest')}</button>
-        <button disabled={busy} onClick={openPrivacy} className="pill-btn disabled:opacity-40">{t('calSystemOpen')}</button>
-      </div>
-      <input ref={fileRef} className="hidden" type="file" accept=".ics,text/calendar" onChange={(e) => importFile(e.target.files?.[0])} />
-      <button disabled={busy} onClick={() => fileRef.current?.click()} className="pill-btn w-full disabled:opacity-40">{t('calImportFile')}</button>
-      {imported.length > 0 && <p className="text-[11px] text-[var(--text-muted)] font-mono">{t('calImported')}: {imported.length}</p>}
-      <Area label={t('calIcsLabel')} value={urls} onChange={setUrls} placeholder={t('calIcsPh')} />
-      <ResultLine r={res} />
-      <Buttons>
-        <button disabled={busy} onClick={test} className="pill-btn flex-1 disabled:opacity-40">{t('commonTest')}</button>
-        <button disabled={busy} onClick={save} className="pill-btn pill-btn-active flex-1 disabled:opacity-40">{t('commonSave')}</button>
-      </Buttons>
-    </div>
-  );
-}
 
 function WeatherPanel({ t, settings, onChanged }: { t: T; settings: SettingsResp | null; onChanged: () => void }) {
   const [key, setKey] = useState('');
@@ -958,7 +737,7 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
     { id: 'nas', label: t('groupNas'), badge: settings ? (settings.navidrome.enabled ? t('badgeOn') : t('badgeOff')) : undefined, on: !!settings?.navidrome.enabled },
     { id: 'qq', label: t('groupQQ'), badge: settings ? (settings.qq.hasCookie ? t('badgeLoggedIn') : t('badgeBuiltIn')) : undefined, on: !!settings?.qq.enabled },
     { id: 'fish', label: t('groupFish'), badge: settings ? (settings.voice?.provider || 'system') : undefined, on: !!settings?.voice?.enabled },
-    { id: 'calendar', label: t('groupCalendar'), badge: settings ? ((settings.calendars.system?.enabled || settings.calendars.ics.enabled) ? t('badgeOn') : t('badgeOff')) : undefined, on: !!(settings?.calendars.system?.enabled || settings?.calendars.ics.enabled) },
+    { id: 'calendar', label: t('groupCalendar'), badge: settings ? (anyCalendarConfigured(settings.calendars) ? t('badgeOn') : t('badgeOff')) : undefined, on: !!(settings && anyCalendarConfigured(settings.calendars)) },
     { id: 'weather', label: t('groupWeather'), badge: settings ? (settings.weather.hasKey ? t('badgeOn') : t('badgeOff')) : undefined, on: !!settings?.weather.hasKey },
     { id: 'cast', label: t('groupCast') },
     { id: 'taste', label: t('groupTaste'), badge: hasProfile ? t('badgeOn') : t('badgeOff'), on: hasProfile },
@@ -972,7 +751,7 @@ export default function SettingsModal({ open, onClose, currentTrack = null, init
       case 'ncm': return <NcmPanel t={t} onChanged={reloadAfterChange} />;
       case 'nas': return <NasPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
       case 'qq': return <QQPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
-      case 'fish': return <FishPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
+      case 'fish': return <VoicePanel t={t} settings={settings} onChanged={reloadAfterChange} />;
       case 'calendar': return <CalendarPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
       case 'weather': return <WeatherPanel t={t} settings={settings} onChanged={reloadAfterChange} />;
       case 'cast': return <CastPanel t={t} currentTrack={currentTrack} />;

@@ -59,6 +59,7 @@ export interface SettingsResp {
     enabled: boolean;
     system: { voice: string };
     tencent: { hasSecretId: boolean; hasSecretKey: boolean; region: string; voiceType: string };
+    doubao?: { appid: string; hasToken: boolean; voiceType: string; speed: string; emotion: string; enabled: boolean };
   };
   ai: {
     provider: string;

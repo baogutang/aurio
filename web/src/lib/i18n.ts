@@ -325,6 +325,55 @@ const zh = {
   calGuide: `macOS 最省事：点上方「检查本机日历」授权即可。
 其它日历（Google / Outlook / 飞书等）在各自设置里找「订阅地址 / iCal / .ics 链接」，复制到下面，一行一个。
 也可以直接「导入 .ics 文件」。`,
+
+  // P5-S: doubao / calendar guide
+  reqFailHint: '✗ 请求没发出去 —— 确认 Aurio 服务端还在运行，然后再试一次。',
+  voiceHint: '默认用本机系统语音，马上能出声。推荐「豆包语音」：火山引擎的情感中文音色，最像真主播；腾讯云与 Fish 也可选。',
+  voiceDoubao: '豆包语音',
+  doubaoGuide: `打开火山引擎控制台（volcengine.com → 语音技术），进入「音频生成 → 语音合成大模型」。
+点「立即使用」开通大模型语音合成（有免费额度，需实名认证）。
+在「应用管理」创建应用并勾选大模型语音合成，进入应用详情页拿到 APP ID 和 Access Token。
+回到这里粘贴两个值，点「试听」听一句 —— 成了就保存。`,
+  doubaoAppid: 'APP ID',
+  doubaoToken: 'Access Token',
+  doubaoVoice: '音色',
+  doubaoSpeed: '语速',
+  doubaoEmotion: '情感（可选）',
+  doubaoEmotionDefault: '默认 · 音色本声',
+  doubaoEmotionHint: '仅多情感（emo）音色生效；留空就是音色本来的电台语气。',
+  doubaoCustomVoice: '自定义',
+  calChooserHint: '选一个你在用的日历接入。连接后 Aurio 每天早上读取今天的日程来编排节目（比如会议前自动少说话）。',
+  calStatusConnected: '已连接 ✓',
+  calStatusSaved: '已存凭证',
+  calStatusOff: '未配置',
+  calProvSystem: '本机日历（macOS）',
+  calProvFeishu: '飞书日历',
+  calProvDingtalk: '钉钉日历',
+  calProvWecom: '企业微信日历',
+  calProvIcs: 'ICS 订阅 / 导入',
+  calBackToChooser: '换一个日历',
+  calSaveTest: '保存并测试',
+  calSysHint: '点「检查本机日历」看 Aurio 能否读取 macOS 的「日历」。第一次会弹出系统授权框，点允许即可；没弹出或点了拒绝，就用「打开日历授权」手动打开。',
+  calFeishuGuide: `打开 open.feishu.cn → 开发者后台，创建一个「企业自建应用」。
+在应用「权限管理」搜索日历，开通 calendar:calendar:readonly（获取日历、日程及忙闲信息），创建版本并发布。
+在「凭证与基础信息」页复制 App ID 和 App Secret 粘贴到下面（日历 ID 先留空）。
+点「保存并测试」。要读你自己的日历：在飞书日历里把它共享给这个应用，再填入它的日历 ID。`,
+  calFeishuAppId: 'App ID',
+  calFeishuSecret: 'App Secret',
+  calFeishuCalId: '日历 ID（可选，默认 primary）',
+  calDingGuide: `打开 open.dingtalk.com → 应用开发，创建一个「企业内部应用」。
+在应用「凭证与基础信息」页复制 AppKey 和 AppSecret。
+粘贴到下面，点「保存并测试」验证凭证。`,
+  calDingKey: 'AppKey',
+  calDingSecret: 'AppSecret',
+  calWecomGuide: `打开 work.weixin.qq.com 管理后台，在「我的企业」页最下方复制 企业 ID。
+在「应用管理」创建自建应用，进入应用详情复制 Secret（顺手记下 AgentId）。
+粘贴到下面，点「保存并测试」验证凭证。`,
+  calWecomCorpId: '企业 ID（CorpID）',
+  calWecomSecret: '应用 Secret',
+  calWecomAgentId: 'AgentId（可选）',
+  calAuthOnlyNote: '目前先校验凭证，日程读取会在后续版本接入。想现在就用？大多数日历都能导出 ICS 订阅链接 —— 用「ICS 订阅 / 导入」马上可用。',
+  calIcsHint: '任何能导出「订阅链接 / iCal / .ics」的日历都能接：Google、Outlook、Apple、钉钉、企业微信……导入文件或粘贴链接都行。',
 } as const;
 
 const en: Record<MessageKey, string> = {
@@ -644,6 +693,55 @@ Paste the key above and use an English city name, e.g. Shanghai.`,
   calGuide: `On macOS the easiest path is the "Check system calendar" button above.
 For other calendars (Google / Outlook / Lark), find the "subscription / iCal / .ics URL" in their settings and paste them below, one per line.
 Or just "Import .ics file".`,
+
+  // P5-S: doubao / calendar guide
+  reqFailHint: '✗ The request never left — make sure the Aurio server is still running, then try again.',
+  voiceHint: 'Local system speech works out of the box. For the most host-like Chinese voice, switch to Doubao (Volcengine) emotional TTS; Tencent Cloud and Fish are also available.',
+  voiceDoubao: 'Doubao',
+  doubaoGuide: `Open the Volcengine console (volcengine.com → 语音技术) and go to Speech Synthesis big model (语音合成大模型).
+Enable the service — it has a free tier (real-name verification required).
+Create an app under 应用管理 with big-model TTS checked, then copy the APP ID and Access Token from its detail page.
+Paste both here, hit Preview to hear one line, then Save.`,
+  doubaoAppid: 'APP ID',
+  doubaoToken: 'Access Token',
+  doubaoVoice: 'Voice',
+  doubaoSpeed: 'Speed',
+  doubaoEmotion: 'Emotion (optional)',
+  doubaoEmotionDefault: 'Default · native register',
+  doubaoEmotionHint: 'Only multi-emotion (emo) voices react; leave empty for the voice’s own radio register.',
+  doubaoCustomVoice: 'Custom',
+  calChooserHint: 'Pick the calendar you actually use. Once connected, Aurio reads today’s events every morning to programme your day (e.g. it goes quiet before meetings).',
+  calStatusConnected: 'Connected ✓',
+  calStatusSaved: 'Credentials saved',
+  calStatusOff: 'Not set',
+  calProvSystem: 'System Calendar (macOS)',
+  calProvFeishu: 'Feishu / Lark',
+  calProvDingtalk: 'DingTalk',
+  calProvWecom: 'WeCom',
+  calProvIcs: 'ICS subscribe / import',
+  calBackToChooser: 'Choose another calendar',
+  calSaveTest: 'Save & test',
+  calSysHint: 'Tap "Check system calendar" to see whether Aurio can read the macOS Calendar. The first run pops a system permission dialog — allow it; if it never appeared or you declined, use "Open calendar permission".',
+  calFeishuGuide: `Open open.feishu.cn → developer console and create an internal (企业自建) app.
+Under the app’s Permissions, enable calendar:calendar:readonly (read calendars, events and free/busy), then create and publish a version.
+Copy the App ID and App Secret from Credentials & Basic Info and paste them below (leave Calendar ID empty at first).
+Hit "Save & test". To read your own calendar, share it with this app inside Feishu Calendar, then fill in its calendar ID.`,
+  calFeishuAppId: 'App ID',
+  calFeishuSecret: 'App Secret',
+  calFeishuCalId: 'Calendar ID (optional, default primary)',
+  calDingGuide: `Open open.dingtalk.com → App development and create an internal enterprise app.
+Copy the AppKey and AppSecret from the app’s Credentials page.
+Paste them below and hit "Save & test" to verify.`,
+  calDingKey: 'AppKey',
+  calDingSecret: 'AppSecret',
+  calWecomGuide: `Open the work.weixin.qq.com admin console and copy the Corp ID from the bottom of the "My Company" page.
+Create a self-built app under App Management and copy its Secret (note the AgentId too).
+Paste them below and hit "Save & test" to verify.`,
+  calWecomCorpId: 'Corp ID',
+  calWecomSecret: 'App Secret',
+  calWecomAgentId: 'AgentId (optional)',
+  calAuthOnlyNote: 'For now this verifies credentials only; event reading lands in a later version. Want events today? Most calendars export an ICS subscription link — use "ICS subscribe / import".',
+  calIcsHint: 'Any calendar that can export a "subscription / iCal / .ics" link works: Google, Outlook, Apple, DingTalk, WeCom… import a file or paste links.',
 };
 
 const tables: Record<Locale, Record<MessageKey, string>> = { zh, en };
