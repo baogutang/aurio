@@ -18,6 +18,8 @@ import { nextMusicSource, postMusicSource, servicesFromModes, type MusicSourceMo
 import { spring, stagger } from './lib/motion';
 import { cleanSayText } from './lib/highlight';
 import { isHotlineAccepted, shouldAutoCloseChat } from './lib/chatFlow';
+import { cardsFromSegment } from './lib/songCards';
+import StationCard from './components/StationCard';
 import { onboardExitAction, firstRunFollowUp, type FirstRunResponse } from './lib/firstRun';
 import { coverUrl } from './lib/cover';
 import {
@@ -33,7 +35,7 @@ import { tapePlayUrl, nextPlayable, tapeDisplayTrack, type TapeItem } from './li
 import { airPositionMs, formatWallClock, fillTemplate } from './lib/live';
 import { tuneStation, CALL_SIGN, type StationMood } from './lib/station';
 import { useI18n, usePreferences } from './context/PreferencesContext';
-import type { Track, SegmentResult, ChatMsg } from './lib/types';
+import type { Track, SegmentResult, ChatMsg, SongCard } from './lib/types';
 
 // Gapless handoff tuning: prefetch the next programme item into the standby
 // element once its scheduled start is this close, then run the crossfade the
@@ -133,6 +135,8 @@ export default function App() {
   const chatSendsRef = useRef(0);
   const chatCloseTimerRef = useRef<number | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 台卡 (P5-D): the station's profile card, opened from the header mascot.
+  const [stationCardOpen, setStationCardOpen] = useState(false);
   const [settingsGroup, setSettingsGroup] = useState<OnboardGroup | undefined>(undefined);
   const [onboard, setOnboard] = useState(false);
   const [services, setServices] = useState<MusicServices & { weather: boolean }>({ netease: false, navidrome: false, qqmusic: false, weather: false });
@@ -358,6 +362,20 @@ export default function App() {
     else el.addEventListener('loadedmetadata', apply, { once: true });
   };
 
+  // 转写流 (P5-D): a segue line that finished airing joins the chat feed as a
+  // timestamped transcript entry — the studio logbook of what she actually
+  // said on air. (Transient says already land via applySay; this covers the
+  // per-item intro voices, which the server never writes to /api/messages.)
+  const logAiredSegue = useCallback((text?: string | null) => {
+    const tx = text ? cleanSayText(text) : '';
+    if (!tx) return;
+    setMessages((m) => {
+      const last = m[m.length - 1];
+      if (last?.role === 'dj' && last.text === tx) return m; // double-finish guard
+      return [...m, { role: 'dj', text: tx, ts: serverNow() }];
+    });
+  }, [serverNow]);
+
   /**
    * Start one programme item at a media offset. The station said WHAT and
    * WHEN; this is the HOW — standby element, equal-power crossfade of the
@@ -431,6 +449,7 @@ export default function App() {
           tts.onended = null;
           tts.onerror = null;
           stopSayReveal();
+          logAiredSegue(tr.segue); // the line has aired — into the logbook
           startSong();
         };
         tts.onended = finish;
@@ -533,6 +552,9 @@ export default function App() {
         segueActiveRef.current = false;
         setSegueActive(false);
         stopSayReveal();
+        // Only a line that FINISHED airing enters the logbook — a cancelled
+        // segue (skip mid-sentence) was never fully said.
+        if (!stopVoice) logAiredSegue(tr.segue);
         unduck(audioRef.current);
       };
       const finish = () => settle(false);
@@ -549,7 +571,7 @@ export default function App() {
     } else {
       startCrossfaded(false);
     }
-  }, [t, duck, unduck, retireChannel, finalizePendingRetire, startSayReveal, stopSayReveal, refreshUpNext]);
+  }, [t, duck, unduck, retireChannel, finalizePendingRetire, startSayReveal, stopSayReveal, refreshUpNext, logAiredSegue]);
 
   const playItemRef = useRef(playItem);
   playItemRef.current = playItem;
@@ -661,13 +683,23 @@ export default function App() {
 
   // A transient spoken line — the host talking over the bed NOW (chat answers,
   // scheduled beats). Reaches us twice for our own requests (HTTP reply + WS
-  // 'say'), so text and voice each dedupe.
-  const applySay = useCallback((s: SayEvent) => {
+  // 'say'), so text and voice each dedupe. The HTTP reply may additionally
+  // carry the tracks it landed (对话歌卡) — the WS event never does, and it
+  // usually wins the race, so a seen ts with tracks patches the cards onto
+  // the transcript line already in the feed.
+  const applySay = useCallback((s: SayEvent & { tracks?: SongCard[] }) => {
     const text = s.text ? cleanSayText(s.text) : '';
-    if (text && s.ts && !seenSayTsRef.current.has(s.ts)) {
+    const tracks = s.tracks?.length ? s.tracks : undefined;
+    if (s.ts && !seenSayTsRef.current.has(s.ts) && (text || tracks)) {
       seenSayTsRef.current.add(s.ts);
-      setSay(text);
-      setMessages((m) => [...m, { role: 'dj', text }]);
+      if (text) setSay(text);
+      // A silent reply that still queued songs (the hotline's append path)
+      // lands in the feed as a cards-only transcript entry.
+      setMessages((m) => [...m, { role: 'dj', text, ts: s.ts, tracks }]);
+    } else if (s.ts && tracks && seenSayTsRef.current.has(s.ts)) {
+      setMessages((m) => m.map((msg) => (
+        msg.role === 'dj' && msg.ts === s.ts && !msg.tracks ? { ...msg, tracks } : msg
+      )));
     } else if (text && !s.ts) {
       setSay(text);
     }
@@ -693,7 +725,7 @@ export default function App() {
       setSay(b.say ? cleanSayText(b.say) : t('sayError'));
       return;
     }
-    applySay({ ts: b.ts, kind: b.kind, text: b.say, ttsUrl: b.ttsUrl });
+    applySay({ ts: b.ts, kind: b.kind, text: b.say, ttsUrl: b.ttsUrl, tracks: cardsFromSegment(b) });
   }, [applySay, t]);
 
   const refreshTaste = useCallback(() => {
@@ -1318,6 +1350,14 @@ export default function App() {
     if (replied) scheduleChatAutoClose(activityAtSend);
   };
 
+  // Tapping a song card = 「现在就放这首」. Reuses the hotline verbatim: the
+  // 「现在放」 phrasing hits the server's URGENT_RE, which routes the request
+  // to the insert-next (插播) channel — no new endpoint, the tap is just a
+  // very direct caller. The sent text lands in the feed like any user line.
+  const playCardNow = (card: SongCard) => {
+    void send(fillTemplate(t('songCardPlayNow'), { artist: card.artist, title: card.title }));
+  };
+
   const trig = async (kind: string) => {
     primeAudio();
     userPausedRef.current = false;
@@ -1408,9 +1448,16 @@ export default function App() {
     <WidgetShell voiceDim={talking}>
       <motion.header {...stagger(0)} className="app-header shrink-0">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <div className={`header-avatar ${petState !== 'idle' ? 'is-live' : ''}`} aria-hidden>
+          {/* The mascot is the station's face — tapping it opens the 台卡. */}
+          <button
+            type="button"
+            className={`header-avatar ${petState !== 'idle' ? 'is-live' : ''}`}
+            aria-label={t('ariaStationCard')}
+            title={t('ariaStationCard')}
+            onClick={() => setStationCardOpen(true)}
+          >
             <PixelPet state={petState} cell={4} />
-          </div>
+          </button>
           <HeaderWeather />
           <div className="min-w-0">
             <p className="font-matrix text-[16px] text-[var(--matrix-fg)] leading-none tracking-[0.02em] lowercase">aurio</p>
@@ -1617,6 +1664,18 @@ export default function App() {
           ? fillTemplate(t('hotlinePendingLine'), { n: hotlinePending })
           : null}
       onInputActivity={() => { chatActivityRef.current += 1; cancelChatAutoClose(); }}
+      currentTrack={current}
+      upNext={upNext}
+      onPlayCard={playCardNow}
+    />
+    <StationCard
+      open={stationCardOpen}
+      onClose={() => setStationCardOpen(false)}
+      station={station}
+      petState={petState}
+      listeners={listeners}
+      stationStartedAt={stationStartedAt}
+      serverNow={serverNow}
     />
     <TapeSheet
       open={tapeOpen}

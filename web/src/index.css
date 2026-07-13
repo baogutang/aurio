@@ -638,6 +638,72 @@ html[data-electron][data-platform="darwin"] .widget-drag {
   overflow: hidden;
 }
 
+/* ── P5-D · 台卡 / 对话歌卡 / 转写流 ── */
+
+/* The header mascot doubles as the 台卡 button. */
+button.header-avatar {
+  padding: 0;
+  cursor: pointer;
+}
+button.header-avatar:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+
+/* DJ lines in the chat feed read as a studio logbook, not chat bubbles:
+   a mono wall-clock stamp in the margin, the spoken line beside it. */
+.transcript-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  max-width: 96%;
+}
+.transcript-time {
+  flex-shrink: 0;
+  width: 2.4rem;
+  padding-top: 0.2rem;
+  font-family: var(--font-ui);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-align: right;
+}
+.transcript-body {
+  border-left: 1px solid var(--glass-border);
+  padding-left: 0.6rem;
+}
+
+/* A song the reply landed on the programme — tappable (现在就放这首). */
+.song-card {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--inset-bg);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.song-card:hover:not(:disabled) {
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+.song-card:disabled {
+  cursor: default;
+}
+.song-card.is-playing {
+  border-color: rgba(var(--hi-rgb), 0.5);
+}
+.song-card-state {
+  font-family: var(--font-ui);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
 /* While time-shifted the tuning line dims — you are off the live dial. */
 .station-line.is-tape {
   opacity: 0.4;

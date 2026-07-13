@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatWallClock, airPositionMs, uptimeParts, fillTemplate } from './live';
+import { formatWallClock, airPositionMs, uptimeParts, fillTemplate, transcriptTime } from './live';
 
 // TZ pinned to UTC in vitest.config.ts.
 const T = Date.UTC(2026, 6, 10, 21, 47, 32);
@@ -41,6 +41,18 @@ describe('uptimeParts', () => {
     expect(uptimeParts(0, T)).toBeNull();
     expect(uptimeParts(Number.NaN, T)).toBeNull();
     expect(uptimeParts(T + 1000, T)).toBeNull(); // future start = clock skew lie
+  });
+});
+
+describe('transcriptTime', () => {
+  it('renders HH:MM for a transcript line', () => {
+    expect(transcriptTime(T)).toBe('21:47');
+  });
+  it('hides the stamp for legacy lines without a timestamp', () => {
+    expect(transcriptTime(undefined)).toBeNull();
+    expect(transcriptTime(null)).toBeNull();
+    expect(transcriptTime(0)).toBeNull();
+    expect(transcriptTime(Number.NaN)).toBeNull();
   });
 });
 

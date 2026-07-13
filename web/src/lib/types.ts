@@ -89,7 +89,21 @@ export interface AiProvidersResp {
 export interface CastDevice { id: string; name: string; location: string }
 export interface TestResult { ok: boolean; detail: string; url?: string }
 
-export type ChatMsg = { role: 'user' | 'dj'; text: string; ts?: number };
+/** One tappable song card under a DJ reply (P5-D 对话歌卡). */
+export interface SongCard {
+  source: Track['source'];
+  id: string;
+  title: string;
+  artist: string;
+}
+
+export type ChatMsg = {
+  role: 'user' | 'dj';
+  text: string;
+  ts?: number;
+  /** Tracks this reply landed on the programme — rendered as tappable cards. */
+  tracks?: SongCard[];
+};
 
 export interface LyricLine { time: number | null; text: string; tr?: string }
 export interface LyricsResp { ok: boolean; source: string; synced: boolean; lines: LyricLine[] }

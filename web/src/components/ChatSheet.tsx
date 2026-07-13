@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { renderSay } from '../lib/highlight';
 import { spring } from '../lib/motion';
+import { transcriptTime } from '../lib/live';
+import { cardState } from '../lib/songCards';
 import { useI18n } from '../context/PreferencesContext';
 import PressButton from './PressButton';
 import { IconClose, IconSend } from './icons';
-import type { ChatMsg } from '../lib/types';
+import type { ChatMsg, SongCard, Track } from '../lib/types';
 
 interface Props {
   open: boolean;
@@ -20,9 +22,76 @@ interface Props {
   notice?: string | null;
   /** Fired when the user focuses or types in the input — cancels auto-close. */
   onInputActivity?: () => void;
+  /** On-air track + upcoming programme, for song-card states (P5-D). */
+  currentTrack?: Track | null;
+  upNext?: Track[];
+  /** Tap a song card = 「现在就放这首」 (the urgent hotline channel). */
+  onPlayCard?: (card: SongCard) => void;
 }
 
-export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, busy = false, onGoAir, isObserver = false, notice = null, onInputActivity }: Props) {
+// One DJ line as a studio-logbook row: mono HH:MM stamp, quiet text, and the
+// tracks the reply landed rendered as tappable cards (P5-D 转写流 / 对话歌卡).
+function TranscriptRow({ msg, busy, currentTrack, upNext, onPlayCard }: {
+  msg: ChatMsg;
+  busy: boolean;
+  currentTrack: Track | null;
+  upNext: Track[];
+  onPlayCard?: (card: SongCard) => void;
+}) {
+  const { t } = useI18n();
+  const time = transcriptTime(msg.ts);
+  return (
+    <div className="transcript-row">
+      <span className="transcript-time" aria-hidden>{time ?? ''}</span>
+      <div className="transcript-body min-w-0 flex-1">
+        {msg.text && (
+          <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
+            {renderSay(msg.text, 'dark')}
+          </p>
+        )}
+        {!!msg.tracks?.length && (
+          <div className={`space-y-1 ${msg.text ? 'mt-1.5' : ''}`}>
+            {msg.tracks.map((card, i) => {
+              const state = cardState(card, currentTrack, upNext);
+              const tappable = !!onPlayCard && state !== 'playing' && !busy;
+              return (
+                <button
+                  key={`${card.source}-${card.id}-${i}`}
+                  type="button"
+                  disabled={!tappable}
+                  title={tappable ? t('songCardTapHint') : undefined}
+                  aria-label={`${card.title} · ${card.artist}${tappable ? ` — ${t('songCardTapHint')}` : ''}`}
+                  className={`song-card ${state === 'playing' ? 'is-playing' : ''}`}
+                  onClick={() => onPlayCard?.(card)}
+                >
+                  <span className="truncate text-[13px] text-[var(--text-primary)] flex-1 min-w-0">
+                    {card.title}
+                  </span>
+                  {card.artist && (
+                    <span className="truncate text-[11px] text-[var(--text-muted)] max-w-[36%] shrink-0">
+                      {card.artist}
+                    </span>
+                  )}
+                  <span
+                    className="song-card-state shrink-0"
+                    style={state === 'playing' ? { color: 'rgb(var(--hi-rgb))' } : undefined}
+                  >
+                    {state === 'playing' ? t('onAir') : state === 'queued' ? t('songCardQueued') : '▸'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function ChatSheet({
+  open, onClose, messages, onSend, onTrigger, busy = false, onGoAir, isObserver = false,
+  notice = null, onInputActivity, currentTrack = null, upNext = [], onPlayCard,
+}: Props) {
   const { t } = useI18n();
   const [text, setText] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -122,33 +191,50 @@ export default function ChatSheet({ open, onClose, messages, onSend, onTrigger, 
               ) : (
                 <>
                 {messages.map((m, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, y: 12, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ ...spring.gentle, delay: Math.min(i * 0.03, 0.15) }}
-                    className={`max-w-[88%] px-4 py-2.5 text-sm leading-relaxed ${
-                      m.role === 'user'
-                        ? 'chat-bubble-user self-end ml-auto'
-                        : 'chat-bubble-dj self-start'
-                    }`}
-                  >
-                    {m.role === 'dj' ? renderSay(m.text, 'dark') : m.text}
-                  </motion.div>
+                  m.role === 'user' ? (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ ...spring.gentle, delay: Math.min(i * 0.03, 0.15) }}
+                      className="chat-bubble-user self-end ml-auto max-w-[88%] px-4 py-2.5 text-sm leading-relaxed"
+                    >
+                      {m.text}
+                    </motion.div>
+                  ) : (
+                    // DJ lines read as a broadcast logbook, not chat bubbles.
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ ...spring.gentle, delay: Math.min(i * 0.03, 0.15) }}
+                    >
+                      <TranscriptRow
+                        msg={m}
+                        busy={busy}
+                        currentTrack={currentTrack}
+                        upNext={upNext}
+                        onPlayCard={isObserver ? undefined : onPlayCard}
+                      />
+                    </motion.div>
+                  )
                 ))}
                 {busy && (
                   <motion.div
-                    initial={{ opacity: 0, y: 12, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
                     transition={spring.gentle}
-                    className="chat-bubble-dj self-start max-w-[88%] px-4 py-2.5 text-sm leading-relaxed"
+                    className="transcript-row"
                   >
-                    <span>{t('chatThinking')}</span>
-                    <span className="typing-dots ml-2" aria-hidden>
-                      <span />
-                      <span />
-                      <span />
-                    </span>
+                    <span className="transcript-time" aria-hidden />
+                    <div className="transcript-body text-[13px] leading-relaxed text-[var(--text-secondary)]">
+                      <span>{t('chatThinking')}</span>
+                      <span className="typing-dots ml-2" aria-hidden>
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                    </div>
                   </motion.div>
                 )}
                 {notice && !busy && (

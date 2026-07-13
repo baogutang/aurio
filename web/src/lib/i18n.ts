@@ -374,6 +374,20 @@ const zh = {
   calWecomAgentId: 'AgentId（可选）',
   calAuthOnlyNote: '目前先校验凭证，日程读取会在后续版本接入。想现在就用？大多数日历都能导出 ICS 订阅链接 —— 用「ICS 订阅 / 导入」马上可用。',
   calIcsHint: '任何能导出「订阅链接 / iCal / .ics」的日历都能接：Google、Outlook、Apple、钉钉、企业微信……导入文件或粘贴链接都行。',
+
+  // P5-D: profile / song cards / transcript
+  ariaStationCard: '台卡 · 电台档案',
+  stationCardTitle: '台卡',
+  stationCardSubtitle: '一个人的电台，一直在播',
+  stationBio: '你的私人 DJ。你的心情就是我的提示词。没有算法，只有品味。',
+  // Brand stat line — stays unlocalized, like ON AIR / fmTitle.
+  stationStatLine: 'ON AIR 24/7 · GENRES {g} · LISTENER {n}',
+  stationTagsLabel: '风格标签',
+  stationTagsEmpty: '还在认识你——多听几首、多点几次喜欢，标签会自己长出来。',
+  songCardQueued: '已在节目单',
+  songCardTapHint: '点一下，现在就放',
+  // 「现在放」 keeps the request on the urgent (插播) hotline channel.
+  songCardPlayNow: '现在放 {artist} - {title}',
 } as const;
 
 const en: Record<MessageKey, string> = {
@@ -742,6 +756,21 @@ Paste them below and hit "Save & test" to verify.`,
   calWecomAgentId: 'AgentId (optional)',
   calAuthOnlyNote: 'For now this verifies credentials only; event reading lands in a later version. Want events today? Most calendars export an ICS subscription link — use "ICS subscribe / import".',
   calIcsHint: 'Any calendar that can export a "subscription / iCal / .ics" link works: Google, Outlook, Apple, DingTalk, WeCom… import a file or paste links.',
+
+  // P5-D: profile / song cards / transcript
+  ariaStationCard: 'Station profile card',
+  stationCardTitle: 'Station card',
+  stationCardSubtitle: 'A private station, always on',
+  stationBio: 'Your private DJ. Your mood is my prompt. No algorithm — just taste.',
+  // Brand stat line — stays unlocalized, like ON AIR / fmTitle.
+  stationStatLine: 'ON AIR 24/7 · GENRES {g} · LISTENER {n}',
+  stationTagsLabel: 'Style tags',
+  stationTagsEmpty: 'Still getting to know you — keep listening and liking; the tags will grow on their own.',
+  songCardQueued: 'On the programme',
+  songCardTapHint: 'Tap to hear it now',
+  // 「现在放」 keeps the request on the urgent (插播) hotline channel — the
+  // hotline listens in the station's tongue, so the token rides along.
+  songCardPlayNow: 'Play it now 现在放: {artist} - {title}',
 };
 
 const tables: Record<Locale, Record<MessageKey, string>> = { zh, en };

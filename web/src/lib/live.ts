@@ -33,6 +33,15 @@ export function uptimeParts(
   return { hours: Math.floor(total / 3_600_000), minutes: Math.floor(total / 60_000) % 60 };
 }
 
+/**
+ * `21:47` timestamp for one transcript line (P5-D 转写流); null hides the
+ * stamp for legacy lines that never recorded when they aired.
+ */
+export function transcriptTime(ts?: number | null): string | null {
+  if (!Number.isFinite(ts) || (ts as number) <= 0) return null;
+  return formatWallClock(ts as number, { seconds: false });
+}
+
 /** Fill `{name}` placeholders in an i18n template. */
 export function fillTemplate(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (m, key: string) =>
