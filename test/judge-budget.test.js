@@ -50,10 +50,11 @@ describe('per-show judge budget overrides', () => {
     expect(judgeSay(zi(56), { sayMax: 40, maxLen: 55, skipRepeat: true }).ok).toBe(false);
   });
 
-  it('defaults are unchanged when no override is given', () => {
-    expect(judgeSay(zi(60), { skipRepeat: true }).ok).toBe(true);
-    expect(judgeSay(zi(61), { skipRepeat: true }).ok).toBe(false);
-    expect(judgeSay(zi(45), { segue: true, skipRepeat: true }).ok).toBe(true);
-    expect(judgeSay(zi(46), { segue: true, skipRepeat: true }).ok).toBe(false);
+  // P5 口播哲学反转（决策记录 2026-07-13）：默认 say 60→160，segue 45→60。
+  it('defaults are the P5 story-arc budgets when no override is given', () => {
+    expect(judgeSay(zi(160), { skipRepeat: true }).ok).toBe(true);
+    expect(judgeSay(zi(161), { skipRepeat: true }).ok).toBe(false);
+    expect(judgeSay(zi(60), { segue: true, skipRepeat: true }).ok).toBe(true);
+    expect(judgeSay(zi(61), { segue: true, skipRepeat: true }).ok).toBe(false);
   });
 });

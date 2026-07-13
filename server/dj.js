@@ -1,5 +1,5 @@
 // The DJ orchestrator — composes one segment and lands it on the programme log.
-import { assemble } from './context.js';
+import { assemble, buildSongMaterial } from './context.js';
 import { think } from './brain/index.js';
 import { buildObservation, executeSearchLoop } from './agent/loop.js';
 import { validateRadioAction } from './agent/schema.js';
@@ -172,10 +172,13 @@ async function fillTracks(seg, trigger, candidateTracks) {
 // Run the (rule-based, deterministic) judge over an action's spoken lines.
 // Returns the deduped set of violated category codes — never the phrases.
 // `show` may carry tighter per-programme length budgets (深夜航班: shorter).
-function judgeAction(action, show = null) {
+// `material` is the verifiable text of this break (素材卡 + candidates + the
+// listener's own words): when present, judge.js checks every year / 《title》
+// in the lines against it (fabricated_fact).
+function judgeAction(action, show = null, material = '') {
   const codes = [];
-  if (action.say) codes.push(...judgeSay(action.say, { sayMax: show?.sayMax }).violations.map((v) => v.code));
-  if (action.segue) codes.push(...judgeSay(action.segue, { segue: true, skipRepeat: true, segueMax: show?.segueMax }).violations.map((v) => v.code));
+  if (action.say) codes.push(...judgeSay(action.say, { sayMax: show?.sayMax, material }).violations.map((v) => v.code));
+  if (action.segue) codes.push(...judgeSay(action.segue, { segue: true, skipRepeat: true, segueMax: show?.segueMax, material }).violations.map((v) => v.code));
   return [...new Set(codes)];
 }
 
@@ -190,6 +193,7 @@ const CORRECTION = {
   repetition: '上一版和最近说过的话太像了，请换一个完全不同的开头和说法。',
   same_angle: '上一版抓的具体细节和最近两段完全重叠（比如又是天气、又是时间）。换一个别的角度：正在播的这首歌本身、歌手、年份、或者听众刚做的事。',
   fabricated_listener: '上一版在猜听众正在做什么（在忙、快回来了、想必…）。你不知道的不要编：只说你真知道的——这首歌、此刻的时间、天气、他真说过的话。',
+  fabricated_fact: '上一版讲了素材里没有的具体年份/名字。只讲素材卡里有的，卡里没有就把那个细节整个去掉。',
   critic_voice: '上一版在给歌下判断、打分。主播指向歌里的一个瞬间，不评价歌的好坏。',
   written_prose: '上一版是书面语句式（工整对仗、长句串接）。像随口说话那样：短句，说人话，说完就完。',
   unnatural: '上一版不像随口说出来的话。想象你正对着麦克风，顺口把这一句说出来，重来。',
@@ -225,7 +229,19 @@ export async function composeSegment(trigger = {}) {
   // music-only — and silence is forced BEFORE the judge, so the retry loop
   // never fires for a muted break (empty lines can't violate anything).
   const talk = consultTalkBudget(trigger.kind || 'chat');
-  let prompt = await assemble({ ...trigger, observation, muted: !talk.allowed });
+
+  // The 歌曲素材 body is built ONCE and shared: the prompt shows the model its
+  // verifiable facts, and the judge checks every spoken year/《title》 against
+  // the same text (fabricated_fact). For the judge, the material widens to the
+  // real search candidates and the listener's own words — both are verifiable
+  // sources a 点歌确认 legitimately quotes from.
+  let material = '';
+  try { material = await buildSongMaterial(observation); } catch { material = ''; }
+  const judgeMaterial = [material, trigger.toolResults, trigger.text]
+    .filter((s) => typeof s === 'string' && s.trim())
+    .join('\n');
+
+  let prompt = await assemble({ ...trigger, observation, material, muted: !talk.allowed });
 
   // Hotline seams (chat 热线化). A non-urgent song request gets nudged toward
   // a one-line on-air 点歌确认; the next spoken non-chat break carries the
@@ -264,15 +280,15 @@ export async function composeSegment(trigger = {}) {
   // say and keep the track selection. Refill lines are meant to be short/empty,
   // so we don't spend a retry on them.
   if (!degraded && trigger.kind !== 'refill') {
-    const codes = judgeAction(action, talk.show);
+    const codes = judgeAction(action, talk.show, judgeMaterial);
     if (codes.length) {
       try {
         const raw2 = await think(`${prompt}\n\n${correctiveNote(codes)}`);
         const v2 = validateRadioAction(raw2);
-        if (v2.ok && !judgeAction(v2.action, talk.show).length) {
+        if (v2.ok && !judgeAction(v2.action, talk.show, judgeMaterial).length) {
           action = v2.action;
         } else {
-          const codes2 = v2.ok ? judgeAction(v2.action, talk.show) : codes;
+          const codes2 = v2.ok ? judgeAction(v2.action, talk.show, judgeMaterial) : codes;
           console.error('[dj] judge failed after retry, going silent:', codes2.join(','));
           action = { ...action, say: '', segue: '' };
         }
@@ -293,7 +309,7 @@ export async function composeSegment(trigger = {}) {
       try {
         const raw2 = await think(`${prompt}\n\n${correctiveNote(verdict.problems)}`);
         const v2 = validateRadioAction(raw2);
-        if (v2.ok && !judgeAction(v2.action, talk.show).length) {
+        if (v2.ok && !judgeAction(v2.action, talk.show, judgeMaterial).length) {
           action = v2.action;
         } else {
           console.error('[dj] human judge failed after retry, going silent:', verdict.problems.join(','));

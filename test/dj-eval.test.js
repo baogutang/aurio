@@ -84,20 +84,22 @@ describe('category checks', () => {
   });
 });
 
+// P5（决策记录 2026-07-13）：默认口播预算 60→160（2–4 句一个故事弧）、
+// 垫话 45→60。计数语义不变：按 code point 数，CJK 每字算 1。
 describe('CJK length counting', () => {
   it('counts CJK chars by code point, not UTF-16 units', () => {
-    expect(judgeSay('字'.repeat(60)).ok).toBe(true);
-    const over = judgeSay('字'.repeat(61));
+    expect(judgeSay('字'.repeat(160)).ok).toBe(true);
+    const over = judgeSay('字'.repeat(161));
     expect(over.ok).toBe(false);
     expect(over.violations.map((v) => v.code)).toContain('too_long');
   });
   it('applies the tighter segue budget', () => {
-    expect(judgeSay('字'.repeat(45), { segue: true }).ok).toBe(true);
-    expect(judgeSay('字'.repeat(46), { segue: true }).violations.map((v) => v.code)).toContain('too_long');
+    expect(judgeSay('字'.repeat(60), { segue: true }).ok).toBe(true);
+    expect(judgeSay('字'.repeat(61), { segue: true }).violations.map((v) => v.code)).toContain('too_long');
   });
   it('does not miscount a surrogate-pair emoji as two chars', () => {
-    // 59 CJK + one astral emoji = 60 code points, under budget.
-    expect(judgeSay('字'.repeat(59) + '\u{1F600}').ok).toBe(true);
+    // 159 CJK + one astral emoji = 160 code points, exactly at budget.
+    expect(judgeSay('字'.repeat(159) + '\u{1F600}').ok).toBe(true);
   });
 });
 

@@ -190,6 +190,40 @@ describe('runSegment × airing', () => {
   });
 });
 
+// fabricated_fact at the dj seam (P5 掌故只讲可验证的): composeSegment builds
+// the 歌曲素材 body once, shows it to the model AND hands the same text to the
+// judge — a spoken 《title》/year the material cannot back triggers the
+// corrective retry.
+describe('composeSegment × fabricated_fact (the material seam)', () => {
+  beforeEach(() => { db.state.plays.splice(0); });
+
+  it('a spoken title the material backs passes in one call', async () => {
+    db.addPlay({ source: 'navidrome', id: 'p1', title: '昨日样本', artist: '样本歌手' });
+    think.mockResolvedValue(action('《昨日样本》真轻。')); // 9 chars ≤ sayMax 12
+    const seg = await dj.composeSegment({ kind: 'mood' });
+    expect(seg.say).toBe('《昨日样本》真轻。');
+    expect(think).toHaveBeenCalledTimes(1);
+    // The prompt carried the same material body the judge checked against.
+    expect(think.mock.calls[0][0]).toContain('上一首刚放完: 样本歌手《昨日样本》');
+  });
+
+  it('an unbacked 《title》 triggers the corrective retry, then silence', async () => {
+    db.addPlay({ source: 'navidrome', id: 'p1', title: '昨日样本', artist: '样本歌手' });
+    think.mockResolvedValue(action('这张《未知精选》真好')); // 10 chars, but a fabricated title
+    const seg = await dj.composeSegment({ kind: 'mood' });
+    expect(think).toHaveBeenCalledTimes(2);                  // one corrective retry
+    expect(think.mock.calls[1][0]).toContain('素材里没有的'); // category-only note
+    expect(seg.say).toBe('');                                // still fabricated → silent
+  });
+
+  it('with no material at all the check never fires', async () => {
+    think.mockResolvedValue(action('这张《未知精选》真好'));
+    const seg = await dj.composeSegment({ kind: 'mood' });
+    expect(think).toHaveBeenCalledTimes(1);
+    expect(seg.say).toBe('这张《未知精选》真好');
+  });
+});
+
 // The LLM judge layer at the dj seam: a fail verdict spends exactly one
 // corrective regen; verdict machinery never fires for chat.
 describe('composeSegment × LLM judge wiring', () => {

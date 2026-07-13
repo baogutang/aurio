@@ -12,8 +12,10 @@
 import { db } from '../store.js';
 
 // Default character budgets (counted in code points, so CJK counts as 1 each).
-const SAY_MAX = 60;
-const SEGUE_MAX = 45;
+// 决策记录 2026-07-13（口播哲学反转）：60 字上限治的是「话密而空」；现在的病是
+// 「话短而瘪」。默认放宽到 160 字（2–4 句一个故事弧），话密度由 talkBudget 收紧。
+const SAY_MAX = 160;
+const SEGUE_MAX = 60;
 
 // Each rule maps a category code to the patterns that trip it. Order matters
 // only for which detail we surface; a line can violate several categories.
@@ -204,12 +206,39 @@ export function isSameAngle(text) {
   return mine.some((a) => last.every((e) => (e.a || []).includes(a)));
 }
 
+// --- fabricated_fact ---------------------------------------------------------
+// 决策记录 2026-07-13：掌故只讲可验证的。每个口播里的 4 位年份（19xx/20xx）和
+// 每个《…》作品名都必须能在素材文本（素材卡 + 曲目元数据 + 用户原话）里找到，
+// 否则就是模型自由发挥出来的「1971 尼龙弦吉他」——打回重写。Only enforced when
+// the caller supplies the material text; legacy callers and pure-chat breaks
+// without material skip the check entirely.
+//
+// Known gaps (deliberate): Chinese-numeral years（「一九九八年」）escape the
+// 4-digit regex; a year that appears in the material only by coincidence
+// (e.g. inside an unrelated fact) passes. Both err toward false negatives —
+// the check never blocks a line the material can support.
+function factViolations(text, material) {
+  const out = [];
+  const mat = material.toString();
+  const matFlat = mat.replace(/\s+/g, ''); // whitespace-blind for latin titles
+  for (const m of text.matchAll(/(?<!\d)(?:19|20)\d{2}(?!\d)/g)) {
+    if (!mat.includes(m[0])) out.push({ code: 'fabricated_fact', detail: `年份 ${m[0]}` });
+  }
+  for (const m of text.matchAll(/《([^》]{1,60})》/g)) {
+    const name = m[1].replace(/\s+/g, '');
+    if (name && !matFlat.includes(name)) out.push({ code: 'fabricated_fact', detail: `《${m[1]}》` });
+  }
+  return out;
+}
+
 // judgeSay(text, opts) -> { ok, violations: [{ code, detail }] }
 //   opts.segue      — apply the shorter segue budget
 //   opts.maxLen     — override the character budget outright
 //   opts.sayMax     — a show's tighter say budget (used when !opts.segue)
 //   opts.segueMax   — a show's tighter segue budget (used when opts.segue)
 //   opts.skipRepeat — don't check the said-before ledger or the angle ledger
+//   opts.material   — the 歌曲素材 text (+ track metadata / user words); when
+//                     given, years and 《titles》 in the line must appear in it
 // sayMax/segueMax let a programme (server/shows.js — 深夜航班 wants shorter
 // lines) tighten the defaults without the call site knowing which budget
 // applies; maxLen still wins when given.
@@ -227,6 +256,10 @@ export function judgeSay(text, opts = {}) {
     || (opts.segue ? (opts.segueMax || SEGUE_MAX) : (opts.sayMax || SAY_MAX));
   const len = codePoints(trimmed).length;
   if (len > max) violations.push({ code: 'too_long', detail: `${len}/${max}` });
+
+  if (typeof opts.material === 'string' && opts.material.trim()) {
+    violations.push(...factViolations(trimmed, opts.material));
+  }
 
   if (!opts.skipRepeat) {
     const rep = isRepeat(trimmed);
