@@ -3,6 +3,26 @@
 // export. For now this also supports a plain ICS URL/file if SYSTEM_ICS is set.
 import { spawn } from 'node:child_process';
 
+// Parse macToday's TSV: title \t startSecFromMidnight \t endSecFromMidnight \t allday.
+// AppleScript date SUBTRACTION yields integer seconds — locale-proof, unlike
+// `(start date) as string`, whose format follows the system language. The old
+// parser threw the time away entirely (start: null), which silently disabled
+// the day plan's quiet windows for the one calendar most users have.
+export function parseMacCalendarOutput(out, dayStartMs) {
+  return (out || '').split('\n').filter(Boolean).map((line) => {
+    const [title, startSec, endSec, allday] = line.split('\t');
+    const s = Number(startSec);
+    const e = Number(endSec);
+    return {
+      title: (title || '').trim(),
+      start: Number.isFinite(s) ? dayStartMs + s * 1000 : null,
+      end: Number.isFinite(e) && e > s ? dayStartMs + e * 1000 : null,
+      allDay: String(allday || '').trim() === 'true',
+      source: 'system',
+    };
+  });
+}
+
 function macToday() {
   // Reads today's events from the macOS Calendar app via AppleScript.
   // Rejects on a non-zero osascript exit (most commonly: Automation permission
@@ -15,7 +35,7 @@ set endOfDay to startOfDay + (1 * days)
 tell application "Calendar"
   repeat with cal in calendars
     repeat with e in (every event of cal whose start date is greater than or equal to startOfDay and start date is less than endOfDay)
-      set output to output & (summary of e) & "\t" & ((start date of e) as string) & "\n"
+      set output to output & (summary of e) & "\t" & ((start date of e) - startOfDay) & "\t" & ((end date of e) - startOfDay) & "\t" & (allday event of e) & "\n"
     end repeat
   end repeat
 end tell
@@ -28,11 +48,9 @@ return output`;
     child.on('error', (e) => reject(e));
     child.on('close', (code) => {
       if (code !== 0) return reject(new Error(err.trim() || `osascript exited ${code}`));
-      const events = out.split('\n').filter(Boolean).map((line) => {
-        const [title] = line.split('\t');
-        return { title, start: null, end: null, source: 'system' };
-      });
-      resolve(events);
+      const midnight = new Date();
+      midnight.setHours(0, 0, 0, 0);
+      resolve(parseMacCalendarOutput(out, midnight.getTime()));
     });
   });
 }
