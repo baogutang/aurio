@@ -1,6 +1,6 @@
 // The DJ orchestrator — composes one segment and lands it on the programme log.
 import { assemble, buildSongMaterial } from './context.js';
-import { think } from './brain/index.js';
+import { think, ask } from './brain/index.js';
 import { buildObservation, executeSearchLoop } from './agent/loop.js';
 import { validateRadioAction } from './agent/schema.js';
 import {
@@ -304,7 +304,9 @@ export async function composeSegment(trigger = {}) {
   // person? Scheduled kinds only: chat has a listener waiting on the reply,
   // refill stays quiet anyway. Fails open inside judgeLikeHuman.
   if (!degraded && kind !== 'refill' && kind !== 'chat' && (action.say || action.segue)) {
-    const verdict = await judgeLikeHuman({ say: action.say, segue: action.segue }, think);
+    // The judge needs the RAW reply — think() normalizes into a DJ action and
+    // silently destroys the {"pass":…} verdict (found by the story-engine work).
+    const verdict = await judgeLikeHuman({ say: action.say, segue: action.segue }, ask);
     if (!verdict.pass) {
       try {
         const raw2 = await think(`${prompt}\n\n${correctiveNote(verdict.problems)}`);

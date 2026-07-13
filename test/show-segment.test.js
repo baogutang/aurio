@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const think = vi.fn();
-vi.mock('../server/brain/index.js', () => ({ think }));
+vi.mock('../server/brain/index.js', () => ({ think, ask: think }));
 
 vi.mock('../server/tts/index.js', () => ({
   cachedSynthesis: vi.fn(() => null),
