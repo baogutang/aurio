@@ -114,6 +114,63 @@ describe('doubao success path', () => {
   });
 });
 
+// Per-call voice options (per-show/segment voice, workstream C): merged over
+// config, part of the cache key, forwarded to the API payload.
+describe('doubao per-call voice options', () => {
+  it('overrides voiceType/speed/emotion in the request payload', async () => {
+    await doubao.synthesize('深夜的一句。', { voiceType: 'zh_female_wanwanxiaohe_moon_bigtts', speed: 0.85, emotion: 'chat' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.audio.voice_type).toBe('zh_female_wanwanxiaohe_moon_bigtts');
+    expect(body.audio.speed_ratio).toBe(0.85);
+    expect(body.audio.enable_emotion).toBe(true);
+    expect(body.audio.emotion).toBe('chat');
+  });
+
+  it('partial opts fall back to config for the rest', async () => {
+    await doubao.synthesize('只改语速。', { speed: 0.85 });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.audio.voice_type).toBe('zh_male_shenyeboke_emo_v2_mars_bigtts'); // config default
+    expect(body.audio.speed_ratio).toBe(0.85);
+    expect(body.audio.emotion).toBeUndefined();
+  });
+
+  it('invalid opts values are ignored, not sent', async () => {
+    await doubao.synthesize('坏参数。', { voiceType: '  ', speed: -2, emotion: 42 });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.audio.voice_type).toBe('zh_male_shenyeboke_emo_v2_mars_bigtts');
+    expect(body.audio.speed_ratio).toBe(0.9);
+    expect(body.audio.emotion).toBeUndefined();
+  });
+
+  it('the cache key includes per-call values: two voices of one line are two clips', async () => {
+    const plain = await doubao.synthesize('同一句。');
+    const slow = await doubao.synthesize('同一句。', { speed: 0.85 });
+    expect(slow.url).not.toBe(plain.url);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // …and each variant caches under its own key.
+    expect(doubao.cachedSynthesis('同一句。')).toEqual({ url: plain.url, cached: true });
+    expect(doubao.cachedSynthesis('同一句。', { speed: 0.85 })).toEqual({ url: slow.url, cached: true });
+    expect(await doubao.synthesize('同一句。', { speed: 0.85 })).toEqual({ url: slow.url, cached: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('threads through the tts/index.js facade — synthesize and synthesizeBackground', async () => {
+    const viaFacade = await tts.synthesize('门面带参。', { speed: 0.85 });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.audio.speed_ratio).toBe(0.85);
+    // The background path finds the same per-call cache entry synchronously…
+    expect(tts.synthesizeBackground('门面带参。', () => {}, { speed: 0.85 }))
+      .toEqual({ url: viaFacade.url, cached: true });
+    // …while the default voice is a different clip.
+    let done;
+    const p = new Promise((r) => { done = r; });
+    expect(tts.synthesizeBackground('门面带参。', (t) => done(t))).toBeNull();
+    const other = await p;
+    expect(other.url).not.toBe(viaFacade.url);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('doubao failure → null (graceful degradation)', () => {
   it('returns null on HTTP error status', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'boom', json: async () => ({}) });

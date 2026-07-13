@@ -239,19 +239,31 @@ async function synthesizeTencent(text, cfg = voiceConfig()) {
   return { url, cached: false };
 }
 
-export function cachedSynthesis(text) {
+// Per-call voice options (workstream C: per-show/segment voice) ride an
+// additive `opts` param: { voiceType?, speed?, emotion? } merged over the
+// provider's configured voice. Only doubao understands them today; system /
+// tencent / fish ignore them gracefully and speak in their configured voice.
+
+// In-flight coalescing key: the base text hash plus whatever per-call knobs
+// change the audio, so the same line in two voices is two syntheses.
+function pendingKey(text, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {};
+  return `${hashFor(text)}::${[o.voiceType, o.speed, o.emotion].map((v) => v ?? '').join(':')}`;
+}
+
+export function cachedSynthesis(text, opts = undefined) {
   const cfg = voiceConfig();
   if (cfg.provider === 'fish') return fish.cachedSynthesis(text);
-  if (cfg.provider === 'doubao') return doubao.cachedSynthesis(text);
+  if (cfg.provider === 'doubao') return doubao.cachedSynthesis(text, opts);
   return cachedLocal(text, cfg);
 }
 
-export async function synthesize(text) {
+export async function synthesize(text, opts = undefined) {
   const cfg = voiceConfig();
   try {
     if (cfg.provider === 'tencent') return await synthesizeTencent(text, cfg);
     if (cfg.provider === 'fish') return await fish.synthesize(text);
-    if (cfg.provider === 'doubao') return await doubao.synthesize(text);
+    if (cfg.provider === 'doubao') return await doubao.synthesize(text, opts);
     return await synthesizeSystem(text, cfg);
   } catch (e) {
     console.error(`[tts:${cfg.provider}]`, e.message);
@@ -259,19 +271,19 @@ export async function synthesize(text) {
   }
 }
 
-export function synthesizeBackground(text, onDone) {
-  const cached = cachedSynthesis(text);
+export function synthesizeBackground(text, onDone, opts = undefined) {
+  const cached = cachedSynthesis(text, opts);
   if (cached) return cached;
   if (!text || !text.trim()) return null;
 
-  const key = hashFor(text);
+  const key = pendingKey(text, opts);
   const existing = pending.get(key);
   if (existing) {
     existing.then((tts) => { if (tts?.url) onDone?.(tts); }).catch(() => {});
     return null;
   }
 
-  const task = synthesize(text).finally(() => pending.delete(key));
+  const task = synthesize(text, opts).finally(() => pending.delete(key));
   pending.set(key, task);
   task.then((tts) => { if (tts?.url) onDone?.(tts); }).catch((e) => {
     console.error('[tts background]', e.message);

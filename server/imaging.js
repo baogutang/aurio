@@ -19,6 +19,7 @@ import { db } from './store.js';
 import { station } from './playout/station.js';
 import { synthesizeBackground, TTS_CACHE_DIR } from './tts/index.js';
 import { hasActiveSession } from './radio.js';
+import { isQuietNow } from './plan.js';
 import { runFfmpeg, ffmpegBin, ffmpegAvailable, FFMPEG_RUN_TIMEOUT_MS } from './music/ffmpeg.js';
 
 export const IMAGING_CACHE_DIR = path.join(DATA_ROOT, 'cache', 'imaging');
@@ -338,9 +339,13 @@ function linerIntervalMs() {
 }
 
 // Pick + schedule one liner now. Returns true when one was scheduled.
+// Imaging is identity, not conversation — but a quiet window (server/plan.js:
+// a meeting on the calendar) silences it exactly like the talk budget's mute:
+// nothing of the station speaks over a meeting.
 export function deliverLiner(now = Date.now()) {
   if (!imagingEnabled()) return false;
   if (!hasActiveSession()) return false;
+  if (isQuietNow(now)) return false;
   const itemId = upcomingFreeItem();
   if (!itemId) return false;
   const recent = db.getPref('imagingRecentLiners', []);
@@ -363,6 +368,7 @@ export function maybeLiner(now = Date.now()) {
 export function hourlyStationId(date = new Date(), opts = undefined) {
   if (!imagingEnabled()) return false;
   if (!hasActiveSession()) return false;
+  if (isQuietNow(date.getTime())) return false; // 整点撞上会议：这个整点不报
   const itemId = upcomingFreeItem();
   if (!itemId) return false;
   speakIdOnTrack(timeCallText(date.getHours()), itemId, date.getHours(), opts);

@@ -228,3 +228,82 @@ describe('talk budget', () => {
     expect(db.getPref(shows.TALK_LEDGER_KEY, []).length).toBeLessThanOrEqual(60);
   });
 });
+
+// P5 workstream B: the day plan's quiet windows (server/plan.js) are a hard
+// override ABOVE the talk budget —「会议静默」. Chat stays exempt: the hotline
+// answers even mid-meeting (headphones exist).
+describe('quiet-window hard override (今日节目单)', () => {
+  const WINDOW = { start: '10:50', end: '11:30', reason: '11:00 的会' };
+
+  beforeEach(() => {
+    writeShows(SEED);
+    db.setPref(shows.TALK_LEDGER_KEY, []);
+    db.setPref('dayPlan', {
+      date: '2026-07-08', generatedAt: 0, segments: [],
+      quietWindows: [WINDOW], note: '', source: 'llm',
+    });
+  });
+
+  afterAll(() => db.setPref('dayPlan', null));
+
+  it('denies a scheduled break inside the window even with budget to spare, reason surfaced', () => {
+    const t = shows.consultTalkBudget('refill', wed(11, 0).getTime());
+    expect(t.allowed).toBe(false);
+    expect(t.spent).toBe(0);                  // the budget was NOT the reason
+    expect(t.quiet).toEqual(WINDOW);          // …the meeting was
+  });
+
+  it('user chat stays exempt during the window', () => {
+    const t = shows.consultTalkBudget('chat', wed(11, 0).getTime());
+    expect(t.allowed).toBe(true);
+    expect(t.exempt).toBe(true);
+    expect(t.quiet).toBeNull();
+  });
+
+  it('outside the window the budget rules as before', () => {
+    const t = shows.consultTalkBudget('show-open', wed(12, 0).getTime());
+    expect(t.allowed).toBe(true);
+    expect(t.quiet).toBeNull();
+  });
+
+  it("a stale plan (yesterday's) never silences today", () => {
+    db.setPref('dayPlan', {
+      date: '2026-07-07', generatedAt: 0, segments: [],
+      quietWindows: [{ start: '00:00', end: '24:00', reason: '昨天' }], note: '',
+    });
+    expect(shows.consultTalkBudget('refill', wed(11, 0).getTime()).allowed).toBe(true);
+  });
+});
+
+// Workstream C: optional per-show voice params ride the schedule.
+describe('per-show voice params', () => {
+  beforeEach(() => writeShows(SEED));
+
+  it('the seed gives 深夜航班 a softer/slower doubao voice', () => {
+    const night = shows.currentShow(wed(22));
+    expect(night.voice).toEqual({ voiceType: 'zh_male_shenyeboke_emo_v2_mars_bigtts', speed: 0.85 });
+    expect(shows.currentShow(wed(8)).voice).toBeUndefined(); // morning: provider default
+  });
+
+  it('voiceParamsAt resolves by air time and defaults to null', () => {
+    expect(shows.voiceParamsAt(wed(22).getTime()))
+      .toEqual({ voiceType: 'zh_male_shenyeboke_emo_v2_mars_bigtts', speed: 0.85 });
+    expect(shows.voiceParamsAt(wed(8).getTime())).toBeNull();   // show without voice
+    expect(shows.voiceParamsAt(wed(19).getTime())).toBeNull();  // default show
+  });
+
+  it('sanitizes a bad voice field without dropping the show', () => {
+    writeShows({ shows: [{
+      name: '坏嗓子', start: '00:00', end: '24:00', talkBudget: 1,
+      voice: { voiceType: '  ', speed: -1, emotion: 42, extra: 'x' },
+    }] });
+    const s = shows.currentShow(wed(12));
+    expect(s.name).toBe('坏嗓子');
+    expect(s.voice).toBeUndefined();
+    writeShows({ shows: [{
+      name: '半好', start: '00:00', end: '24:00', talkBudget: 1,
+      voice: { speed: '0.8', emotion: 'chat' },
+    }] });
+    expect(shows.currentShow(wed(12)).voice).toEqual({ speed: 0.8, emotion: 'chat' });
+  });
+});

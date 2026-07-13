@@ -1,5 +1,5 @@
 {
-  "_comment": "Aurio 的节目表（RADIO_VISION §四）。按顺序匹配，时段重叠时排在前面的优先；不在任何节目时段时是默认档《随波》。start/end 用 24 小时制 HH:MM，end 可写 24:00，end 小于 start 表示跨零点；days 用 1–7（周一=1，周日=7），省略表示每天；talkBudget 是每小时最多开口次数（你对她说话不受限）；familiarOnly 表示只放熟歌；sayMax/segueMax 可选，收紧口播与垫话的字数上限。改这个文件就是在改电台的一天。",
+  "_comment": "Aurio 的节目表（RADIO_VISION §四）。按顺序匹配，时段重叠时排在前面的优先；不在任何节目时段时是默认档《随波》。start/end 用 24 小时制 HH:MM，end 可写 24:00，end 小于 start 表示跨零点；days 用 1–7（周一=1，周日=7），省略表示每天；talkBudget 是每小时最多开口次数（你对她说话不受限）；familiarOnly 表示只放熟歌；sayMax/segueMax 可选，收紧口播与垫话的字数上限。voice 可选：{ voiceType, speed, emotion } 按节目覆盖语音音色/语速/情感——目前只有豆包 provider 生效（音色 ID 见 server/config.js 与设置面板），system/腾讯/Fish 会忽略；深夜航班示例：同一把深夜播客嗓子，但更慢更轻。改这个文件就是在改电台的一天。",
   "shows": [
     {
       "name": "早安频率",
@@ -30,7 +30,8 @@
       "tone": "语速慢、声音轻，讲一个完整的小故事，敢留白",
       "musicRules": "敢放冷门与回忆，慢歌优先，越晚越静",
       "sayMax": 120,
-      "segueMax": 50
+      "segueMax": 50,
+      "voice": { "voiceType": "zh_male_shenyeboke_emo_v2_mars_bigtts", "speed": 0.85 }
     }
   ]
 }

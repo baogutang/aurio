@@ -10,7 +10,7 @@ import {
 import { cachedSynthesis, synthesizeBackground } from './tts/index.js';
 import { judgeSay, rememberSaid } from './agent/judge.js';
 import { judgeLikeHuman } from './agent/judge-llm.js';
-import { consultTalkBudget, recordSpokenBreak } from './shows.js';
+import { consultTalkBudget, recordSpokenBreak, voiceParamsAt } from './shows.js';
 import { db } from './store.js';
 import { station } from './playout/station.js';
 import { eventBus } from './runtime/event-bus.js';
@@ -224,10 +224,12 @@ export async function composeSegment(trigger = {}) {
   const observation = buildObservation(trigger);
 
   // Talk budget (server/shows.js): scheduled beats spend from the current
-  // show's hourly allowance; the hotline (chat) always may speak. The decision
-  // lands BEFORE the prompt — so the brain picks tracks knowing the break is
-  // music-only — and silence is forced BEFORE the judge, so the retry loop
-  // never fires for a muted break (empty lines can't violate anything).
+  // show's hourly allowance; the hotline (chat) always may speak. A day-plan
+  // quiet window (server/plan.js — a meeting on the calendar) hard-mutes
+  // non-chat breaks on top of the budget. The decision lands BEFORE the
+  // prompt — so the brain picks tracks knowing the break is music-only — and
+  // silence is forced BEFORE the judge, so the retry loop never fires for a
+  // muted break (empty lines can't violate anything).
   const talk = consultTalkBudget(trigger.kind || 'chat');
 
   // The 歌曲素材 body is built ONCE and shared: the prompt shows the model its
@@ -241,7 +243,17 @@ export async function composeSegment(trigger = {}) {
     .filter((s) => typeof s === 'string' && s.trim())
     .join('\n');
 
-  let prompt = await assemble({ ...trigger, observation, material, muted: !talk.allowed });
+  let prompt = await assemble({
+    ...trigger,
+    observation,
+    material,
+    muted: !talk.allowed,
+    // A quiet-window mute has a different WHY than a spent budget — the prompt
+    // says so, and the model won't try to "make up" the lost break later.
+    mutedReason: talk.quiet
+      ? `现在是静默窗（${talk.quiet.reason}），日程期间整段不说话。`
+      : undefined,
+  });
 
   // Hotline seams (chat 热线化). A non-urgent song request gets nudged toward
   // a one-line on-air 点歌确认; the next spoken non-chat break carries the
@@ -337,24 +349,30 @@ export async function composeSegment(trigger = {}) {
   }
   for (const t of tracks) t.url = await playbackUrl(t);
 
-  const tts = cachedSynthesis(action.say);
+  // Per-show voice params (workstream C): a spoken line airing NOW is
+  // synthesized in the on-air show's voice; only doubao honours the opts.
+  const voiceOpts = voiceParamsAt();
+  const tts = cachedSynthesis(action.say, voiceOpts || undefined);
   return {
     say: action.say, segue: action.segue, reason: action.reason,
     ttsUrl: tts?.url || null, tracks, degraded,
     intent: action.intent || '', placement: action.placement || '', mood: action.mood || '',
     constraints, hardRequest, requested: describeConstraints(constraints),
     candidateTracks,
+    voiceOpts,
     // The pending hotline shoutout this break was asked to weave in (or null).
     // Retired by runSegmentInner only when the say actually airs.
     shoutout,
     // The talk-budget decision, exposed so callers (and tests) can see WHY a
-    // break was silent. `show` is the name only — the object stays internal.
+    // break was silent. `show` is the name only — the object stays internal;
+    // `quiet` carries the day-plan quiet window's reason (「会议静默」) or null.
     talk: {
       allowed: talk.allowed,
       exempt: talk.exempt,
       show: talk.show.name,
       spent: talk.spent,
       budget: talk.budget,
+      quiet: talk.quiet ? talk.quiet.reason : null,
     },
   };
 }
@@ -371,7 +389,7 @@ function deliverSay(base, seg) {
   }
   synthesizeBackground(seg.say, (tts) => {
     eventBus.emit('say', { ts: base.ts, kind: base.kind, text: seg.say, ttsUrl: tts.url });
-  });
+  }, seg.voiceOpts || undefined);
   // No cached voice yet: push the text so every client can at least show it.
   eventBus.emit('say', { ts: base.ts, kind: base.kind, text: seg.say, ttsUrl: null });
 }

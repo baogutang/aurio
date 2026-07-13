@@ -31,7 +31,7 @@ let clock;
 let store;
 let prefs;
 
-function rig({ horizonMs = 1, storeData = null, startAt = 0, prefsData = {} } = {}) {
+function rig({ horizonMs = 1, storeData = null, startAt = 0, prefsData = {}, ...extra } = {}) {
   clock = makeClock(startAt);
   store = memStore(storeData);
   prefs = memPrefs(prefsData);
@@ -43,6 +43,7 @@ function rig({ horizonMs = 1, storeData = null, startAt = 0, prefsData = {} } = 
     store,
     prefs,
     cue: null,
+    ...extra, // e.g. quiet / voiceParams seams
   });
   return { clock, store, prefs };
 }
@@ -219,6 +220,49 @@ describe('voice tracking (the cost gate)', () => {
     station.appendTracks([track('a')], { voice: { text: '一句', ttsUrl: '/tts/have.mp3' } });
     station.start();
     expect(synthesizeBackground).not.toHaveBeenCalled();
+  });
+
+  // P5 workstream B: don't synthesize what won't speak — an item airing inside
+  // a day-plan quiet window is skipped by voice tracking (not consumed: the
+  // next pass reconsiders if the window moves).
+  it('skips pre-synthesis for items airing inside a quiet window', () => {
+    // Items are 10s each starting at t=0 with the segue at 8s: 'a' airs at 0,
+    // 'b' at 8000. Quiet covers the first five seconds → only b's line is
+    // worth money.
+    rig({ quiet: (ts) => (ts < 5000 ? { reason: '会议静默' } : null) });
+    setListenerGate(() => true);
+    synthesizeBackground.mockImplementation((text, onDone) => {
+      onDone({ url: `/tts/${Buffer.from(text).length}.mp3` });
+      return null;
+    });
+    station.appendTracks([track('a')], { voice: { text: '静默窗里的话' } });
+    station.appendTracks([track('b')], { voice: { text: '窗外的话' } });
+    station.start();
+    expect(synthesizeBackground).toHaveBeenCalledTimes(1);
+    expect(synthesizeBackground.mock.calls[0][0]).toBe('窗外的话');
+    expect(station.items()[0].voice.ttsUrl).toBeFalsy(); // skipped, still pending
+    expect(station.items()[1].voice.ttsUrl).toMatch(/^\/tts\//);
+  });
+
+  // Workstream C: per-show voice params resolve at the item's AIR TIME and
+  // ride the synthesis call as the third argument.
+  it('threads voice params for the show on air at the item start', () => {
+    const voiceParams = vi.fn((ts) => (ts >= 5000 ? { voiceType: 'night', speed: 0.85 } : null));
+    rig({ voiceParams });
+    setListenerGate(() => true);
+    synthesizeBackground.mockImplementation((text, onDone) => {
+      onDone({ url: '/tts/v.mp3' });
+      return null;
+    });
+    station.appendTracks([track('a')], { voice: { text: '白天的话' } });   // airs at 0
+    station.appendTracks([track('b')], { voice: { text: '深夜的话' } });   // airs at 8s (segue)
+    station.start();
+    expect(synthesizeBackground).toHaveBeenCalledTimes(2);
+    // Default voice: the opts argument is omitted entirely.
+    expect(synthesizeBackground.mock.calls[0]).toEqual(['白天的话', expect.any(Function)]);
+    // Night show: the per-call params ride along.
+    expect(synthesizeBackground.mock.calls[1])
+      .toEqual(['深夜的话', expect.any(Function), { voiceType: 'night', speed: 0.85 }]);
   });
 });
 

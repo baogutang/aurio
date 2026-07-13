@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_ROOT } from './config.js';
 import { db } from './store.js';
+import { isQuietNow } from './plan.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 export const TALK_LEDGER_KEY = 'talkLedger';
@@ -36,6 +37,7 @@ export const DEFAULT_SHOW = Object.freeze({
   tone: '顺着此刻的时间与天气走，不抢戏',
   musicRules: '延续当前基调，熟歌为主，偶尔一点新鲜',
   familiarOnly: false,
+  voice: undefined,
   isDefault: true,
 });
 
@@ -60,6 +62,7 @@ const BUILTIN_SHOWS = [
     tone: '语速慢、声音轻，讲一个完整的小故事，敢留白',
     musicRules: '敢放冷门与回忆，慢歌优先，越晚越静',
     sayMax: 120, segueMax: 50,
+    voice: { voiceType: 'zh_male_shenyeboke_emo_v2_mars_bigtts', speed: 0.85 },
   },
 ];
 
@@ -75,6 +78,20 @@ function parseHM(value) {
 function positiveInt(v) {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+// Optional per-show voice params (workstream C): { voiceType?, speed?, emotion? }
+// override the TTS provider's configured voice for breaks aired in this show.
+// Sanitized, never rejected — a typo in the voice field must not take the show
+// off the schedule the way a broken time window rightly does.
+function validateVoice(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out = {};
+  if (typeof raw.voiceType === 'string' && raw.voiceType.trim()) out.voiceType = raw.voiceType.trim();
+  const speed = Number(raw.speed);
+  if (Number.isFinite(speed) && speed > 0) out.speed = speed;
+  if (typeof raw.emotion === 'string' && raw.emotion.trim()) out.emotion = raw.emotion.trim();
+  return Object.keys(out).length ? out : undefined;
 }
 
 // Validate one raw entry into a normalized show, or null when it can't be
@@ -110,6 +127,7 @@ function validateShow(raw) {
     familiarOnly: raw.familiarOnly === true,
     sayMax: positiveInt(raw.sayMax),
     segueMax: positiveInt(raw.segueMax),
+    voice: validateVoice(raw.voice),
     isDefault: false,
   };
 }
@@ -243,19 +261,34 @@ export function recordSpokenBreak(now = Date.now()) {
 }
 
 // The decision dj.js consults before composing a segment.
-//   { allowed, exempt, spent, budget, show }
-// 'chat' is always allowed — the hotline answers; everything else spends from
-// the current show's hourly allowance.
+//   { allowed, exempt, spent, budget, show, quiet }
+// 'chat' is always allowed — the hotline answers. Everything else spends from
+// the current show's hourly allowance AND yields to the day plan's quiet
+// windows (server/plan.js): a meeting on the calendar hard-mutes scheduled
+// breaks regardless of budget — 「会议静默」, surfaced via `quiet.reason` so
+// callers and the UI can say WHY the host went silent.
 export function consultTalkBudget(kind, now = Date.now()) {
   const show = currentShow(new Date(now));
   const windowStart = Math.max(now - HOUR_MS, showStartMs(show, now));
   const spent = ledger().filter((ts) => ts >= windowStart && ts <= now).length;
   const exempt = kind === 'chat';
+  const quiet = exempt ? null : isQuietNow(now);
   return {
-    allowed: exempt || spent < show.talkBudget,
+    allowed: exempt || (!quiet && spent < show.talkBudget),
     exempt,
     spent,
     budget: show.talkBudget,
     show,
+    quiet,
   };
+}
+
+/**
+ * Per-call TTS voice params for a break airing at `ts` — the on-air show's
+ * `voice` field, or null for the provider default. Seam for workstream B/C
+ * convergence: when day-plan segments grow their own voice hints, this is the
+ * single place that merges plan-segment voice over the show's.
+ */
+export function voiceParamsAt(ts = Date.now()) {
+  return currentShow(new Date(ts)).voice || null;
 }

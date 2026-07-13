@@ -17,6 +17,12 @@ vi.mock('../server/imaging.js', () => ({ hourlyStationId }));
 const weeklyRecapFact = vi.fn(() => null);
 vi.mock('../server/rituals.js', () => ({ weeklyRecapFact }));
 
+// The day plan (P5 workstream B). generatePlan is the 07:00 cron's job;
+// planOpenFact hands the morning show-open its announcement (or null).
+const generatePlan = vi.fn(async () => null);
+const planOpenFact = vi.fn(async () => null);
+vi.mock('../server/plan.js', () => ({ generatePlan, planOpenFact }));
+
 // Real shows.js against a temp data dir seeded with the shipped schedule.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aurio-show-sched-'));
 process.env.AURIO_DATA_DIR = tmpDir;
@@ -32,6 +38,9 @@ beforeEach(() => {
   runSegment.mockClear();
   hasActiveSession.mockReturnValue(true);
   weeklyRecapFact.mockReturnValue(null);
+  generatePlan.mockClear();
+  planOpenFact.mockReset();
+  planOpenFact.mockResolvedValue(null);
 });
 
 afterAll(() => {
@@ -68,6 +77,43 @@ describe('openShow', () => {
     // 深夜航班 is not on air at 10:00 — a stale or overlapped cron must no-op.
     await scheduler.openShow('深夜航班', wed(10, 0));
     expect(runSegment).not.toHaveBeenCalled();
+    expect(planOpenFact).not.toHaveBeenCalled(); // no slot, no plan spend
+  });
+
+  it('the morning opening carries the day plan as trigger.fact', async () => {
+    planOpenFact.mockResolvedValue('今天的节目单刚排好：静默窗 10:50–11:30（11:00 的会）。');
+    await scheduler.openShow('早安频率', wed(7, 0));
+    expect(planOpenFact).toHaveBeenCalledWith(wed(7, 0));
+    const [trigger, opts] = runSegment.mock.calls[0];
+    expect(trigger.kind).toBe('show-open');
+    expect(trigger.fact).toContain('10:50–11:30');
+    expect(opts.mode).toBe('chat');
+  });
+
+  it('a plan-fact failure never blocks the opening itself', async () => {
+    planOpenFact.mockRejectedValue(new Error('brain down'));
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await scheduler.openShow('早安频率', wed(7, 0));
+    } finally {
+      err.mockRestore();
+    }
+    const [trigger] = runSegment.mock.calls[0];
+    expect(trigger).toEqual({ kind: 'show-open' }); // no fact, still opens
+  });
+});
+
+describe('runPlan (the 07:00 cron)', () => {
+  it('forces a regeneration of the structured plan', async () => {
+    await scheduler.runPlan();
+    expect(generatePlan).toHaveBeenCalledWith({ force: true });
+    expect(runSegment).not.toHaveBeenCalled(); // planning speaks via the show-open, not here
+  });
+
+  it('spends nothing with no listener', async () => {
+    hasActiveSession.mockReturnValue(false);
+    await scheduler.runPlan();
+    expect(generatePlan).not.toHaveBeenCalled();
   });
 });
 

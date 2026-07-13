@@ -420,11 +420,13 @@ export async function assemble(trigger = {}) {
   }[trigger.kind] || '触发';
 
   blocks.push(`## 本次触发\n[${triggerLabel}]`);
-  // Talk budget spent (server/shows.js): this break is music-only. Deciding it
-  // here lets the brain pick tracks knowing no one will be talking over them;
-  // dj.js additionally forces say/segue empty after generation.
+  // Talk budget spent (server/shows.js) or a day-plan quiet window
+  // (server/plan.js): this break is music-only. Deciding it here lets the
+  // brain pick tracks knowing no one will be talking over them; dj.js
+  // additionally forces say/segue empty after generation. `mutedReason`
+  // carries the quiet-window WHY (「会议静默」) when that is the cause.
   if (trigger.muted) {
-    blocks.push('## 这一段不说话\n这档节目本小时的开口次数已经用完。say 和 segue 都必须留空字符串，只管选歌，让音乐自己接。');
+    blocks.push(`## 这一段不说话\n${trigger.mutedReason || '这档节目本小时的开口次数已经用完。'}say 和 segue 都必须留空字符串，只管选歌，让音乐自己接。`);
   }
   if (trigger.fact) blocks.push(`## 刚刚发生的事（由程序观测到的事实）\n${trigger.fact}`);
   if (trigger.text) blocks.push(untrusted('本次用户输入', trigger.text));

@@ -26,6 +26,7 @@ const { config } = await import('../server/config.js');
 const { db } = await import('../server/store.js');
 const { initStation, station } = await import('../server/playout/station.js');
 const imaging = await import('../server/imaging.js');
+const { DAY_PLAN_KEY, localDateKey } = await import('../server/plan.js');
 
 const track = (id, extra = {}) => ({
   source: 'netease', id: String(id), title: `Song ${id}`, artist: 'Artist',
@@ -214,6 +215,41 @@ describe('hourly station ID', () => {
     hasActiveSession.mockReturnValue(false);
     expect(imaging.hourlyStationId(new Date())).toBe(false);
     expect(synthesizeBackground).not.toHaveBeenCalled();
+  });
+});
+
+// P5 workstream B: imaging is identity, not conversation — but nothing of the
+// station speaks over a meeting. A day-plan quiet window silences liners AND
+// the hourly ID.
+describe('quiet windows silence imaging', () => {
+  const seedQuietDay = () => db.setPref(DAY_PLAN_KEY, {
+    date: localDateKey(Date.now()), generatedAt: 0, segments: [],
+    quietWindows: [{ start: '00:00', end: '24:00', reason: '测试静默' }], note: '',
+  });
+
+  afterEach(() => db.setPref(DAY_PLAN_KEY, null));
+
+  it('deliverLiner skips (and spends nothing) during a quiet window', () => {
+    seedProgramme([track(1), track(2)]);
+    seedQuietDay();
+    expect(imaging.deliverLiner(Date.now())).toBe(false);
+    expect(synthesizeBackground).not.toHaveBeenCalled();
+  });
+
+  it('hourlyStationId skips during a quiet window', () => {
+    seedProgramme([track(1), track(2)]);
+    seedQuietDay();
+    expect(imaging.hourlyStationId(new Date())).toBe(false);
+    expect(synthesizeBackground).not.toHaveBeenCalled();
+  });
+
+  it("yesterday's window does not gag today", () => {
+    seedProgramme([track(1), track(2)]);
+    db.setPref(DAY_PLAN_KEY, {
+      date: '2020-01-01', generatedAt: 0, segments: [],
+      quietWindows: [{ start: '00:00', end: '24:00', reason: '过期' }], note: '',
+    });
+    expect(imaging.deliverLiner(Date.now())).toBe(true);
   });
 });
 

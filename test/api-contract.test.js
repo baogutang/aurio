@@ -147,11 +147,53 @@ afterAll(async () => {
 describe('session guard', () => {
   it('hands out the token on /api/session, then requires it', async () => {
     expect(token).toMatch(/^[\w-]{20,}$/);
-    for (const p of ['/api/tape', '/api/hotline', '/api/programme']) {
+    for (const p of ['/api/tape', '/api/hotline', '/api/programme', '/api/plan']) {
       const bare = await fetch(`http://127.0.0.1:${port}${p}`);
       expect(bare.status).toBe(403);
       expect((await api(p)).status).toBe(200);
     }
+  });
+});
+
+describe('GET /api/plan (今日节目单)', () => {
+  const localDate = (ts = Date.now()) => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  it('serves today\'s plan in exactly the contract shape (source stripped)', async () => {
+    db.setPref('dayPlan', {
+      date: localDate(),
+      generatedAt: NOW,
+      segments: [
+        { start: '09:00', end: '11:00', kind: 'focus', label: '上午第一段', reason: '会前专注' },
+      ],
+      quietWindows: [{ start: '10:50', end: '11:30', reason: '11:00 的会' }],
+      note: '十一点前少说话',
+      source: 'llm', // internal — must not leak
+    });
+    const body = await (await api('/api/plan')).json();
+    expect(body).toEqual({
+      ok: true,
+      plan: {
+        date: localDate(),
+        generatedAt: NOW,
+        segments: [
+          { start: '09:00', end: '11:00', kind: 'focus', label: '上午第一段', reason: '会前专注' },
+        ],
+        quietWindows: [{ start: '10:50', end: '11:30', reason: '11:00 的会' }],
+        note: '十一点前少说话',
+      },
+    });
+  });
+
+  it('plan is null when absent or stale', async () => {
+    db.setPref('dayPlan', {
+      date: '2020-01-01', generatedAt: 1, segments: [], quietWindows: [], note: '',
+    });
+    expect((await (await api('/api/plan')).json()).plan).toBeNull();
+    db.setPref('dayPlan', null);
+    expect((await (await api('/api/plan')).json()).plan).toBeNull();
   });
 });
 
