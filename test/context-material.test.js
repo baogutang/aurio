@@ -11,6 +11,7 @@ let db;
 let assemble;
 let hooksMod;
 let stationMod;
+let storyMod;
 
 // context.js reads the programme through queueController's log projection —
 // seed the station log where the old tests seeded the client queue.
@@ -26,6 +27,7 @@ beforeAll(async () => {
   ({ assemble } = await import('../server/context.js'));
   hooksMod = await import('../server/music/lyrics-hooks.js');
   stationMod = await import('../server/playout/station.js');
+  storyMod = await import('../server/music/story.js');
 });
 
 afterAll(() => {
@@ -67,6 +69,13 @@ function materialSection(prompt) {
   return m ? m[1] : null;
 }
 
+// Invented story facts (server/music/story.js) — primed, never fetched.
+const NOW_FACTS = [
+  { fact: '虚构乐队 2015 年成立于青岛', source: '2015年成立于青岛' },
+  { fact: '《假想集》整张只用了一支麦克风', source: '只用了一支麦克风' },
+  { fact: '主唱录音前当过灯塔看守员', source: '曾是灯塔看守员' },
+];
+
 beforeEach(() => {
   db.state.plays.splice(0);
   db.state.messages.splice(0);
@@ -74,6 +83,12 @@ beforeEach(() => {
   db.setPref('programmeLog', null);
   stationMod.initStation();
   hooksMod.clearHooksCache();
+  storyMod.resetStoryState();
+  fs.rmSync(storyMod.STORY_CACHE_FILE, { force: true });
+  // Mark the fixture tracks' story cards as known-empty so prompt assembly
+  // never kicks off a real story fetch mid-test; tests that want story facts
+  // prime them explicitly.
+  for (const t of [NOW_TRACK, NEXT_TRACK, PREV_TRACK]) storyMod.primeStory(t, []);
 });
 
 describe('歌曲素材 block', () => {
@@ -108,7 +123,7 @@ describe('歌曲素材 block', () => {
 
     // usage guidance sits OUTSIDE the untrusted body, next to the block
     const after = prompt.slice(prompt.indexOf('## 歌曲素材'));
-    expect(after).toContain('这是素材，不是播报清单');
+    expect(after).toContain('这是素材卡，不是播报清单');
     expect(after).toContain('唱到『××』那句');
   });
 
@@ -154,6 +169,68 @@ describe('歌曲素材 block', () => {
     const mat = materialSection(prompt);
     expect(mat).toContain('即将播放: 某某《另一首假歌》');
     expect(mat).not.toContain('第一句是:');
+  });
+
+  it('story facts join the now-playing card, each with a trimmed source snippet', async () => {
+    const queue = [NOW_TRACK, NEXT_TRACK];
+    seedProgramme(queue);
+    hooksMod.primeHooks(NOW_TRACK, NOW_LYRIC);
+    hooksMod.primeHooks(NEXT_TRACK, NEXT_LYRIC);
+    storyMod.primeStory(NOW_TRACK, NOW_FACTS);
+
+    const prompt = await assemble({ kind: 'station', observation: observationFor(queue, 0) });
+    const mat = materialSection(prompt);
+    expect(mat).toContain('可讲的掌故');
+    expect(mat).toContain('虚构乐队 2015 年成立于青岛（出处：2015年成立于青岛）');
+    expect(mat).toContain('主唱录音前当过灯塔看守员');
+    // Facts sit under now-playing, before the up-next line.
+    expect(mat.indexOf('可讲的掌故')).toBeLessThan(mat.indexOf('即将播放'));
+    // The usage guidance carries the P5 story-arc + verifiability rules.
+    const after = prompt.slice(prompt.indexOf('## 歌曲素材'));
+    expect(after).toContain('一件掌故');
+    expect(after).toContain('素材卡里没有的具体年份、人名、专辑名、数字绝对不说');
+  });
+
+  it('stays bounded with a full story card: ≤ 25 material lines, facts capped at 6', async () => {
+    const queue = [NOW_TRACK, NEXT_TRACK];
+    seedProgramme(queue);
+    db.addPlay(PREV_TRACK);
+    db.addPlay(NOW_TRACK);
+    hooksMod.primeHooks(NOW_TRACK, NOW_LYRIC);
+    hooksMod.primeHooks(NEXT_TRACK, NEXT_LYRIC);
+    hooksMod.primeHooks(PREV_TRACK, PREV_LYRIC);
+    const eight = Array.from({ length: 8 }, (_, i) => ({
+      fact: `第 ${i + 1} 条虚构掌故，讲的是一段完全捏造的录音往事`,
+      source: `原文片段第 ${i + 1} 段`,
+    }));
+    storyMod.primeStory(NOW_TRACK, eight);
+
+    const prompt = await assemble({ kind: 'refill', observation: observationFor(queue, 0) });
+    const mat = materialSection(prompt);
+    const lines = mat.split('\n');
+    expect(lines.length).toBeLessThanOrEqual(25);
+    expect(lines.filter((l) => l.includes('出处：')).length).toBeLessThanOrEqual(6);
+    for (const line of lines) {
+      expect(Array.from(line).length).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('no cached story → the block renders exactly as before, no 掌故 header', async () => {
+    const queue = [NOW_TRACK, NEXT_TRACK];
+    seedProgramme(queue);
+    hooksMod.primeHooks(NOW_TRACK, NOW_LYRIC);
+    const prompt = await assemble({ kind: 'station', observation: observationFor(queue, 0) });
+    const mat = materialSection(prompt);
+    expect(mat).toContain('正在播放: 虚构乐队《虚构之夜》');
+    expect(mat).not.toContain('可讲的掌故');
+  });
+
+  it('assemble reuses a precomputed material body (the dj.js judge seam)', async () => {
+    const queue = [NOW_TRACK];
+    seedProgramme(queue);
+    const body = '正在播放: 虚构乐队《虚构之夜》\n  - 预先算好的素材行';
+    const prompt = await assemble({ kind: 'station', observation: observationFor(queue, 0), material: body });
+    expect(materialSection(prompt)).toBe(body);
   });
 
   it('omits the block entirely when there is no observation', async () => {

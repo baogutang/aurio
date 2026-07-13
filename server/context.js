@@ -12,6 +12,7 @@ import { recentAngles } from './agent/judge.js';
 import { currentShow } from './shows.js';
 import { queueController } from './runtime/queue-controller.js';
 import { hooksForTrack, cachedHooks, prefetchHooks } from './music/lyrics-hooks.js';
+import { storyForTrack, prefetchStory } from './music/story.js';
 
 function readIfExists(p) {
   try { return fs.readFileSync(p, 'utf8'); } catch { return ''; }
@@ -187,11 +188,15 @@ function history() {
 }
 
 // --- 歌曲素材 -----------------------------------------------------------
-// Real details from the songs on air (lyric hooks + year/album/genre), so the
-// host has something true to say instead of adjectives. User feedback: 口播要
-// 能接到正在播/刚播完/即将播的歌词上，电台才像电台。Budget: ≤ 7 material lines.
-// Now-playing lyrics fetch with a short timeout; previous/next are cache-only —
-// prompt assembly never blocks on them (lyrics-hooks.js warms the cache).
+// The story card: real details from the songs on air, so the host has
+// something TRUE to tell instead of adjectives — and instead of the model's
+// free-floating music knowledge, which hallucinates (决策记录 2026-07-13：掌故
+// 只讲可验证的). For the now-playing track: metadata + lyric hooks + up to 6
+// distilled story facts (server/music/story.js), each with its trimmed source
+// snippet — the model needs the fact, the judge (fabricated_fact) needs the
+// text. Prev/next keep one hook each. Budget: ≤ ~25 material lines.
+// Now-playing fetches ride short timeouts; prev/next are cache-only — prompt
+// assembly never blocks on them (lyrics-hooks/story prefetch warms the cache).
 
 function sameTrack(a = {}, b = {}) {
   if (a.source && a.id && b.source && b.id) {
@@ -208,7 +213,19 @@ function trackLine(t) {
   return `${t.artist}《${t.title}》${meta.length ? `（${meta.join('，')}）` : ''}`;
 }
 
-async function songMaterial(observation) {
+const STORY_FACT_LINES = 6;
+
+function clipLine(value, max) {
+  const t = (value ?? '').toString().replace(/\s+/g, ' ').trim();
+  const cp = Array.from(t);
+  return cp.length <= max ? t : `${cp.slice(0, max - 1).join('')}…`;
+}
+
+/**
+ * The 歌曲素材 block body (exported so dj.js can hand the same text to the
+ * judge's fabricated_fact check). Returns '' when there is nothing to tell.
+ */
+export async function buildSongMaterial(observation) {
   try {
     const o = observation || {};
     const idx = o.playback?.playingIndex ?? -1;
@@ -223,9 +240,19 @@ async function songMaterial(observation) {
     const lines = [];
     if (now?.title) {
       lines.push(`正在播放: ${trackLine(now)}`);
-      const hooks = await hooksForTrack(now, { timeoutMs: 1500 });
+      const [hooks, story] = await Promise.all([
+        hooksForTrack(now, { timeoutMs: 1500 }),
+        storyForTrack(now, { timeoutMs: 1200 }),
+      ]);
       if (hooks[0]) lines.push(`  开头唱的是: 「${hooks[0]}」`);
       if (hooks[1]) lines.push(`  整首唱得最多的一句: 「${hooks[1]}」`);
+      const facts = story?.facts || [];
+      if (facts.length) {
+        lines.push('  这首歌的歌手/专辑可讲的掌故（括号里是出处片段）:');
+        for (const f of facts.slice(0, STORY_FACT_LINES)) {
+          lines.push(`  - ${clipLine(f.fact, 64)}（出处：${clipLine(f.source, 24)}）`);
+        }
+      }
     }
     if (prev?.title && !(next && sameTrack(prev, next))) {
       lines.push(`上一首刚放完: ${prev.artist}《${prev.title}》`);
@@ -238,6 +265,7 @@ async function songMaterial(observation) {
       const hooks = cachedHooks(next);
       if (hooks?.[0]) lines.push(`  第一句是: 「${hooks[0]}」`);
       else prefetchHooks(next); // warm the cache for the break when it airs
+      prefetchStory(next);      // …and its story card (no-op when known)
     }
     return lines.join('\n');
   } catch {
@@ -264,19 +292,24 @@ const OUTPUT_CONTRACT = `
 }
 play 数组里的每个 query 会被用来在用户的音乐库里检索歌曲，请写成"歌手 - 歌名"的形式。
 如果这次不需要播歌，play 留空数组即可。
-say 通常写 1 句中文，最多 2 句；用户点歌时 45 个中文字符以内最舒服。必须像真人主播顺手说出来，不要模板。
+say 默认写 2–4 句中文，讲一个完整的小故事弧：一件掌故 → 它听起来是什么感觉 → 听众的此刻。没有可讲的素材时宁可只写一句，或者留空。用户点歌时一句确认最舒服（45 个中文字符以内）。必须像真人主播顺手说出来，不要模板。
+口播里的具体年份、人名、专辑名、数字只能来自提示里给你的素材；素材里没有的绝对不说。
 没有真正想说的东西时，say 留空字符串就行——沉默是正当的选择，不是失败。
 不要把中文歌手硬说成英文昵称；周杰伦就说“周杰伦”，不要说“Jay”，除非候选歌曲里的官方名称本来就是英文。
 如果用户指定了音源或歌手，只能基于真实命中的歌说话；没找到就直接说明没找到，不要假装已经按要求找到了。
 少用抽象形容词堆叠，多用一个具体场景细节，比如时间、天气、城市、正在播的歌或用户刚说的话；没有好细节就少说。
-segue 最多 45 个中文字符，像电台垫话，不要解释选曲逻辑。
+segue 最多 60 个中文字符，像电台垫话，不要解释选曲逻辑。
 intent / placement / mood 只在“用户对你说话”时才需要；系统自动触发（开台 / 续播 / 早间等）时无需填这三项。`;
 
-// trigger: { kind: 'chat'|'plan'|'morning'|'mood'|..., text, toolResults }
+// trigger: { kind: 'chat'|'plan'|'morning'|'mood'|..., text, toolResults,
+// material? — a precomputed 歌曲素材 body (dj.js builds it once and shares it
+// with the judge's fabricated_fact check; when absent we build it here). }
 export async function assemble(trigger = {}) {
   const [env, material] = await Promise.all([
     environment(),
-    trigger.observation ? songMaterial(trigger.observation) : Promise.resolve(''),
+    typeof trigger.material === 'string'
+      ? Promise.resolve(trigger.material)
+      : (trigger.observation ? buildSongMaterial(trigger.observation) : Promise.resolve('')),
   ]);
   const blocks = [];
 
@@ -322,10 +355,10 @@ export async function assemble(trigger = {}) {
     blocks.push(untrusted('当前观测（实时播放状态）', lines.join('\n')));
   }
 
-  // 歌词句与来历只是素材：给口播一个真实的落点，但一段最多借一个点，且随时
-  // 可以整块不用（talk budget 静音时它自然闲置）。指引写在 untrusted 之外。
+  // 歌词句与掌故只是素材：给口播一个真实的落点，且随时可以整块不用（talk
+  // budget 静音时它自然闲置）。指引写在 untrusted 之外。
   if (material) {
-    blocks.push(`${untrusted('歌曲素材（正在播/刚播完/即将播的真实细节）', material)}\n用法：这是素材，不是播报清单。一次口播最多取其中一个点；引半句歌词把话接进来（「唱到『××』那句……」）是最好的接歌方式，年份、专辑偶尔当一句小知识顺口带过。不逐条复述，不整段念歌词；没有想说的就完全不用。`);
+    blocks.push(`${untrusted('歌曲素材（正在播/刚播完/即将播的真实细节）', material)}\n用法：这是素材卡，不是播报清单。一次口播讲一个完整的小故事弧：一件掌故 → 它听起来是什么感觉 → 听众的此刻。素材卡里没有的具体年份、人名、专辑名、数字绝对不说——卡里没有，就把那个细节整个去掉，不要换一个编的。引半句歌词把话接进来（「唱到『××』那句……」）依然是最好的接歌方式。不逐条复述，不整段念歌词；没有想讲的就完全不用，留给音乐。`);
   }
 
   const plan = db.getPlan();
