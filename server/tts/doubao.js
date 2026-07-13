@@ -17,11 +17,26 @@ function ensureDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
 
-// Voice, emotion and speed all change the audio, so they are part of the key.
-function hashFor(text) {
+// Per-call voice overrides (per-show/segment voice, workstream C): only the
+// three audio knobs, only when they hold a usable value; everything else falls
+// back to config.doubao. Same sanitizing as shows.js's validateVoice — belt
+// and braces, since call sites may hand through raw objects.
+function callVoice(opts = undefined) {
   const d = config.doubao;
+  const o = opts && typeof opts === 'object' ? opts : {};
+  const speed = Number(o.speed);
+  return {
+    voiceType: typeof o.voiceType === 'string' && o.voiceType.trim() ? o.voiceType.trim() : d.voiceType,
+    speed: Number.isFinite(speed) && speed > 0 ? speed : d.speed,
+    emotion: typeof o.emotion === 'string' && o.emotion.trim() ? o.emotion.trim() : d.emotion,
+  };
+}
+
+// Voice, emotion and speed all change the audio, so they are part of the key —
+// per-call values included: the same line in two shows' voices is two clips.
+function hashFor(text, v = callVoice()) {
   return crypto.createHash('sha1')
-    .update(`doubao::${d.voiceType}::${d.emotion}::${d.speed}::${text}`)
+    .update(`doubao::${v.voiceType}::${v.emotion}::${v.speed}::${text}`)
     .digest('hex');
 }
 
@@ -80,10 +95,10 @@ async function requestTts({ appid, token, cluster, voiceType, speed, emotion, te
   return Buffer.from(body.data, 'base64');
 }
 
-export function cachedSynthesis(text) {
+export function cachedSynthesis(text, opts = undefined) {
   if (!config.doubao.enabled || !text || !text.trim()) return null;
   ensureDir();
-  const hash = hashFor(text);
+  const hash = hashFor(text, callVoice(opts));
   const file = path.join(CACHE_DIR, `${hash}.mp3`);
   const url = `/tts/${hash}.mp3`;
 
@@ -91,13 +106,15 @@ export function cachedSynthesis(text) {
   return null;
 }
 
-// Returns { url, cached } or null when TTS is unavailable.
-export async function synthesize(text) {
-  const cached = cachedSynthesis(text);
+// Returns { url, cached } or null when TTS is unavailable. `opts` may carry
+// per-call { voiceType, speed, emotion } overrides (see callVoice).
+export async function synthesize(text, opts = undefined) {
+  const cached = cachedSynthesis(text, opts);
   if (cached) return cached;
   if (!config.doubao.enabled || !text || !text.trim()) return null;
   ensureDir();
-  const hash = hashFor(text);
+  const v = callVoice(opts);
+  const hash = hashFor(text, v);
   const file = path.join(CACHE_DIR, `${hash}.mp3`);
   const url = `/tts/${hash}.mp3`;
 
@@ -106,9 +123,9 @@ export async function synthesize(text) {
       appid: config.doubao.appid,
       token: config.doubao.token,
       cluster: config.doubao.cluster,
-      voiceType: config.doubao.voiceType,
-      speed: config.doubao.speed,
-      emotion: config.doubao.emotion,
+      voiceType: v.voiceType,
+      speed: v.speed,
+      emotion: v.emotion,
       text,
     });
     fs.writeFileSync(file, buf);

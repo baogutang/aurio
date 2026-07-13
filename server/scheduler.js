@@ -3,7 +3,10 @@
 //
 // The rhythm follows the programme schedule (user/shows.json → server/shows.js):
 //
-//   · 07:00 plan     — unchanged: sketches the day's mood note.
+//   · 07:00 plan     — P5 workstream B: generates the structured 今日节目单
+//                      (server/plan.js — deterministic quiet windows from the
+//                      calendar + one LLM ask for segment intents). No spoken
+//                      beat of its own: the morning show-open announces it.
 //   · show starts    — one 'show-open' beat per show boundary, hot-reloaded:
 //                      a periodic re-stat of user/shows.json re-derives the
 //                      boundary crons when the file changes (syncShowCrons),
@@ -32,6 +35,7 @@ import { hasActiveSession, currentIndex } from './radio.js';
 import { hourlyStationId } from './imaging.js';
 import { listShows, currentShow, showsFileBroken } from './shows.js';
 import { weeklyRecapFact } from './rituals.js';
+import { generatePlan, planOpenFact } from './plan.js';
 
 const jobs = [];                 // fixed jobs: plan, recap, hourly ID
 const showJobs = new Map();      // "name@expr" → live show-open cron
@@ -50,18 +54,33 @@ function gate(kind) {
   return true;
 }
 
-function runPlan() {
+// 07:00 — build today's structured plan (quiet windows + segment intents).
+// LLM spend, so it stays behind the listener gate; a morning show-open later
+// regenerates on demand (plan.planOpenFact) if nobody was listening at 07:00.
+export async function runPlan() {
   if (!gate('plan')) return;
-  runSegment({ kind: 'plan' }, { mode: 'append', currentIndex: currentIndex() })
-    .catch((e) => console.error('[scheduler] plan', e.message));
+  try {
+    await generatePlan({ force: true });
+  } catch (e) {
+    console.error('[scheduler] plan', e.message);
+  }
 }
 
 // One spoken opening for the show that just started. The guard re-resolves the
 // schedule: with overlapping shows, first-match-wins may hand this slot to an
-// earlier show, in which case the loser's cron stays quiet.
-export function openShow(name, now = new Date()) {
+// earlier show, in which case the loser's cron stays quiet. A morning opening
+// additionally carries the day plan as trigger.fact (recap pattern: code
+// states the facts, the host words them —「今天三个会，十一点前我少说话」).
+export async function openShow(name, now = new Date()) {
   if (currentShow(now).name !== name) return null;
-  return runSegment({ kind: 'show-open' }, { mode: 'chat', currentIndex: currentIndex() })
+  const trigger = { kind: 'show-open' };
+  try {
+    const fact = await planOpenFact(now);
+    if (fact) trigger.fact = fact;
+  } catch (e) {
+    console.error('[scheduler] plan fact', e.message);
+  }
+  return runSegment(trigger, { mode: 'chat', currentIndex: currentIndex() })
     .catch((e) => console.error('[scheduler] show-open', e.message));
 }
 

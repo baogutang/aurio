@@ -47,6 +47,7 @@ fs.writeFileSync(path.join(tmpDir, 'user', 'shows.json'), JSON.stringify({
     name: '测试台', freq: '77.7', start: '00:00', end: '24:00',
     talkBudget: 2, tone: '测试语气', musicRules: '测试选曲',
     sayMax: 12, segueMax: 10,
+    voice: { speed: 0.8 }, // per-show voice params (workstream C threading)
   }],
 }));
 
@@ -55,6 +56,8 @@ const shows = await import('../server/shows.js');
 const { _resetLedger } = await import('../server/agent/judge.js');
 const { db } = await import('../server/store.js');
 const { initStation, station } = await import('../server/playout/station.js');
+const { DAY_PLAN_KEY, localDateKey } = await import('../server/plan.js');
+const tts = await import('../server/tts/index.js');
 
 afterAll(() => {
   delete process.env.AURIO_DATA_DIR;
@@ -72,6 +75,7 @@ beforeEach(() => {
   db.setPref(shows.TALK_LEDGER_KEY, []);
   db.setPref('segmentMemory', []);
   db.setPref('programmeLog', null);
+  db.setPref(DAY_PLAN_KEY, null);
   initStation(); // fresh programme log per test
   // These tests pin the RULE judge's call arithmetic; the LLM judge layer has
   // its own wiring test below and unit tests in judge-llm.test.js.
@@ -83,7 +87,7 @@ describe('composeSegment × talk budget', () => {
     think.mockResolvedValue(action('风把云吹开了。'));
     const seg = await dj.composeSegment({ kind: 'mood' });
     expect(seg.say).toBe('风把云吹开了。');
-    expect(seg.talk).toEqual({ allowed: true, exempt: false, show: '测试台', spent: 0, budget: 2 });
+    expect(seg.talk).toEqual({ allowed: true, exempt: false, show: '测试台', spent: 0, budget: 2, quiet: null });
     // The prompt carried the show block.
     expect(think.mock.calls[0][0]).toContain('当前节目');
     expect(think.mock.calls[0][0]).toContain('《测试台》');
@@ -112,6 +116,51 @@ describe('composeSegment × talk budget', () => {
     expect(seg.say).toBe('在呢，你说。');
     expect(seg.talk.allowed).toBe(true);
     expect(seg.talk.exempt).toBe(true);
+  });
+});
+
+// P5 workstream B: a day-plan quiet window (会议静默) hard-mutes scheduled
+// breaks even with budget to spare — and the WHY reaches both the prompt and
+// the exposed decision.
+describe('composeSegment × quiet window', () => {
+  const seedQuiet = () => db.setPref(DAY_PLAN_KEY, {
+    date: localDateKey(Date.now()), generatedAt: 0, segments: [],
+    quietWindows: [{ start: '00:00', end: '24:00', reason: '11:00 的会' }], note: '',
+  });
+
+  it('forces a music-only break with the reason surfaced — one brain call', async () => {
+    seedQuiet();
+    think.mockResolvedValue(action('会议中也想插话。'));
+    const seg = await dj.composeSegment({ kind: 'mood' });
+    expect(seg.say).toBe('');
+    expect(seg.segue).toBe('');
+    expect(seg.talk.allowed).toBe(false);
+    expect(seg.talk.quiet).toBe('11:00 的会');   // 「会议静默」 visible to callers/UI
+    expect(seg.talk.spent).toBe(0);              // the budget was not the reason
+    expect(think).toHaveBeenCalledTimes(1);      // muted before the judge: no retry
+    // …and the prompt says WHY this break is silent.
+    expect(think.mock.calls[0][0]).toContain('这一段不说话');
+    expect(think.mock.calls[0][0]).toContain('静默窗（11:00 的会）');
+  });
+
+  it('user chat cuts through the quiet window', async () => {
+    seedQuiet();
+    think.mockResolvedValue(action('在，小声说。'));
+    const seg = await dj.composeSegment({ kind: 'chat' });
+    expect(seg.say).toBe('在，小声说。');
+    expect(seg.talk.allowed).toBe(true);
+    expect(seg.talk.quiet).toBeNull();
+  });
+});
+
+// Workstream C threading at the dj seam: the on-air show's voice params ride
+// the synthesis calls.
+describe('composeSegment × per-show voice params', () => {
+  it('hands the show voice to cachedSynthesis and exposes it on the segment', async () => {
+    think.mockResolvedValue(action('风把云吹开了。'));
+    const seg = await dj.composeSegment({ kind: 'mood' });
+    expect(seg.voiceOpts).toEqual({ speed: 0.8 }); // 测试台's voice
+    expect(tts.cachedSynthesis).toHaveBeenCalledWith('风把云吹开了。', { speed: 0.8 });
   });
 });
 

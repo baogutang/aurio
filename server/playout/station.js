@@ -22,6 +22,8 @@ import { config } from '../config.js';
 import { eventBus } from '../runtime/event-bus.js';
 import { synthesizeBackground } from '../tts/index.js';
 import { ensureCue, cachedCue } from '../music/cue.js';
+import { voiceParamsAt } from '../shows.js';
+import { isQuietNow } from '../plan.js';
 
 export const PROGRAMME_LOG_PREF = 'programmeLog';
 export const STATION_STARTED_PREF = 'stationStartedAt';
@@ -61,6 +63,12 @@ function defaultDeps() {
     horizonMs: undefined, // engine default (5 min)
     cue: process.env.VITEST ? null : ensureCue,
     synthesize: synthesizeBackground,
+    // Per-airing voice params (the show — later plan segment — on air at ts)
+    // and the day plan's quiet-window check. Both default OFF under vitest,
+    // like cue: unit tests with fake epoch-0 clocks must not have today's
+    // real schedule/plan leak into their assertions.
+    voiceParams: process.env.VITEST ? () => null : (ts) => voiceParamsAt(ts),
+    quiet: process.env.VITEST ? () => null : (ts) => isQuietNow(ts),
     prefs: process.env.VITEST ? memoryPrefs() : {
       get: (k, d) => db.getPref(k, d),
       set: (k, v) => db.setPref(k, v),
@@ -185,7 +193,12 @@ function trackVoices() {
   if (!playout || !listenerGate()) return;
   const snap = playout.join({ upNext: VOICE_TRACK_AHEAD });
   const targets = [snap.current, ...snap.upNext]
-    .filter((it) => it?.voice?.text && !it.voice.ttsUrl);
+    .filter((it) => it?.voice?.text && !it.voice.ttsUrl)
+    // Spend rule: don't synthesize what won't speak. An item airing inside a
+    // day-plan quiet window (server/plan.js) has its break muted anyway, so
+    // its voice never earns a TTS call. Skipped, not consumed: if the window
+    // moves before it airs, the next trackVoices pass picks it up again.
+    .filter((it) => !deps.quiet(startOf(it) ?? deps.now()));
   for (const it of targets) {
     const { id } = it;
     if (inflightVoice.has(id)) continue;
@@ -200,7 +213,12 @@ function trackVoices() {
         emitProgramme('voice');
       } catch { /* item removed meanwhile */ }
     };
-    const ready = deps.synthesize(it.voice.text, deliver);
+    // Voice params resolve against the item's air time, so a line riding a
+    // 深夜航班 track is synthesized in that show's softer register.
+    const vo = deps.voiceParams(startOf(it) ?? deps.now()) || null;
+    const ready = vo
+      ? deps.synthesize(it.voice.text, deliver, vo)
+      : deps.synthesize(it.voice.text, deliver);
     if (ready?.url) deliver(ready);
     else if (ready === null && inflightVoice.has(id) && !it.voice.text.trim()) {
       inflightVoice.delete(id);

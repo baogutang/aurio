@@ -37,6 +37,7 @@ import { foldRollups } from './agent/rollups.js';
 import { registerServer, installSignalHandlers, stopServer } from './shutdown.js';
 import { environmentSnapshot } from './context.js';
 import { performFirstRun } from './rituals.js';
+import { publicPlan } from './plan.js';
 
 load();
 loadSettings();
@@ -598,6 +599,13 @@ app.get('/api/hotline', (req, res) => {
 app.post('/api/skip', (req, res) => {
   station.skip();
   res.json({ ok: true, ...station.join() });
+});
+
+// ---- 今日节目单 (P5 workstream B): the structured day plan ----
+// Read-only: never generates (the 07:00 cron and the morning show-open do the
+// spending), so a polling UI costs nothing. `plan` is null until today has one.
+app.get('/api/plan', (req, res) => {
+  res.json({ ok: true, plan: publicPlan() });
 });
 
 app.get('/api/plan/today', (req, res) => res.json({ plan: db.getPlan() }));
