@@ -4,6 +4,77 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - 2026-07-13
+
+0.5.0 built the station; 0.6.0 gives it a person. The DJ now tells real music
+stories — sourced, never invented — plans your whole day around your calendar,
+and finally has a face.
+
+### Added
+
+- **Music-story engine**: a material pipeline fetches REAL artist bios and
+  album notes from the music sources, distills them once (LLM) into 5–8
+  sourced facts per artist/album, and caches them forever
+  (`server/music/story.js`, `cache/stories.json`). The prompt's song-material
+  block grows into a full story card: facts with source snippets + lyric
+  hooks + metadata.
+- **Verifiable-facts judge**: a new deterministic category
+  (`fabricated_fact`) rejects any spoken year or 《album title》 that does not
+  appear in the material text — the Claudio storytelling feel without the
+  hallucinations. Speech budgets grow 60→160 chars (a 2–4 sentence story arc
+  is the new default register; the persona is rewritten accordingly), while
+  talk budgets go DOWN — fewer breaks, each a full meal.
+- **今日节目单 (the day plan)**: every morning the station reads your calendar,
+  weather and listening stats, then plans the day — quiet windows are derived
+  deterministically in code (every timed event ⇒ silence from 10 minutes
+  before through the end; the LLM can never invent or drop a meeting), while
+  one LLM call names the segments (「健身前唤醒」「夜深语慢声轻，敢留白」).
+  Enforced everywhere: talk budget, liners, hourly IDs, and voice-track
+  pre-synthesis all respect the windows. The morning show-open announces the
+  plan on air; `GET /api/plan` serves it.
+- **Plan UI**: the hot clock gains a thin outer ring colored by the day's
+  segments (quiet windows punched out as hollow ticks) and a rundown sheet —
+  the broadcast schedule as a visible artifact.
+- **Per-show voices**: `user/shows.json` accepts `voice { voiceType, speed,
+  emotion }` per show, threaded through every TTS call site with cache keys to
+  match; 深夜航班 ships with a slower, softer late-night voice preset.
+- **「Speaking…」moment**: when the DJ talks, a full-width waveform strip —
+  real bars off the voice bus — takes over the spectrum area, and rolls back
+  instantly on interruption.
+- **A face**: tap the mascot for the station profile card (bio, style tags
+  derived from your taste profile, ON AIR 24/7 · LISTENER n). Chat replies
+  render tappable song cards (tap = play it now via the hotline's urgent
+  channel). The DJ's spoken lines become a timestamped studio-logbook
+  transcript in the chat feed.
+- **Guided settings**: a Doubao (火山引擎) voice panel with a 4-step credential
+  guide and audition button; the calendar panel becomes a provider chooser —
+  macOS system calendar, 飞书, 钉钉, 企业微信, ICS — each with live status,
+  numbered setup steps, exact console URLs and permission names, and a
+  save-and-test button whose failure messages say what to DO next.
+- `brain.ask()`: a raw-text path beside `think()` for structured JSON calls
+  (distillation, plan generation, the LLM judge).
+
+### Fixed
+
+- **The LLM judge never worked**: `think()` normalizes every reply into a DJ
+  action, destroying the judge's `{"pass":…}` verdict before parsing — it had
+  been silently failing open since 0.5.0. It now rides `brain.ask()`.
+- **macOS calendar events had no times**: the AppleScript fetched start dates
+  but the parser threw them away, silently disabling quiet windows for the
+  one calendar most users have. Dates now travel as locale-proof
+  seconds-from-midnight, with real end times and an all-day flag.
+- A denied macOS calendar permission used to read as success (「今天 0 个
+  事件」); it now returns guided copy with the authorization fallback.
+- The silent priming wav latched the `talking` state forever (subtle
+  spectrum dim and mascot chatter; glaring once the Speaking strip existed).
+
+### Notes
+
+- Doubao live synthesis and regenerating the 18 liners in the new voice still
+  await real credentials (Settings → 语音 → 豆包 has the guide).
+- DingTalk / WeCom calendar cards verify credentials only for now; event
+  reading lands later — the UI says so and points to ICS.
+
 ## [0.5.0] - 2026-07-10
 
 Aurio becomes a station. The timeline now lives on the server and advances
