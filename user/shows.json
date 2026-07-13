@@ -6,7 +6,7 @@
       "freq": "90.2",
       "start": "07:00",
       "end": "09:00",
-      "talkBudget": 4,
+      "talkBudget": 3,
       "tone": "清醒、轻快；天气、日程、报时都值得说一句",
       "musicRules": "轻快有精神，只放听众熟悉的歌，早晨不试新",
       "familiarOnly": true
@@ -26,11 +26,11 @@
       "freq": "88.7",
       "start": "21:00",
       "end": "24:00",
-      "talkBudget": 3,
-      "tone": "语速慢、声音轻，一句顶一句，敢留白",
+      "talkBudget": 2,
+      "tone": "语速慢、声音轻，讲一个完整的小故事，敢留白",
       "musicRules": "敢放冷门与回忆，慢歌优先，越晚越静",
-      "sayMax": 40,
-      "segueMax": 30
+      "sayMax": 120,
+      "segueMax": 50
     }
   ]
 }

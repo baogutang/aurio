@@ -66,14 +66,16 @@ describe('the shipped seed schedule', () => {
     expect(shows.currentShow(sat(10)).name).toBe(shows.DEFAULT_SHOW.name);
   });
 
+  // P5（决策记录 2026-07-13）：话密度下调（早安 4→3、深夜 3→2），每次开口是
+  // 一顿正餐（深夜 sayMax 40→120 / segueMax 30→50）。
   it('carries the vision-doc knobs through validation', () => {
     const morning = shows.currentShow(wed(8));
     expect(morning.familiarOnly).toBe(true);
-    expect(morning.talkBudget).toBe(4);
+    expect(morning.talkBudget).toBe(3);
     const night = shows.currentShow(wed(22));
-    expect(night.talkBudget).toBe(3);
-    expect(night.sayMax).toBe(40);
-    expect(night.segueMax).toBe(30);
+    expect(night.talkBudget).toBe(2);
+    expect(night.sayMax).toBe(120);
+    expect(night.segueMax).toBe(50);
     expect(night.freq).toBe('88.7');
   });
 });
@@ -174,29 +176,27 @@ describe('talk budget', () => {
     db.setPref(shows.TALK_LEDGER_KEY, []);
   });
 
-  const T = wed(22).getTime(); // inside 深夜航班 (budget 3, started 21:00)
+  const T = wed(22).getTime(); // inside 深夜航班 (P5 budget 2, started 21:00)
   const MIN = 60 * 1000;
 
   it('allows a scheduled break while the budget has room', () => {
     const t = shows.consultTalkBudget('refill', T);
-    expect(t).toMatchObject({ allowed: true, exempt: false, spent: 0, budget: 3 });
+    expect(t).toMatchObject({ allowed: true, exempt: false, spent: 0, budget: 2 });
     expect(t.show.name).toBe('深夜航班');
   });
 
   it('mutes scheduled breaks once the hourly budget is spent', () => {
     shows.recordSpokenBreak(T);
     shows.recordSpokenBreak(T + MIN);
-    shows.recordSpokenBreak(T + 2 * MIN);
-    const t = shows.consultTalkBudget('refill', T + 3 * MIN);
+    const t = shows.consultTalkBudget('refill', T + 2 * MIN);
     expect(t.allowed).toBe(false);
-    expect(t.spent).toBe(3);
+    expect(t.spent).toBe(2);
   });
 
   it('user chat is always exempt', () => {
     shows.recordSpokenBreak(T);
     shows.recordSpokenBreak(T + MIN);
-    shows.recordSpokenBreak(T + 2 * MIN);
-    const t = shows.consultTalkBudget('chat', T + 3 * MIN);
+    const t = shows.consultTalkBudget('chat', T + 2 * MIN);
     expect(t.allowed).toBe(true);
     expect(t.exempt).toBe(true);
   });

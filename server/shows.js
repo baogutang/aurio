@@ -45,7 +45,7 @@ export const DEFAULT_SHOW = Object.freeze({
 // array in the file, by contrast, means "no named shows" and is honoured.
 const BUILTIN_SHOWS = [
   {
-    name: '早安频率', freq: '90.2', start: '07:00', end: '09:00', talkBudget: 4,
+    name: '早安频率', freq: '90.2', start: '07:00', end: '09:00', talkBudget: 3,
     tone: '清醒、轻快；天气、日程、报时都值得说一句',
     musicRules: '轻快有精神，只放听众熟悉的歌，早晨不试新',
     familiarOnly: true,
@@ -56,10 +56,10 @@ const BUILTIN_SHOWS = [
     musicRules: '适合专注的器乐与听熟的老歌，节奏平稳不突兀',
   },
   {
-    name: '深夜航班', freq: '88.7', start: '21:00', end: '24:00', talkBudget: 3,
-    tone: '语速慢、声音轻，一句顶一句，敢留白',
+    name: '深夜航班', freq: '88.7', start: '21:00', end: '24:00', talkBudget: 2,
+    tone: '语速慢、声音轻，讲一个完整的小故事，敢留白',
     musicRules: '敢放冷门与回忆，慢歌优先，越晚越静',
-    sayMax: 40, segueMax: 30,
+    sayMax: 120, segueMax: 50,
   },
 ];
 
